@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
+use crate::bookmarks;
 use crate::marks;
 use crate::progress;
 use crate::reviews;
@@ -36,6 +37,8 @@ pub struct Export {
     pub quotes: Vec<marks::Quote>,
     #[serde(default)]
     pub reviews: Vec<reviews::Review>,
+    #[serde(default)]
+    pub bookmarks: Vec<bookmarks::Bookmark>,
 }
 
 /// What a restore did, for the caller to print.
@@ -45,6 +48,7 @@ pub struct Restored {
     pub notes: usize,
     pub quotes: usize,
     pub reviews: usize,
+    pub bookmarks: usize,
 }
 
 /// Writes an export into a database.
@@ -71,6 +75,7 @@ pub async fn restore(pool: &SqlitePool, export: &Export) -> Result<Restored> {
         notes: 0,
         quotes: 0,
         reviews: 0,
+        bookmarks: 0,
     };
 
     for state in &export.reading {
@@ -140,6 +145,21 @@ pub async fn restore(pool: &SqlitePool, export: &Export) -> Result<Restored> {
         restored.reviews += usize::try_from(done.rows_affected()).unwrap_or(0);
     }
 
+    for bookmark in &export.bookmarks {
+        let done = sqlx::query(
+            "INSERT INTO bookmarks (piece_id, kind, marked_at, changed_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (piece_id) DO NOTHING",
+        )
+        .bind(&bookmark.piece_id)
+        .bind(&bookmark.kind)
+        .bind(&bookmark.marked_at)
+        .bind(&bookmark.marked_at)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| format!("failed to restore the bookmark on {}", bookmark.piece_id))?;
+        restored.bookmarks += usize::try_from(done.rows_affected()).unwrap_or(0);
+    }
+
     tx.commit().await.context("failed to finish the restore")?;
     Ok(restored)
 }
@@ -183,6 +203,11 @@ mod tests {
                 due_on: Some("2026-09-30".into()),
                 last_seen: Some("2026-08-31T09:00:00.000Z".into()),
             }],
+            bookmarks: vec![bookmarks::Bookmark {
+                piece_id: "a/b".into(),
+                kind: "loved".into(),
+                marked_at: "2026-08-01T13:00:00.000Z".into(),
+            }],
         }
     }
 
@@ -196,7 +221,8 @@ mod tests {
                 reading: 1,
                 notes: 1,
                 quotes: 1,
-                reviews: 1
+                reviews: 1,
+                bookmarks: 1
             }
         );
 
@@ -206,6 +232,12 @@ mod tests {
         assert_eq!(marks::notes(&pool, None).await.unwrap()[0].body, "what it left me with");
         assert_eq!(marks::quotes(&pool, None).await.unwrap()[0].text, "the line");
         assert_eq!(reviews::all(&pool, None).await.unwrap()[0].done, 2);
+        // Bookmarks travel too: a stand rebuilt without them would lose the
+        // pieces the reader meant to come back to.
+        let marked = bookmarks::all(&pool, None).await.unwrap();
+        assert_eq!(marked.len(), 1, "the restore lost the bookmark");
+        assert_eq!(marked[0].kind, "loved");
+        assert_eq!(marked[0].marked_at, "2026-08-01T13:00:00.000Z", "a restored bookmark was re-dated");
     }
 
     #[tokio::test]
@@ -254,7 +286,8 @@ mod tests {
                 reading: 0,
                 notes: 0,
                 quotes: 0,
-                reviews: 0
+                reviews: 0,
+                bookmarks: 0
             }
         );
         assert_eq!(marks::quotes(&pool, None).await.unwrap().len(), 1);
@@ -269,8 +302,9 @@ mod tests {
             notes: vec![],
             quotes: vec![],
             reviews: vec![],
+            bookmarks: vec![],
         };
         let counted = restore(&pool, &empty).await.unwrap();
-        assert_eq!(counted.reading + counted.notes + counted.quotes + counted.reviews, 0);
+        assert_eq!(counted.reading + counted.notes + counted.quotes + counted.reviews + counted.bookmarks, 0);
     }
 }

@@ -14,8 +14,9 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/library`, `/sections`, `/sections/{section}`, `/pieces/...` | Needs a session. |
 | `GET /api/progress`, `POST /api/progress/...`, `GET /api/next` | Needs a session. |
 | `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
+| `GET /api/bookmarks`, `POST`/`DELETE /api/bookmarks/...` | Needs a session. |
 | `GET /api/reviews`, `POST /api/reviews/...` | Needs a session. |
-| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes and the schedules at once. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules and the bookmarks at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -31,7 +32,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.7.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.8.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -666,6 +667,74 @@ curl -X DELETE http://127.0.0.1:8084/api/quotes/9d3b81c0-2f45-4c88-b7e6-31a0d5e7
 {"error":"no such quote"}
 ```
 
+## `GET /api/bookmarks`
+
+Every piece the reader marked, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/bookmarks
+```
+
+```json
+[
+  {
+    "piece_id": "02-istoriya/god-bez-leta",
+    "kind": "song",
+    "marked_at": "2026-09-02T21:16:25.043Z"
+  },
+  {
+    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "kind": "loved",
+    "marked_at": "2026-09-02T21:16:25.041Z"
+  }
+]
+```
+
+There are four kinds and they are fixed: `loved`, `return`, `song`, `reread`. A set the reader could define would buy a settings screen in exchange for flexibility one reader rarely wants; adding a fifth is a migration, not a redesign.
+
+A bookmark is not a kept line. A quote is a sentence worth keeping; a bookmark is a whole piece worth coming back to, and a piece carries one.
+
+## `POST /api/bookmarks/{section}/{piece}`
+
+Marks a piece, or changes which kind it carries. Answers `204`.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"song"}'
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+| Field | Meaning |
+| --- | --- |
+| `kind` | One of `loved`, `return`, `song`, `reread`. |
+| `marked_at` | When the device recorded this, as an ISO 8601 timestamp. |
+
+`marked_at` works exactly as it does for [progress](#post-apiprogresssectionpiece): a mark delivered from an offline queue does not overwrite a newer one.
+
+**One piece has one mark.** Marking a piece `loved` that was already `reread` changes the kind rather than adding a second row - a reader who does that means the newer one.
+
+A kind the app cannot draw is refused rather than stored:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"favourite"}'
+```
+
+```json
+{"error":"no such bookmark kind: favourite"}
+```
+
+`400`. A typo in a client would otherwise become a colour no screen knows and a filter nothing matches. A mark on a piece that is not in the library is `404`, the same as everywhere else.
+
+## `DELETE /api/bookmarks/{section}/{piece}`
+
+Takes the mark off. Answers `204`, or `404` when there was nothing to take off - which is how an app holding a stale list finds out.
+
+```sh
+curl -i -X DELETE http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta
+```
+
 ## `GET /api/reviews`
 
 What is worth recalling today. Answers a list of cards, newest schedules last.
@@ -743,22 +812,22 @@ curl http://127.0.0.1:8084/api/export
 
 ```json
 {
-  "exported_at": "2026-09-02T17:42:02.006Z",
+  "exported_at": "2026-09-02T21:16:25.052Z",
   "since": null,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T17:42:01.959Z",
-      "read_at": "2026-09-02T17:42:01.959Z"
+      "updated_at": "2026-09-02T21:16:25.000Z",
+      "read_at": "2026-09-02T21:16:25.000Z"
     },
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "status": "reading",
       "paragraph": 7,
-      "updated_at": "2026-09-02T17:42:01.993Z",
+      "updated_at": "2026-09-02T21:16:25.027Z",
       "read_at": null
     }
   ],
@@ -766,12 +835,12 @@ curl http://127.0.0.1:8084/api/export
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T17:42:01.999Z"
+      "updated_at": "2026-09-02T21:16:25.032Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T17:42:01.996Z"
+      "updated_at": "2026-09-02T21:16:25.029Z"
     }
   ],
   "quotes": [
@@ -781,7 +850,7 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
       "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T17:42:02.004Z"
+      "created_at": "2026-09-02T21:16:25.038Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
@@ -789,7 +858,7 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T17:42:02.001Z"
+      "created_at": "2026-09-02T21:16:25.035Z"
     }
   ],
   "reviews": [
@@ -798,6 +867,18 @@ curl http://127.0.0.1:8084/api/export
       "done": 0,
       "due_on": "2026-09-03",
       "last_seen": null
+    }
+  ],
+  "bookmarks": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "kind": "song",
+      "marked_at": "2026-09-02T21:16:25.043Z"
+    },
+    {
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "kind": "loved",
+      "marked_at": "2026-09-02T21:16:25.041Z"
     }
   ]
 }
@@ -831,7 +912,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "reading": [],
   "notes": [
     {

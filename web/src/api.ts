@@ -91,6 +91,18 @@ export interface Quote {
   created_at: string
 }
 
+/** The kinds a bookmark can be. The server refuses anything else. */
+export const BOOKMARK_KINDS = ['loved', 'return', 'song', 'reread'] as const
+
+export type BookmarkKind = (typeof BOOKMARK_KINDS)[number]
+
+/** A piece the reader marked to find again. */
+export interface Bookmark {
+  piece_id: string
+  kind: BookmarkKind
+  marked_at: string
+}
+
 /** A piece waiting to be recalled today. */
 export interface Card {
   piece_id: string
@@ -215,6 +227,20 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
   }
   return response.status === 204 ? null : ((await response.json()) as T)
 }
+
+export const fetchBookmarks = (): Promise<Bookmark[]> => get<Bookmark[]>('/bookmarks')
+
+/**
+ * Marks a piece, or changes which kind of mark it carries.
+ *
+ * Queued like every other change: a piece is marked where it is read, which
+ * is usually not where the stand is.
+ */
+export const setBookmark = (pieceId: string, kind: BookmarkKind): Promise<void> =>
+  queue({ path: `/bookmarks/${pieceId}`, method: 'POST', body: { kind, marked_at: now() } })
+
+export const clearBookmark = (pieceId: string): Promise<void> =>
+  queue({ path: `/bookmarks/${pieceId}`, method: 'DELETE', body: {} })
 
 export const fetchDue = (): Promise<{ due: Card[] }> => get<{ due: Card[] }>('/reviews')
 

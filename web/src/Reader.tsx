@@ -10,10 +10,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, fetchNext, fetchPiece, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
+import { BookmarkBar } from '@/Bookmarks'
 import { Empty, minutes } from '@/Library'
 import { KeepBar, KeptLines, NoteEditor, useSelection } from '@/Marks'
 import { go } from '@/routing'
 import type { MarksStore } from '@/useMarks'
+import type { BookmarkStore } from '@/useBookmarks'
 import type { ProgressStore } from '@/useProgress'
 
 /**
@@ -83,11 +85,13 @@ export function ReaderScreen({
   id,
   progress,
   marks,
+  bookmarks,
 }: {
   library: LibraryIndex
   id: string
   progress: ProgressStore
   marks: MarksStore
+  bookmarks: BookmarkStore
 }) {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -302,6 +306,10 @@ export function ReaderScreen({
           <KeptLines quotes={kept} marks={marks} />
         </Block>
       ) : null}
+
+      <Block title="Keep this one">
+        <BookmarkBar pieceId={id} bookmarks={bookmarks} />
+      </Block>
 
       <Block title="Note">
         <NoteEditor pieceId={id} marks={marks} />

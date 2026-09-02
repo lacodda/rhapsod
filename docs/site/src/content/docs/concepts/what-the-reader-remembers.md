@@ -113,6 +113,27 @@ Two readings of the same piece can land on the same line and mean different thin
 
 It follows that a quote is identified by its id and not by what it says. That id is **minted on the device that kept the line**, not handed out by the server. A highlight made on a train has to be commentable and removable there too, hours before the stand hears about it - and an id assigned by the server could not be used until the queue drained. `POST /api/quotes` carries the id with it and answers with the stored row; sending the same one twice keeps the line once ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
 
+## Marking a piece to find it again
+
+A quote is a sentence worth keeping. A **bookmark** is a whole piece worth coming back to - and neither is the reading state, which records what happened rather than what you intend to do about it.
+
+There are four kinds, and they are fixed:
+
+| Mark | What it means |
+| --- | --- |
+| **Loved** | It was good. |
+| **Come back** | There is something here to return to. |
+| **For a song** | There is a song in this one. |
+| **Read again** | Worth a second reading. |
+
+A set you could define yourself would buy a settings screen in exchange for flexibility one reader rarely wants; if four turns out to be too few, a fifth is a migration rather than a redesign.
+
+**A piece carries one mark.** Marking something *loved* that was already *read again* changes the kind rather than adding a second - a reader who does that means the newer one. Tapping the kind a piece already has takes the mark off, because the gesture that put it there should be the one that removes it.
+
+The colours are the meaning. On a shelf the mark is a coloured dot beside the title, and recognising "the green one" is faster than reading a label. They come from the line's own vocabulary rather than a palette of their own, so they follow the theme into light mode.
+
+Bookmarks travel with everything else: they are in [the export](#taking-it-back-out), and they come back on a stand restored from one.
+
 ## Coming back to it
 
 A library that is only read is a library that is forgotten. Finishing a piece puts it into a schedule, and it comes back three times: **a day later, then a week, then a month**. After the third return it is carried, and never comes back on its own.

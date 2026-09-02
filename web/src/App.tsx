@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { ApiError, fetchLibrary, fetchSession, type LibraryIndex, type Session } from '@/api'
+import { ApiError, BOOKMARK_KINDS, fetchLibrary, fetchSession, type BookmarkKind, type LibraryIndex, type Session } from '@/api'
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
+import { BookmarksScreen } from '@/Bookmarks'
+import { Drawer } from '@/Drawer'
+import { Mark } from '@/Mark'
 import { QuotesScreen } from '@/Quotes'
 import { ReviewsScreen } from '@/Reviews'
 import { ReaderScreen } from '@/Reader'
@@ -11,6 +14,8 @@ import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
 import { useProgress } from '@/useProgress'
 import { useReviews } from '@/useReviews'
+import { useBookmarks } from '@/useBookmarks'
+import { useEdgeSwipe } from '@/useEdgeSwipe'
 import { useSync } from '@/useSync'
 import type { SyncState } from '@/sync'
 
@@ -31,7 +36,9 @@ export function App() {
   const progress = useProgress(mayRead)
   const marks = useMarks(mayRead)
   const reviews = useReviews(mayRead)
+  const bookmarks = useBookmarks(mayRead)
   const sync = useSync()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -68,13 +75,44 @@ export function App() {
     }
   }, [mayRead])
 
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+  }, [])
+
+  const openMenu = useCallback(() => {
+    setMenuOpen(true)
+  }, [])
+
+  // The gesture is armed only when there is a library behind the drawer and
+  // it is not already open.
+  useEdgeSwipe(openMenu, mayRead && library !== null && !menuOpen)
+
   const signedIn = useCallback(() => {
     setSession({ open: false, reader: true })
   }, [])
 
   return (
     <div className="min-h-dvh">
-      <Header quotes={marks.quotes.length} due={reviews.cards.length} sync={sync} />
+      <Header
+        quotes={marks.quotes.length}
+        due={reviews.cards.length}
+        sync={sync}
+        onOpenMenu={mayRead && library ? openMenu : undefined}
+      />
+
+      {/* The drawer needs the index to list shelves, so it exists only once
+          there is a library to show. */}
+      {mayRead && library ? (
+        <Drawer
+          open={menuOpen}
+          onClose={closeMenu}
+          library={library}
+          due={reviews.cards.length}
+          quotes={marks.quotes.length}
+          bookmarks={bookmarks.all.length}
+          route={route}
+        />
+      ) : null}
       <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
         {session === null ? (
           <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
@@ -90,13 +128,19 @@ export function App() {
             detail="Publish a directory of markdown files to the stand, and they appear here."
           />
         ) : route.name === 'piece' ? (
-          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} marks={marks} />
+          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} marks={marks} bookmarks={bookmarks} />
         ) : route.name === 'quotes' ? (
           <QuotesScreen library={library} marks={marks} />
         ) : route.name === 'today' ? (
           <ReviewsScreen reviews={reviews} />
+        ) : route.name === 'bookmarks' ? (
+          <BookmarksScreen
+            library={library}
+            bookmarks={bookmarks}
+            kind={asKind(route.kind)}
+          />
         ) : route.name === 'section' ? (
-          <SectionScreen library={library} section={route.section} progress={progress} />
+          <SectionScreen library={library} section={route.section} progress={progress} bookmarks={bookmarks.kinds} />
         ) : (
           <LibraryScreen library={library} progress={progress} due={reviews.cards.length} />
         )}
@@ -111,20 +155,49 @@ export function App() {
  * It scrolls away with the page instead of sitting over it - on a phone a
  * sticky bar costs a line of text on every screen of a seven-minute read.
  */
-function Header({ quotes, due, sync }: { quotes: number; due: number; sync: SyncState }) {
+function Header({
+  quotes,
+  due,
+  sync,
+  onOpenMenu,
+}: {
+  quotes: number
+  due: number
+  sync: SyncState
+  /** Absent before there is a library to show, which is when the menu would
+      open onto nothing. */
+  onOpenMenu?: () => void
+}) {
   return (
     <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
-      <a
-        href="/"
-        onClick={(event) => {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-          event.preventDefault()
-          go({ name: 'library' })
-        }}
-        className="flex items-baseline gap-2 rounded-md px-2 py-1 font-mono text-sm font-semibold tracking-tight text-text hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        rhapsod
-      </a>
+      <span className="flex items-center gap-1">
+        {onOpenMenu ? (
+          <button
+            type="button"
+            onClick={onOpenMenu}
+            aria-label="Open the menu"
+            className="rounded-md px-2 py-1.5 text-dim transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            {/* Three lines: the one glyph a phone reader does not have to be
+                taught. */}
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        ) : null}
+        <a
+          href="/"
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+            event.preventDefault()
+            go({ name: 'library' })
+          }}
+          className="flex items-center gap-2 rounded-md px-2 py-1 font-mono text-sm font-semibold tracking-tight text-text hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <Mark />
+          rhapsod
+        </a>
+      </span>
       <span className="flex items-baseline gap-3">
         {due > 0 ? (
           <a
@@ -157,6 +230,17 @@ function Header({ quotes, due, sync }: { quotes: number; due: number; sync: Sync
       </span>
     </header>
   )
+}
+
+/**
+ * The kind named in the address, if it is one the app knows.
+ *
+ * A typed URL with a kind nothing matches shows everything rather than an
+ * empty screen: the reader asked for their bookmarks, and the filter is the
+ * part that was wrong.
+ */
+function asKind(kind: string | undefined): BookmarkKind | null {
+  return kind !== undefined && (BOOKMARK_KINDS as readonly string[]).includes(kind) ? (kind as BookmarkKind) : null
 }
 
 /**

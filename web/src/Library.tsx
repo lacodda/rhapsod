@@ -7,7 +7,8 @@
  * desktop with a width limit around it.
  */
 
-import type { LibraryIndex, PieceSummary, Section } from '@/api'
+import type { BookmarkKind, LibraryIndex, PieceSummary, Section } from '@/api'
+import { BookmarkDot } from '@/Bookmarks'
 import { go } from '@/routing'
 import type { ProgressStore } from '@/useProgress'
 
@@ -26,7 +27,16 @@ function navigate(event: React.MouseEvent, to: Parameters<typeof go>[0]): void {
 }
 
 /** One piece in a list: the title, the line it wants remembered, and how far the reader got. */
-function PieceRow({ piece, progress }: { piece: PieceSummary; progress: ProgressStore }) {
+function PieceRow({
+  piece,
+  progress,
+  bookmark,
+}: {
+  piece: PieceSummary
+  progress: ProgressStore
+  /** The mark this piece carries, if any. */
+  bookmark?: BookmarkKind
+}) {
   const state = progress.states.get(piece.id)
   return (
     <li>
@@ -43,6 +53,7 @@ function PieceRow({ piece, progress }: { piece: PieceSummary; progress: Progress
           </span>
           {state?.status === 'read' ? <Mark label="read" /> : null}
           {state?.status === 'reading' ? <Mark label="reading" accent /> : null}
+          {bookmark ? <BookmarkDot kind={bookmark} /> : null}
         </span>
         {piece.one_liner ? <span className="text-sm leading-snug text-dim">{piece.one_liner}</span> : null}
         <span className="font-mono text-xs text-dim">{minutes(piece.words)} min</span>
@@ -207,7 +218,18 @@ function Stats({ stats }: { stats: ProgressStore['stats'] }) {
 }
 
 /** One shelf: its pieces, in reading order. */
-export function SectionScreen({ library, section, progress }: { library: LibraryIndex; section: string; progress: ProgressStore }) {
+export function SectionScreen({
+  library,
+  section,
+  progress,
+  bookmarks,
+}: {
+  library: LibraryIndex
+  section: string
+  progress: ProgressStore
+  /** Kind by piece id, so a shelf shows what is marked on it. */
+  bookmarks: Map<string, BookmarkKind>
+}) {
   const shelf = library.sections.find((candidate) => candidate.id === section)
   const pieces = library.pieces.filter((piece) => piece.section === section)
 
@@ -223,7 +245,7 @@ export function SectionScreen({ library, section, progress }: { library: Library
       </header>
       <ul className="flex flex-col">
         {pieces.map((piece) => (
-          <PieceRow key={piece.id} piece={piece} progress={progress} />
+          <PieceRow key={piece.id} piece={piece} progress={progress} bookmark={bookmarks.get(piece.id)} />
         ))}
       </ul>
     </div>

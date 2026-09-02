@@ -23,7 +23,7 @@ No parameters, and no session: this endpoint stays open even on a stand that has
 ```json
 {
   "status": "ok",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "pieces": 2,
   "indexed_seconds_ago": 1450
 }

@@ -17,6 +17,7 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::auth::{self, Reader};
+use crate::bookmarks;
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
 use crate::progress;
@@ -78,6 +79,8 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/notes/{section}/{piece}", post(write_note))
         .route("/quotes", get(read_quotes).post(keep_quote))
         .route("/quotes/{id}", post(edit_quote).delete(drop_quote))
+        .route("/bookmarks", get(read_bookmarks))
+        .route("/bookmarks/{section}/{piece}", post(set_bookmark).delete(clear_bookmark))
         .route("/reviews", get(read_due))
         .route("/reviews/{section}/{piece}", post(answer_review))
         .route("/export", get(export))
@@ -628,6 +631,60 @@ struct Export {
     notes: Vec<marks::Note>,
     quotes: Vec<marks::Quote>,
     reviews: Vec<reviews::Review>,
+    bookmarks: Vec<bookmarks::Bookmark>,
+}
+
+/// Every piece the reader marked, newest first.
+async fn read_bookmarks(_: Reader, State(state): State<AppState>) -> Response {
+    match bookmarks::all(&state.pool, None).await {
+        Ok(marked) => Json(marked).into_response(),
+        Err(error) => failed(&error, "the bookmarks could not be read"),
+    }
+}
+
+/// What the app sends when a piece is marked.
+#[derive(Deserialize)]
+struct NewBookmark {
+    /// One of the four kinds; anything else is refused.
+    kind: String,
+    /// When the device recorded this, so a mark drained from an offline queue
+    /// does not overwrite a newer one (ADR 0003).
+    marked_at: Option<String>,
+}
+
+/// Marks a piece, or changes which kind of mark it carries.
+async fn set_bookmark(
+    _: Reader,
+    State(state): State<AppState>,
+    UrlPath((section, piece)): UrlPath<(String, String)>,
+    Json(body): Json<NewBookmark>,
+) -> Response {
+    let id = format!("{section}/{piece}");
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    match bookmarks::mark(&state.pool, &id, &body.kind, body.marked_at.as_deref()).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // An unknown kind is the app sending something no screen can draw,
+        // not a server failure; 400 lets it tell the difference.
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error.to_string() }))).into_response(),
+    }
+}
+
+/// Takes the mark off a piece.
+async fn clear_bookmark(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>) -> Response {
+    let id = format!("{section}/{piece}");
+    match bookmarks::unmark(&state.pool, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such bookmark"),
+        Err(error) => failed(&error, "the bookmark could not be removed"),
+    }
 }
 
 /// What is worth recalling today.
@@ -695,6 +752,10 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         Ok(schedules) => schedules,
         Err(error) => return failed(&error, "the review schedules could not be read"),
     };
+    let marked = match bookmarks::all(&state.pool, since).await {
+        Ok(marked) => marked,
+        Err(error) => return failed(&error, "the bookmarks could not be read"),
+    };
 
     // Not defaulted away: a vault-merge script keys "as of" on this field, and
     // an empty string would pass every check it makes while meaning nothing.
@@ -714,6 +775,7 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         notes,
         quotes,
         reviews: schedules,
+        bookmarks: marked,
     })
     .into_response()
 }
