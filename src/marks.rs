@@ -68,7 +68,9 @@ pub async fn set_note(pool: &SqlitePool, piece_id: &str, body: &str) -> Result<(
 ///
 /// Fails when the database cannot be read.
 pub async fn notes(pool: &SqlitePool) -> Result<Vec<Note>> {
-    sqlx::query_as::<_, Note>("SELECT piece_id, body, updated_at FROM notes ORDER BY updated_at DESC")
+    // The tiebreak matters: two notes written inside the same millisecond
+    // would otherwise come back in whatever order the page produced them.
+    sqlx::query_as::<_, Note>("SELECT piece_id, body, updated_at FROM notes ORDER BY updated_at DESC, piece_id")
         .fetch_all(pool)
         .await
         .context("failed to read the notes")

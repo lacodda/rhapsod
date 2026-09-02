@@ -105,7 +105,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.1.1","pieces":2}
+{"status":"ok","version":"0.2.0","pieces":2}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).

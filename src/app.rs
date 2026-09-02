@@ -568,10 +568,15 @@ async fn export(_: Reader, State(state): State<AppState>) -> Response {
         Err(error) => return failed(&error, "the quotes could not be read"),
     };
 
-    let exported_at = sqlx::query_scalar::<_, String>("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
+    // Not defaulted away: a vault-merge script keys "as of" on this field, and
+    // an empty string would pass every check it makes while meaning nothing.
+    let exported_at = match sqlx::query_scalar::<_, String>("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
         .fetch_one(&state.pool)
         .await
-        .unwrap_or_default();
+    {
+        Ok(stamp) => stamp,
+        Err(error) => return failed(&anyhow::Error::new(error), "the export could not be timestamped"),
+    };
 
     Json(Export {
         exported_at,
@@ -1006,7 +1011,10 @@ mod tests {
         assert_eq!(body["reading"][0]["status"], "read");
         assert_eq!(body["notes"][0]["body"], "a note");
         assert_eq!(body["quotes"][0]["text"], "a line");
-        assert!(body["exported_at"].as_str().is_some_and(|stamp| stamp.ends_with('Z')));
+        // The field a vault-merge script keys "as of" on: an empty string
+        // would pass a naive check while meaning nothing.
+        let stamp = body["exported_at"].as_str().expect("the export is timestamped");
+        assert!(stamp.ends_with('Z') && stamp.len() >= 20, "not a usable timestamp: {stamp:?}");
     }
 
     #[tokio::test]

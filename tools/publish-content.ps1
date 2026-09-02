@@ -89,7 +89,12 @@ else {
     # round trip, and the whole directory on the wire instead of the diff.
     Write-Host 'publish-content: rsync not found, falling back to scp'
     Write-Host "publish-content: clearing $target/ so removed pieces do not survive"
-    & ssh $remoteHost "rm -rf -- '$dest' && mkdir -p -- '$dest'"
+    # The contents go, the directory itself stays. Removing and recreating it
+    # gives a new inode, and a container that bind-mounts this path keeps the
+    # old one: the files land on the host and the server serves an empty
+    # library forever. Cost the stand its first deployment; the shell script
+    # was fixed then and this one was not.
+    & ssh $remoteHost "mkdir -p -- '$dest' && find '$dest' -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +"
     if (-not $?) { Stop-WithReason 'ssh failed; nothing was copied or reindexed' }
     Write-Host "publish-content: scp $src/. -> $target/"
     & scp -r "$src/." "$target/"
@@ -103,3 +108,16 @@ Write-Host "publish-content: reindexing $url"
 $counts = Invoke-RestMethod -Method Post -Uri "$url/api/reindex"
 
 Write-Host "publish-content: published with $copier; the server now serves $($counts.pieces) pieces in $($counts.sections) sections"
+
+# How many files were sent, and how many the server ended up serving. A copy
+# that lands on the host but not inside the container is invisible to every
+# step above: the files are there, the reindex answers 200, and the reader gets
+# an empty library. This happened on the stand's first deployment, and the
+# shell script has checked for it since; this one did not.
+$sent = (Get-ChildItem -Path $src -Recurse -Filter '*.md' -File | Where-Object { $_.DirectoryName -ne (Resolve-Path $src).Path }).Count
+if ($counts.pieces -eq 0 -and $sent -gt 0) {
+    [Console]::Error.WriteLine("publish-content: sent $sent pieces but the server serves none.")
+    [Console]::Error.WriteLine('publish-content: the files reached the host; the server is not seeing them.')
+    [Console]::Error.WriteLine('publish-content: restart it so it picks the directory up: docker compose restart')
+    exit 1
+}

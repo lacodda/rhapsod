@@ -175,3 +175,49 @@ fn the_compose_files_name_the_image_this_repository_publishes() {
     let prod = read("docker-compose.prod.yml");
     assert!(prod.contains("build:"), "the stand compose must build from source");
 }
+
+/// Captured output in the docs must show the version being shipped.
+///
+/// The manifests are checked against each other above, but a transcript pasted
+/// into a page is a copy of what the server said on the day it was run, and
+/// nothing pulls it forward. Three pages and the README were still showing
+/// `0.1.1` while the manifests read `0.2.0`, which teaches a reader that the
+/// examples are approximate - and once that is true of one number it is true
+/// of all of them.
+#[test]
+fn captured_output_shows_the_version_being_shipped() {
+    let version = cargo_field("version");
+    let expected = format!("\"version\":\"{version}\"");
+
+    let mut stale = Vec::new();
+    let mut pages = vec![repo_root().join("README.md")];
+    let docs = repo_root().join("docs/site/src/content/docs");
+    let mut stack = vec![docs];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("the docs directory should be readable").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md" || extension == "mdx") {
+                pages.push(path);
+            }
+        }
+    }
+
+    for page in pages {
+        let text = read(&page);
+        // Only the health transcript carries a version; anything else naming
+        // one is prose, where a release note about an older version is fine.
+        for line in text.lines().filter(|line| line.contains("\"status\":") && line.contains("\"pieces\":")) {
+            if !line.contains(&expected) {
+                stale.push(format!("{}: {}", page.display(), line.trim()));
+            }
+        }
+    }
+
+    assert!(
+        stale.is_empty(),
+        "captured output still shows an older version than {version}:\n  {}",
+        stale.join("\n  ")
+    );
+}
