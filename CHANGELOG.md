@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-09-02
+
+### Features
+- Keep the one file that cannot be republished
+
+
 ## [0.6.0] - 2026-09-02
 
 ### Features
