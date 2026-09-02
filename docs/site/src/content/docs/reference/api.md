@@ -14,9 +14,10 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/library`, `/sections`, `/sections/{section}`, `/pieces/...` | Needs a session. |
 | `GET /api/progress`, `POST /api/progress/...`, `GET /api/next` | Needs a session. |
 | `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
+| `GET /api/topics`, `GET /api/requests`, `POST`/`DELETE /api/requests/...` | Needs a session. |
 | `GET /api/bookmarks`, `POST`/`DELETE /api/bookmarks/...` | Needs a session. |
 | `GET /api/reviews`, `POST /api/reviews/...` | Needs a session. |
-| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules and the bookmarks at once. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules, the bookmarks and the requests at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -32,7 +33,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.8.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -667,6 +668,107 @@ curl -X DELETE http://127.0.0.1:8084/api/quotes/9d3b81c0-2f45-4c88-b7e6-31a0d5e7
 {"error":"no such quote"}
 ```
 
+## `GET /api/topics`
+
+What could be written: the author's plan, as shelves of topics.
+
+```sh
+curl http://127.0.0.1:8084/api/topics
+```
+
+```json
+{
+  "shelves": [
+    {
+      "id": "01-paradoksy-i-effekty",
+      "title": "01 — Парадоксы и эффекты",
+      "topics": [
+        {
+          "id": "01-paradoksy-i-effekty/paradoks-lzheca",
+          "title": "Парадокс лжеца",
+          "section": "01 — Парадоксы и эффекты"
+        },
+        {
+          "id": "01-paradoksy-i-effekty/buridanov-osel",
+          "title": "Буриданов осёл",
+          "section": "01 — Парадоксы и эффекты"
+        }
+      ]
+    },
+    {
+      "id": "02-istoriya",
+      "title": "02 — История",
+      "topics": [
+        {
+          "id": "02-istoriya/tungusskoe-sobytie",
+          "title": "Тунгусское событие",
+          "section": "02 — История"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The plan is a markdown file published beside the library as `topics.md`, in the shape the author already writes: `## NN — Shelf` for a shelf, `- [ ] Title` for a topic. Sub-headings inside a shelf are flattened - they organise the author's own filing, and a reader pointing at a topic does not need to know which drawer it came from.
+
+**A topic that has been written is not offered.** It left the plan for the library, and asking for something that already exists is not a request. The same goes for a stand with no plan published: `shelves` comes back empty, which is not an error.
+
+Ids are derived from the shelf and the title, the way a piece id is. One shelf can hold the same title twice - the real plan does - and the second gets a `-2` suffix rather than colliding with the first.
+
+## `GET /api/requests`
+
+Everything the reader has asked for, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/requests
+```
+
+```json
+[
+  {
+    "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
+    "title": "Парадокс лжеца",
+    "section": "01 — Парадоксы и эффекты",
+    "asked_at": "2026-09-02T22:20:55.585Z"
+  }
+]
+```
+
+Each request carries the **words** of the topic as well as its id. A topic that gets written leaves the plan, taking its title with it; a request that outlived its topic would otherwise be an id nobody can read - including in the export the author reads.
+
+## `POST /api/requests/{shelf}/{topic}`
+
+Asks for a topic to be written. Answers `204`.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/requests/01-paradoksy-i-effekty/paradoks-lzheca   -H 'content-type: application/json' -d '{}'
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+An optional `asked_at` carries the device clock, as everywhere else (ADR 0003).
+
+**Asking twice is asking once.** There is nothing a second request could mean that the first does not already say, and a count would turn one reader's list into a poll with one voter.
+
+A topic the plan does not offer is `404` rather than a stored row:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/requests/01-paradoksy-i-effekty/nothing-like-this   -H 'content-type: application/json' -d '{}'
+```
+
+```json
+{"error":"no such topic"}
+```
+
+That matters more than it looks: a request the author cannot act on would sit in the export looking exactly like one they could.
+
+## `DELETE /api/requests/{shelf}/{topic}`
+
+Takes a request back. Answers `204`, or `404` when there was nothing to take back - which is how an app with a stale list finds out.
+
 ## `GET /api/bookmarks`
 
 Every piece the reader marked, newest first.
@@ -812,22 +914,22 @@ curl http://127.0.0.1:8084/api/export
 
 ```json
 {
-  "exported_at": "2026-09-02T21:16:25.052Z",
+  "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T21:16:25.000Z",
-      "read_at": "2026-09-02T21:16:25.000Z"
+      "updated_at": "2026-09-02T22:20:55.321Z",
+      "read_at": "2026-09-02T22:20:55.321Z"
     },
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "status": "reading",
       "paragraph": 7,
-      "updated_at": "2026-09-02T21:16:25.027Z",
+      "updated_at": "2026-09-02T22:20:55.384Z",
       "read_at": null
     }
   ],
@@ -835,12 +937,12 @@ curl http://127.0.0.1:8084/api/export
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T21:16:25.032Z"
+      "updated_at": "2026-09-02T22:20:55.444Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T21:16:25.029Z"
+      "updated_at": "2026-09-02T22:20:55.413Z"
     }
   ],
   "quotes": [
@@ -850,7 +952,7 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
       "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T21:16:25.038Z"
+      "created_at": "2026-09-02T22:20:55.490Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
@@ -858,7 +960,7 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T21:16:25.035Z"
+      "created_at": "2026-09-02T22:20:55.460Z"
     }
   ],
   "reviews": [
@@ -873,12 +975,20 @@ curl http://127.0.0.1:8084/api/export
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "kind": "song",
-      "marked_at": "2026-09-02T21:16:25.043Z"
+      "marked_at": "2026-09-02T22:20:55.553Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "kind": "loved",
-      "marked_at": "2026-09-02T21:16:25.041Z"
+      "marked_at": "2026-09-02T22:20:55.522Z"
+    }
+  ],
+  "requests": [
+    {
+      "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
+      "title": "Парадокс лжеца",
+      "section": "01 — Парадоксы и эффекты",
+      "asked_at": "2026-09-02T22:20:55.585Z"
     }
   ]
 }
@@ -912,7 +1022,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "reading": [],
   "notes": [
     {

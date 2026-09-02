@@ -58,6 +58,32 @@ publish-content: published with rsync; the server now serves {"pieces":184,"sect
 
 Those counts come from the server, not from the script, and they are the receipt that the publish landed. A copy that silently went to the wrong directory shows up here as a number that did not move.
 
+## Publishing the plan of topics
+
+The reader can ask for a novella that has not been written yet, but only if the stand knows what could be. That comes from one file next to the library: **`topics.md`**, in the directory being published.
+
+It is the plan the author already keeps, in the shape they already write it:
+
+```markdown
+# The plan
+
+## 01 — Paradoxes and effects
+
+- [ ] The liar paradox
+- [ ] Buridan's ass
+
+## 02 — History
+```
+
+Two rules, and they follow the way the plan is already used:
+
+- **`- [ ] Title` is a topic; `- [x] Title` is not.** A ticked topic has been written - it left the plan for the library, and offering it as something to request would be offering something that already exists.
+- **Sub-headings inside a shelf are flattened.** They organise the author's filing; a reader pointing at a topic does not need to know which drawer it came from.
+
+Put the file in the directory that gets published and it travels with everything else. There is nothing else to do: a reindex re-reads the plan along with the library, so adding topics and republishing is enough.
+
+A stand with no `topics.md` simply offers nothing to ask for. That is not an error, and the rest of the reader works exactly as before.
+
 ## rsync, or scp
 
 The scripts prefer `rsync -a --delete` and fall back to `scp -r` when rsync is not on the machine - which on Windows it usually is not. The line they print says which one ran, because the two are not equivalent in cost:
@@ -105,7 +131,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.8.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).

@@ -385,7 +385,8 @@ fn first_heading(body: &str) -> Option<String> {
 /// the address bar of a phone, and `19-lyubov-i-pary` is a link a person can
 /// read, while `19-%D0%9B%D1%8E%D0%B1...` is not. The mapping only has to be
 /// stable and collision-free within one library, not reversible.
-fn slug(name: &str) -> String {
+#[must_use]
+pub fn slug(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut dash = false;
     for ch in name.chars() {

@@ -13,5 +13,7 @@ pub mod db;
 pub mod library;
 pub mod marks;
 pub mod progress;
+pub mod requests;
 pub mod restore;
 pub mod reviews;
+pub mod topics;

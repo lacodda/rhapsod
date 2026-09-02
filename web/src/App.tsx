@@ -6,6 +6,7 @@ import { BookmarksScreen } from '@/Bookmarks'
 import { Drawer } from '@/Drawer'
 import { Mark } from '@/Mark'
 import { QuotesScreen } from '@/Quotes'
+import { RequestsScreen } from '@/Requests'
 import { ReviewsScreen } from '@/Reviews'
 import { ReaderScreen } from '@/Reader'
 import { cacheLibrary } from '@/offline'
@@ -13,6 +14,7 @@ import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
 import { useProgress } from '@/useProgress'
+import { useRequests } from '@/useRequests'
 import { useReviews } from '@/useReviews'
 import { useBookmarks } from '@/useBookmarks'
 import { useEdgeSwipe } from '@/useEdgeSwipe'
@@ -37,6 +39,7 @@ export function App() {
   const marks = useMarks(mayRead)
   const reviews = useReviews(mayRead)
   const bookmarks = useBookmarks(mayRead)
+  const requests = useRequests(mayRead)
   const sync = useSync()
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -110,6 +113,8 @@ export function App() {
           due={reviews.cards.length}
           quotes={marks.quotes.length}
           bookmarks={bookmarks.all.length}
+          asked={requests.asked.length}
+          hasPlan={requests.plan.shelves.length > 0}
           route={route}
         />
       ) : null}
@@ -133,6 +138,8 @@ export function App() {
           <QuotesScreen library={library} marks={marks} />
         ) : route.name === 'today' ? (
           <ReviewsScreen reviews={reviews} />
+        ) : route.name === 'ask' ? (
+          <RequestsScreen requests={requests} />
         ) : route.name === 'bookmarks' ? (
           <BookmarksScreen
             library={library}

@@ -5,7 +5,7 @@ description: Fetch the reading state, the notes and the quotes off a stand as on
 
 The library goes out to the stand as files. What you made of it - where you got to, what you wrote, the lines you kept - stays on the stand, in a SQLite file the markdown never touches ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
 
-**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a script of your own can fold your notes into the vault the library was published from. One document carries the whole of it: what you read, what you wrote, what you kept, what you marked, and where each piece stands in its review schedule.
+**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a script of your own can fold your notes into the vault the library was published from. One document carries the whole of it: what you read, what you wrote, what you kept, what you marked, what you asked to be written, and where each piece stands in its review schedule.
 
 It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is strictly a read: nothing on the stand changes, and running it twice differs only in the file it writes.
 
@@ -77,22 +77,22 @@ One JSON object with four keys.
 
 ```json
 {
-  "exported_at": "2026-09-02T21:16:25.052Z",
+  "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T21:16:25.000Z",
-      "read_at": "2026-09-02T21:16:25.000Z"
+      "updated_at": "2026-09-02T22:20:55.321Z",
+      "read_at": "2026-09-02T22:20:55.321Z"
     },
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "status": "reading",
       "paragraph": 7,
-      "updated_at": "2026-09-02T21:16:25.027Z",
+      "updated_at": "2026-09-02T22:20:55.384Z",
       "read_at": null
     }
   ],
@@ -100,12 +100,12 @@ One JSON object with four keys.
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T21:16:25.032Z"
+      "updated_at": "2026-09-02T22:20:55.444Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T21:16:25.029Z"
+      "updated_at": "2026-09-02T22:20:55.413Z"
     }
   ],
   "quotes": [
@@ -115,7 +115,7 @@ One JSON object with four keys.
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
       "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T21:16:25.038Z"
+      "created_at": "2026-09-02T22:20:55.490Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
@@ -123,7 +123,7 @@ One JSON object with four keys.
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T21:16:25.035Z"
+      "created_at": "2026-09-02T22:20:55.460Z"
     }
   ],
   "reviews": [
@@ -138,12 +138,20 @@ One JSON object with four keys.
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "kind": "song",
-      "marked_at": "2026-09-02T21:16:25.043Z"
+      "marked_at": "2026-09-02T22:20:55.553Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "kind": "loved",
-      "marked_at": "2026-09-02T21:16:25.041Z"
+      "marked_at": "2026-09-02T22:20:55.522Z"
+    }
+  ],
+  "requests": [
+    {
+      "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
+      "title": "Парадокс лжеца",
+      "section": "01 — Парадоксы и эффекты",
+      "asked_at": "2026-09-02T22:20:55.585Z"
     }
   ]
 }
@@ -158,6 +166,7 @@ One JSON object with four keys.
 | `quotes` | Every line you kept, newest first. |
 | `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. |
 | `bookmarks` | One row per marked piece, newest first. `kind` is one of `loved`, `return`, `song`, `reread`; a piece carries at most one. |
+| `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, so a request outliving its topic is still legible. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 

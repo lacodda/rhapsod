@@ -164,6 +164,16 @@ What is due is everything dated **today or earlier**. A reader who was away for 
 
 When nothing is due - which is most days - the library screen says nothing about it at all. A counter reading zero on every visit is noise.
 
+## Asking for one that is not written
+
+The author keeps a plan of what a novella could be about - a couple of thousand titles, grouped by shelf. Published beside the library, it becomes a list the reader can point at: **this one next**.
+
+That is the whole of the feature. Not a vote, not a priority, not a deadline - a list the author reads before choosing what to write. **Asking twice is asking once**, because a second request says nothing the first does not, and a count would turn one reader's list into a poll with one voter.
+
+The plan is a **pool, not a queue**: any topic can be taken at any time, and a topic that gets written leaves the plan for the library. Which is why a request keeps the topic's words as well as its id - a request that outlived its topic would otherwise be an identifier nobody can read, including in the export the author reads.
+
+A request for something the plan does not offer is refused rather than stored. It would sit in the export looking exactly like one the author could act on.
+
 ## Made here, delivered later
 
 Every change described above is written on the device first and shown as done at once - then delivered to the stand whenever it can be reached ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). Nothing waits for the network, because the network is usually a Pi at home and the reading usually happens somewhere else.

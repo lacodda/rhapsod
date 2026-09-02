@@ -21,7 +21,9 @@ use crate::bookmarks;
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
 use crate::progress;
+use crate::requests;
 use crate::reviews;
+use crate::topics::{self, Plan};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -30,6 +32,9 @@ pub struct AppState {
     /// answering. A read lock is held only long enough to clone what a
     /// response needs, so publishing content never blocks a reader mid-page.
     pub library: Arc<RwLock<Library>>,
+    /// The plan of topics published beside the library, rebuilt by the same
+    /// reindex. Empty when no plan was published, which is not an error.
+    pub plan: Arc<RwLock<Plan>>,
     /// When the index was last built, so health can say how old it is.
     ///
     /// A stand that answers correctly from a library published three weeks ago
@@ -52,6 +57,13 @@ pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: P
     let state = AppState {
         pool,
         library: Arc::new(RwLock::new(library)),
+        // Read here rather than passed in: a stand without a plan is the
+        // ordinary case, and a failure to read one must not stop the server
+        // from serving the library.
+        plan: Arc::new(RwLock::new(topics::load(&content_dir).unwrap_or_else(|error| {
+            tracing::warn!(%error, "the plan of topics could not be read; nothing will be offered to request");
+            Plan::default()
+        }))),
         indexed_at: Arc::new(RwLock::new(std::time::Instant::now())),
         content_dir,
         password_hash,
@@ -79,6 +91,9 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/notes/{section}/{piece}", post(write_note))
         .route("/quotes", get(read_quotes).post(keep_quote))
         .route("/quotes/{id}", post(edit_quote).delete(drop_quote))
+        .route("/topics", get(read_topics))
+        .route("/requests", get(read_requests))
+        .route("/requests/{shelf}/{topic}", post(ask_for).delete(withdraw_request))
         .route("/bookmarks", get(read_bookmarks))
         .route("/bookmarks/{section}/{piece}", post(set_bookmark).delete(clear_bookmark))
         .route("/reviews", get(read_due))
@@ -250,6 +265,16 @@ async fn reindex(State(state): State<AppState>) -> Response {
     match state.library.write() {
         Ok(mut held) => *held = library,
         Err(_) => return lock_poisoned(),
+    }
+    // The plan is published with the library and is re-read with it: an
+    // author who adds topics and republishes expects both to arrive.
+    match topics::load(&state.content_dir) {
+        Ok(plan) => {
+            if let Ok(mut held) = state.plan.write() {
+                *held = plan;
+            }
+        }
+        Err(error) => tracing::warn!(%error, "the plan of topics could not be re-read"),
     }
     if let Ok(mut stamped) = state.indexed_at.write() {
         *stamped = std::time::Instant::now();
@@ -632,6 +657,68 @@ struct Export {
     quotes: Vec<marks::Quote>,
     reviews: Vec<reviews::Review>,
     bookmarks: Vec<bookmarks::Bookmark>,
+    requests: Vec<requests::Request>,
+}
+
+/// What could be written: the author's plan, as shelves of topics.
+///
+/// Behind the reader gate like the library itself: the plan is the author's
+/// work in progress, and a stand that protects the novellas but hands out
+/// what is coming next protects half of it.
+async fn read_topics(_: Reader, State(state): State<AppState>) -> Response {
+    let Ok(plan) = state.plan.read() else {
+        return lock_poisoned();
+    };
+    Json(&*plan).into_response()
+}
+
+/// Everything the reader has asked for, newest first.
+async fn read_requests(_: Reader, State(state): State<AppState>) -> Response {
+    match requests::all(&state.pool, None).await {
+        Ok(asked) => Json(asked).into_response(),
+        Err(error) => failed(&error, "the requests could not be read"),
+    }
+}
+
+/// What the app sends when a topic is asked for.
+#[derive(Deserialize)]
+struct Asked {
+    /// When the device recorded this (ADR 0003).
+    asked_at: Option<String>,
+}
+
+/// Records that the reader wants a topic written.
+async fn ask_for(_: Reader, State(state): State<AppState>, UrlPath((shelf, topic)): UrlPath<(String, String)>, body: Option<Json<Asked>>) -> Response {
+    let id = format!("{shelf}/{topic}");
+
+    // The topic is looked up rather than trusted: a request for something the
+    // plan does not offer is a stale app or a typed URL, and storing it would
+    // leave a row the author cannot act on.
+    let wanted = {
+        let Ok(plan) = state.plan.read() else {
+            return lock_poisoned();
+        };
+        plan.topic(&id).cloned()
+    };
+    let Some(wanted) = wanted else {
+        return not_found("no such topic");
+    };
+
+    let asked_at = body.and_then(|Json(body)| body.asked_at);
+    match requests::ask(&state.pool, &wanted, asked_at.as_deref()).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => failed(&error, "the request could not be saved"),
+    }
+}
+
+/// Takes a request back.
+async fn withdraw_request(_: Reader, State(state): State<AppState>, UrlPath((shelf, topic)): UrlPath<(String, String)>) -> Response {
+    let id = format!("{shelf}/{topic}");
+    match requests::withdraw(&state.pool, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such request"),
+        Err(error) => failed(&error, "the request could not be withdrawn"),
+    }
 }
 
 /// Every piece the reader marked, newest first.
@@ -756,6 +843,10 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         Ok(marked) => marked,
         Err(error) => return failed(&error, "the bookmarks could not be read"),
     };
+    let asked = match requests::all(&state.pool, since).await {
+        Ok(asked) => asked,
+        Err(error) => return failed(&error, "the requests could not be read"),
+    };
 
     // Not defaulted away: a vault-merge script keys "as of" on this field, and
     // an empty string would pass every check it makes while meaning nothing.
@@ -776,6 +867,7 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         quotes,
         reviews: schedules,
         bookmarks: marked,
+        requests: asked,
     })
     .into_response()
 }
@@ -864,6 +956,7 @@ mod tests {
         let state = AppState {
             pool: pool().await,
             library: Arc::new(RwLock::new(library)),
+            plan: Arc::new(RwLock::new(Plan::default())),
             indexed_at: Arc::new(RwLock::new(std::time::Instant::now())),
             content_dir: content.path().to_path_buf(),
             password_hash: None,
@@ -1298,6 +1391,128 @@ mod tests {
         let (status, body) = post(app(&web, &content, pool().await), "/api/reviews/02-istoriya/god-bez-leta", r#"{"again":false}"#).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"], "no such review");
+    }
+
+    /// A plan of topics published beside the library, the way the author
+    /// publishes one.
+    fn write_plan(root: &Path) {
+        std::fs::write(
+            root.join(crate::topics::FILE),
+            "# План новелл
+
+## 01 — Парадоксы и эффекты
+
+- [ ] Парадокс лжеца
+- [ ] Буриданов осёл
+",
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_stand_without_a_plan_offers_nothing_to_ask_for() {
+        // Publishing the plan is optional; a stand without one still serves
+        // the library, and the topics endpoint says so rather than failing.
+        let (web, content) = (web_root(), content_root());
+        let (status, body) = get_json(app(&web, &content, pool().await), "/api/topics").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["shelves"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_published_plan_is_offered_as_shelves_of_topics() {
+        let (web, content) = (web_root(), content_root());
+        write_plan(content.path());
+        let (status, body) = get_json(app(&web, &content, pool().await), "/api/topics").await;
+
+        assert_eq!(status, StatusCode::OK);
+        let shelves = body["shelves"].as_array().unwrap();
+        assert_eq!(shelves.len(), 1);
+        assert_eq!(shelves[0]["title"], "01 — Парадоксы и эффекты");
+        assert_eq!(shelves[0]["topics"].as_array().unwrap().len(), 2);
+        assert_eq!(shelves[0]["topics"][0]["title"], "Парадокс лжеца");
+    }
+
+    #[tokio::test]
+    async fn a_topic_is_asked_for_and_the_request_reaches_the_export() {
+        let (web, content) = (web_root(), content_root());
+        write_plan(content.path());
+        let app = app(&web, &content, pool().await);
+
+        let (_, plan) = get_json(app.clone(), "/api/topics").await;
+        let id = plan["shelves"][0]["topics"][0]["id"].as_str().expect("a topic id").to_string();
+
+        let (status, _) = post(app.clone(), &format!("/api/requests/{id}"), "{}").await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (_, asked) = get_json(app.clone(), "/api/requests").await;
+        assert_eq!(asked.as_array().unwrap().len(), 1);
+        assert_eq!(asked[0]["title"], "Парадокс лжеца", "the request did not keep the words it was made with");
+
+        // The author reads this from the vault, so it has to be in the export.
+        let (_, body) = get_json(app, "/api/export").await;
+        assert_eq!(body["requests"][0]["topic_id"], id.as_str());
+    }
+
+    #[tokio::test]
+    async fn asking_for_something_the_plan_does_not_offer_is_refused() {
+        // A request for a topic nobody published would leave a row the author
+        // cannot act on - and would look, in the export, exactly like one they
+        // could.
+        let (web, content) = (web_root(), content_root());
+        write_plan(content.path());
+        let (status, body) = post(
+            app(&web, &content, pool().await),
+            "/api/requests/01-paradoksy-i-effekty/nothing-like-this",
+            "{}",
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such topic");
+    }
+
+    #[tokio::test]
+    async fn a_request_is_withdrawn_and_saying_so_twice_is_not_a_success() {
+        let (web, content) = (web_root(), content_root());
+        write_plan(content.path());
+        let app = app(&web, &content, pool().await);
+
+        let (_, plan) = get_json(app.clone(), "/api/topics").await;
+        let id = plan["shelves"][0]["topics"][0]["id"].as_str().unwrap().to_string();
+        post(app.clone(), &format!("/api/requests/{id}"), "{}").await;
+
+        let response = app
+            .clone()
+            .oneshot(Request::delete(format!("/api/requests/{id}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        // Again: there is nothing left to withdraw, and saying so lets an app
+        // with a stale list find out.
+        let response = app
+            .oneshot(Request::delete(format!("/api/requests/{id}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn republishing_the_plan_brings_new_topics() {
+        // The plan is published with the library and re-read with it: an
+        // author who adds topics and republishes expects both to arrive.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (_, before) = get_json(app.clone(), "/api/topics").await;
+        assert_eq!(before["shelves"].as_array().unwrap().len(), 0);
+
+        write_plan(content.path());
+        let response = app.clone().oneshot(Request::post("/api/reindex").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let (_, after) = get_json(app, "/api/topics").await;
+        assert_eq!(after["shelves"].as_array().unwrap().len(), 1, "a republished plan did not reach the stand");
     }
 
     #[tokio::test]

@@ -27,6 +27,8 @@ export function Drawer({
   due,
   quotes,
   bookmarks,
+  asked,
+  hasPlan,
   route,
 }: {
   open: boolean
@@ -35,6 +37,9 @@ export function Drawer({
   due: number
   quotes: number
   bookmarks: number
+  asked: number
+  /** Whether the author published a plan; without one there is nothing to ask for. */
+  hasPlan: boolean
   /** The current route, so the drawer can mark where the reader already is. */
   route: Route
 }) {
@@ -128,6 +133,14 @@ export function Drawer({
             onClick={() => { goTo({ name: 'bookmarks' }) }}
           />
           <Entry label="Kept lines" count={quotes} active={route.name === 'quotes'} onClick={() => { goTo({ name: 'quotes' }) }} />
+          {hasPlan ? (
+            <Entry
+              label="Ask for one"
+              count={asked}
+              active={route.name === 'ask'}
+              onClick={() => { goTo({ name: 'ask' }) }}
+            />
+          ) : null}
         </nav>
 
         <div className="flex flex-col gap-1 px-2 py-3">

@@ -77,8 +77,8 @@ async fn main() -> Result<()> {
             let done = rhapsod::restore::restore(&pool, &export).await?;
 
             println!(
-                "restored {} pieces of reading state, {} notes, {} quotes, {} schedules, {} bookmarks from an export taken at {}",
-                done.reading, done.notes, done.quotes, done.reviews, done.bookmarks, export.exported_at
+                "restored {} pieces of reading state, {} notes, {} quotes, {} schedules, {} bookmarks, {} requests from an export taken at {}",
+                done.reading, done.notes, done.quotes, done.reviews, done.bookmarks, done.requests, export.exported_at
             );
             // Silence about what was skipped would read as "nothing to do"
             // when the real answer is "this stand already had it".
@@ -86,7 +86,8 @@ async fn main() -> Result<()> {
                 + (export.notes.len() - done.notes)
                 + (export.quotes.len() - done.quotes)
                 + (export.reviews.len() - done.reviews)
-                + (export.bookmarks.len() - done.bookmarks);
+                + (export.bookmarks.len() - done.bookmarks)
+                + (export.requests.len() - done.requests);
             if skipped > 0 {
                 println!("{skipped} rows were already there and were left alone");
             }

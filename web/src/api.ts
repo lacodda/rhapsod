@@ -91,6 +91,35 @@ export interface Quote {
   created_at: string
 }
 
+/** Something the author could write, from the published plan. */
+export interface Topic {
+  id: string
+  title: string
+  /** The shelf of the plan it would belong to. */
+  section: string
+}
+
+/** A shelf of the plan. */
+export interface TopicShelf {
+  id: string
+  title: string
+  topics: Topic[]
+}
+
+/** The plan, as the app receives it. Empty when none was published. */
+export interface Plan {
+  shelves: TopicShelf[]
+}
+
+/** A topic the reader asked for. */
+export interface Request {
+  topic_id: string
+  /** The title as it read when the request was made. */
+  title: string
+  section: string
+  asked_at: string
+}
+
 /** The kinds a bookmark can be. The server refuses anything else. */
 export const BOOKMARK_KINDS = ['loved', 'return', 'song', 'reread'] as const
 
@@ -227,6 +256,22 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
   }
   return response.status === 204 ? null : ((await response.json()) as T)
 }
+
+export const fetchTopics = (): Promise<Plan> => get<Plan>('/topics')
+
+export const fetchRequests = (): Promise<Request[]> => get<Request[]>('/requests')
+
+/**
+ * Asks for a topic to be written.
+ *
+ * Queued like every other change: a reader decides they want something while
+ * reading, which is usually nowhere near the stand.
+ */
+export const askFor = (topicId: string): Promise<void> =>
+  queue({ path: `/requests/${topicId}`, method: 'POST', body: { asked_at: now() } })
+
+export const withdrawRequest = (topicId: string): Promise<void> =>
+  queue({ path: `/requests/${topicId}`, method: 'DELETE', body: {} })
 
 export const fetchBookmarks = (): Promise<Bookmark[]> => get<Bookmark[]>('/bookmarks')
 

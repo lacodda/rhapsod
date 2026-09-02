@@ -18,6 +18,7 @@ export type Route =
   // The kind is part of the address: a filter the reader can bookmark in
   // their own browser, and one the back button steps through.
   | { name: 'bookmarks'; kind?: string }
+  | { name: 'ask' }
 
 /** Reads the current path as a route. An unknown path is the library. */
 export function parse(path: string): Route {
@@ -28,6 +29,9 @@ export function parse(path: string): Route {
   }
   if (parts[0] === 'today') {
     return { name: 'today' }
+  }
+  if (parts[0] === 'ask') {
+    return { name: 'ask' }
   }
   if (parts[0] === 'bookmarks') {
     return parts[1] ? { name: 'bookmarks', kind: parts[1] } : { name: 'bookmarks' }
@@ -56,6 +60,8 @@ export function href(route: Route): string {
       return '/today'
     case 'bookmarks':
       return route.kind ? `/bookmarks/${route.kind}` : '/bookmarks'
+    case 'ask':
+      return '/ask'
     default:
       return '/'
   }
