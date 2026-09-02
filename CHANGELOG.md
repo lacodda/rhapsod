@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.0] - 2026-09-02
+
+### Bug Fixes
+- Keep a locked stand from handing out the library
+
+### Documentation
+- Document sessions, progress and what comes next
+
+### Features
+- Remember where the reader is
+- Continue where you stopped, and offer what to read next
+
 ## [0.1.1] - 2026-09-02
 
 ### Bug Fixes
