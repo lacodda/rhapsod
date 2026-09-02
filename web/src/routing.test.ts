@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { href, parse } from '@/routing'
 
 describe('parse', () => {
+  it('reads the review screen', () => {
+    // Today's returns get an address of their own, so the header link and a
+    // bookmark both land somewhere real.
+    expect(parse('/today')).toEqual({ name: 'today' })
+    expect(href({ name: 'today' })).toBe('/today')
+  })
+
+
   it('reads a piece as its shelf and its name', () => {
     // The two segments are what make the address bar say where in the library
     // the reader is; a single opaque id would not.

@@ -5,7 +5,7 @@ description: Fetch the reading state, the notes and the quotes off a stand as on
 
 The library goes out to the stand as files. What you made of it - where you got to, what you wrote, the lines you kept - stays on the stand, in a SQLite file the markdown never touches ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
 
-**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a script of your own can fold your notes into the vault the library was published from.
+**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a script of your own can fold your notes into the vault the library was published from. One document carries all four kinds: what you read, what you wrote, what you kept, and where each piece stands in its review schedule.
 
 It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is strictly a read: nothing on the stand changes, and running it twice differs only in the file it writes.
 
@@ -77,39 +77,60 @@ One JSON object with four keys.
 
 ```json
 {
-  "exported_at": "2026-09-02T11:25:07.935Z",
-  "version": "0.2.0",
+  "exported_at": "2026-09-02T16:28:28.881Z",
+  "version": "0.5.0",
   "reading": [
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "status": "reading",
-      "paragraph": 7,
-      "updated_at": "2026-09-02T11:23:10.120Z",
-      "read_at": null
-    },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T11:23:10.171Z",
-      "read_at": "2026-09-02T11:23:10.171Z"
+      "updated_at": "2026-09-02T16:28:08.266Z",
+      "read_at": "2026-09-02T16:28:08.266Z"
+    },
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "status": "reading",
+      "paragraph": 7,
+      "updated_at": "2026-09-02T16:28:08.296Z",
+      "read_at": null
     }
   ],
   "notes": [
     {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "body": "Год без лета — и целая эпоха следом.",
+      "updated_at": "2026-09-02T16:28:08.301Z"
+    },
+    {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "body": "Письма пережили обоих. Это и есть сюжет.",
-      "updated_at": "2026-09-02T11:22:44.935Z"
+      "body": "Письма шли дольше, чем длится иная жизнь.",
+      "updated_at": "2026-09-02T16:28:08.298Z"
     }
   ],
   "quotes": [
     {
-      "id": 2,
+      "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "paragraph": 1,
+      "text": "Она пишет ему из монастыря.",
+      "comment": "Двадцать лет спустя.",
+      "created_at": "2026-09-02T16:28:08.305Z"
+    },
+    {
+      "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
       "piece_id": "02-istoriya/god-bez-leta",
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T11:22:52.250Z"
+      "created_at": "2026-09-02T16:28:08.303Z"
+    }
+  ],
+  "reviews": [
+    {
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "done": 1,
+      "due_on": "2026-09-09",
+      "last_seen": "2026-09-02T16:28:28.877Z"
     }
   ]
 }
@@ -122,6 +143,7 @@ One JSON object with four keys.
 | `reading` | One row per piece you have opened. A piece with no row here has not been opened - that status has no storage. |
 | `notes` | One row per note. **A piece missing from this list has no note**: an emptied note is deleted rather than kept empty. |
 | `quotes` | Every line you kept, newest first. |
+| `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 

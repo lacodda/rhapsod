@@ -3,12 +3,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, fetchLibrary, fetchSession, type LibraryIndex, type Session } from '@/api'
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { QuotesScreen } from '@/Quotes'
+import { ReviewsScreen } from '@/Reviews'
 import { ReaderScreen } from '@/Reader'
 import { cacheLibrary } from '@/offline'
 import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
 import { useProgress } from '@/useProgress'
+import { useReviews } from '@/useReviews'
 import { useSync } from '@/useSync'
 import type { SyncState } from '@/sync'
 
@@ -28,6 +30,7 @@ export function App() {
   const mayRead = session?.reader === true
   const progress = useProgress(mayRead)
   const marks = useMarks(mayRead)
+  const reviews = useReviews(mayRead)
   const sync = useSync()
 
   useEffect(() => {
@@ -71,7 +74,7 @@ export function App() {
 
   return (
     <div className="min-h-dvh">
-      <Header quotes={marks.quotes.length} sync={sync} />
+      <Header quotes={marks.quotes.length} due={reviews.cards.length} sync={sync} />
       <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
         {session === null ? (
           <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
@@ -90,10 +93,12 @@ export function App() {
           <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} marks={marks} />
         ) : route.name === 'quotes' ? (
           <QuotesScreen library={library} marks={marks} />
+        ) : route.name === 'today' ? (
+          <ReviewsScreen reviews={reviews} />
         ) : route.name === 'section' ? (
           <SectionScreen library={library} section={route.section} progress={progress} />
         ) : (
-          <LibraryScreen library={library} progress={progress} />
+          <LibraryScreen library={library} progress={progress} due={reviews.cards.length} />
         )}
       </main>
     </div>
@@ -106,7 +111,7 @@ export function App() {
  * It scrolls away with the page instead of sitting over it - on a phone a
  * sticky bar costs a line of text on every screen of a seven-minute read.
  */
-function Header({ quotes, sync }: { quotes: number; sync: SyncState }) {
+function Header({ quotes, due, sync }: { quotes: number; due: number; sync: SyncState }) {
   return (
     <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
       <a
@@ -121,6 +126,19 @@ function Header({ quotes, sync }: { quotes: number; sync: SyncState }) {
         rhapsod
       </a>
       <span className="flex items-baseline gap-3">
+        {due > 0 ? (
+          <a
+            href="/today"
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+              event.preventDefault()
+              go({ name: 'today' })
+            }}
+            className="rounded-md px-2 py-1 font-mono text-xs text-accent hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            today {due}
+          </a>
+        ) : null}
         {quotes > 0 ? (
           <a
             href="/quotes"

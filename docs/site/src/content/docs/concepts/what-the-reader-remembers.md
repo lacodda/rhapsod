@@ -113,6 +113,36 @@ Two readings of the same piece can land on the same line and mean different thin
 
 It follows that a quote is identified by its id and not by what it says. That id is **minted on the device that kept the line**, not handed out by the server. A highlight made on a train has to be commentable and removable there too, hours before the stand hears about it - and an id assigned by the server could not be used until the queue drained. `POST /api/quotes` carries the id with it and answers with the stored row; sending the same one twice keeps the line once ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
 
+## Coming back to it
+
+A library that is only read is a library that is forgotten. Finishing a piece puts it into a schedule, and it comes back three times: **a day later, then a week, then a month**. After the third return it is carried, and never comes back on its own.
+
+Those three gaps are fixed. They are not an algorithm that adapts an interval per piece, and there is no grade to give ([ADR 0004](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0004-fixed-review-schedule.md)). That machinery exists for decks of thousands of items under exam pressure, where a day either way compounds into passing or failing; this is a few hundred novellas read for pleasure by one person, and three returns spread over a month is the whole of what "do not let this fade" needs.
+
+### The card is the line, not the piece
+
+A card shows the piece's title and **the line it wants remembered** - the one-liner the piece already ends with, written for exactly this.
+
+It does not show the text. A card that showed the prose would answer its own question: the point is to find out whether the thing is still in your head, and reading it again is what you do *after* discovering that it is not.
+
+### Two answers, neither of them a grade
+
+**I remember** retires this return and sets the next one - a week after the first, a month after the second.
+
+**Open it** takes you to the piece and **keeps its place in the schedule**, bringing it back tomorrow. Going back to read something is not the same as having recalled it, so the return is not retired. It is not counted as a failure either: resetting a month of schedule because you were curious enough to reread would be teaching the wrong lesson about a library read for pleasure.
+
+### Enrolling is finishing
+
+Nothing asks you to add a piece to the schedule. Marking it read is what enrols it, because the schedule follows from having read something and a second decision about one act is a decision too many.
+
+Marking a piece unread takes it out again - something in the middle of being read is not a thing to recall. And re-finishing a piece already in the schedule does not restart it: a favourite you reread has not been forgotten, and bringing it back tomorrow for having been enjoyed twice would be punishing the enjoyment.
+
+### Nothing expires
+
+What is due is everything dated **today or earlier**. A reader who was away for a week comes back to what accumulated, not to an empty screen that quietly dropped six days of returns.
+
+When nothing is due - which is most days - the library screen says nothing about it at all. A counter reading zero on every visit is noise.
+
 ## Made here, delivered later
 
 Every change described above is written on the device first and shown as done at once - then delivered to the stand whenever it can be reached ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). Nothing waits for the network, because the network is usually a Pi at home and the reading usually happens somewhere else.

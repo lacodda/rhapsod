@@ -20,6 +20,7 @@ use crate::auth::{self, Reader};
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
 use crate::progress;
+use crate::reviews;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -63,6 +64,8 @@ pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: P
         .route("/notes/{section}/{piece}", post(write_note))
         .route("/quotes", get(read_quotes).post(keep_quote))
         .route("/quotes/{id}", post(edit_quote).delete(drop_quote))
+        .route("/reviews", get(read_due))
+        .route("/reviews/{section}/{piece}", post(answer_review))
         .route("/export", get(export))
         .fallback(api_not_found)
         .with_state(state);
@@ -396,10 +399,17 @@ async fn record_progress(_: Reader, State(state): State<AppState>, UrlPath((sect
         return failed(&error, "the reading state could not be saved");
     }
 
-    if let Some(read) = moved.read
-        && let Err(error) = progress::set_read(&state.pool, &id, read, marked_at).await
-    {
-        return failed(&error, "the reading state could not be saved");
+    if let Some(read) = moved.read {
+        if let Err(error) = progress::set_read(&state.pool, &id, read, marked_at).await {
+            return failed(&error, "the reading state could not be saved");
+        }
+        // Finishing a piece enrols it in the schedule and unfinishing takes it
+        // out again, in the same request: the schedule follows from having
+        // read something, and making the reader enrol a piece separately
+        // would be a second decision about one act.
+        if let Err(error) = reviews::follow(&state.pool, &id, read).await {
+            return failed(&error, "the review schedule could not be saved");
+        }
     }
 
     StatusCode::NO_CONTENT.into_response()
@@ -568,6 +578,49 @@ struct Export {
     reading: Vec<progress::State>,
     notes: Vec<marks::Note>,
     quotes: Vec<marks::Quote>,
+    reviews: Vec<reviews::Review>,
+}
+
+/// What is worth recalling today.
+///
+/// The card is the piece title and the line it wants remembered; the text is
+/// not sent, because a card that shows the piece is not a card. The app fetches
+/// this once per visit to the library screen.
+async fn read_due(_: Reader, State(state): State<AppState>) -> Response {
+    // The library is cloned out of the lock rather than held across the query:
+    // a read lock held over an await would block a reindex for as long as the
+    // database takes.
+    let library = {
+        let Ok(held) = state.library.read() else {
+            return lock_poisoned();
+        };
+        held.clone()
+    };
+
+    match reviews::due(&state.pool, &library).await {
+        Ok(cards) => Json(json!({ "due": cards })).into_response(),
+        Err(error) => failed(&error, "what is due could not be read"),
+    }
+}
+
+/// What the app sends when the reader answers a card.
+#[derive(Deserialize)]
+struct Answer {
+    /// True when the reader asked for the piece back rather than saying they
+    /// remember it: the card keeps its place and returns tomorrow.
+    again: bool,
+}
+
+/// Records an answer, moving the piece along its schedule or bringing it back.
+async fn answer_review(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>, Json(answer): Json<Answer>) -> Response {
+    let id = format!("{section}/{piece}");
+    match reviews::answered(&state.pool, &id, answer.again).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        // No schedule for this piece: the app is holding a stale card, and
+        // saying so lets it find out rather than believing it answered.
+        Ok(false) => not_found("no such review"),
+        Err(error) => failed(&error, "the answer could not be saved"),
+    }
 }
 
 /// The whole of the reader's side of the library, for the vault to take back.
@@ -588,6 +641,10 @@ async fn export(_: Reader, State(state): State<AppState>) -> Response {
         Ok(quotes) => quotes,
         Err(error) => return failed(&error, "the quotes could not be read"),
     };
+    let schedules = match reviews::all(&state.pool).await {
+        Ok(schedules) => schedules,
+        Err(error) => return failed(&error, "the review schedules could not be read"),
+    };
 
     // Not defaulted away: a vault-merge script keys "as of" on this field, and
     // an empty string would pass every check it makes while meaning nothing.
@@ -605,6 +662,7 @@ async fn export(_: Reader, State(state): State<AppState>) -> Response {
         reading,
         notes,
         quotes,
+        reviews: schedules,
     })
     .into_response()
 }
@@ -1011,6 +1069,79 @@ mod tests {
 
         let response = app.oneshot(Request::delete("/api/quotes/999").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn finishing_a_piece_puts_it_up_for_recall() {
+        // The schedule follows from having read something; nothing asks the
+        // reader to enrol a piece as a second act.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+
+        // Not due yet: the first return is tomorrow, and a card that appeared
+        // the moment you finished would be asking you to recall what you just
+        // put down.
+        let (status, body) = get_json(app.clone(), "/api/reviews").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["due"].as_array().unwrap().len(), 0);
+
+        // The export carries the schedule, so the vault gets it back.
+        let (_, body) = get_json(app, "/api/export").await;
+        assert_eq!(body["reviews"][0]["piece_id"], "02-istoriya/god-bez-leta");
+        assert_eq!(body["reviews"][0]["done"], 0);
+    }
+
+    #[tokio::test]
+    async fn a_card_carries_the_line_and_not_the_text() {
+        // A card that shows the piece is not a card.
+        let (web, content) = (web_root(), content_root());
+        let pool = pool().await;
+        let app = app(&web, &content, pool.clone());
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+        // Bring it due, the way a day passing would.
+        sqlx::query("UPDATE reviews SET due_on = date('now')").execute(&pool).await.unwrap();
+
+        let (status, body) = get_json(app, "/api/reviews").await;
+        assert_eq!(status, StatusCode::OK);
+        let card = &body["due"][0];
+        assert_eq!(card["piece_id"], "02-istoriya/god-bez-leta");
+        assert_eq!(card["title"], "Год без лета");
+        assert_eq!(card["one_liner"], "Строка.");
+        assert_eq!(card["step"], 1, "the first return is step 1");
+        assert!(card.get("paragraphs").is_none(), "a card carried the text of the piece");
+    }
+
+    #[tokio::test]
+    async fn answering_a_card_moves_it_along_and_takes_it_off_today() {
+        let (web, content) = (web_root(), content_root());
+        let pool = pool().await;
+        let app = app(&web, &content, pool.clone());
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+        sqlx::query("UPDATE reviews SET due_on = date('now')").execute(&pool).await.unwrap();
+
+        let (status, _) = post(app.clone(), "/api/reviews/02-istoriya/god-bez-leta", r#"{"again":false}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (_, body) = get_json(app, "/api/reviews").await;
+        assert_eq!(body["due"].as_array().unwrap().len(), 0, "an answered card was still due today");
+
+        let (done, due): (i64, Option<String>) = sqlx::query_as("SELECT done, due_on FROM reviews").fetch_one(&pool).await.unwrap();
+        assert_eq!(done, 1);
+        assert!(due.is_some(), "the piece has another return to come");
+    }
+
+    #[tokio::test]
+    async fn answering_for_a_piece_with_no_schedule_is_not_a_silent_success() {
+        // The app can hold a stale card - the piece was marked unread on
+        // another device - and a 204 would let it believe it answered.
+        let (web, content) = (web_root(), content_root());
+        let (status, body) = post(app(&web, &content, pool().await), "/api/reviews/02-istoriya/god-bez-leta", r#"{"again":false}"#).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such review");
     }
 
     #[tokio::test]

@@ -14,7 +14,8 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/library`, `/sections`, `/sections/{section}`, `/pieces/...` | Needs a session. |
 | `GET /api/progress`, `POST /api/progress/...`, `GET /api/next` | Needs a session. |
 | `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
-| `GET /api/export` | Needs a session. It is the reading state, the notes and the quotes at once. |
+| `GET /api/reviews`, `POST /api/reviews/...` | Needs a session. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes and the schedules at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -30,7 +31,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.4.0","pieces":2}
+{"status":"ok","version":"0.5.0","pieces":2}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -514,20 +515,20 @@ curl http://127.0.0.1:8084/api/quotes
 ```json
 [
   {
+    "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
+    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "paragraph": 1,
+    "text": "Она пишет ему из монастыря.",
+    "comment": "Двадцать лет спустя.",
+    "created_at": "2026-09-02T16:28:08.305Z"
+  },
+  {
     "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
     "piece_id": "02-istoriya/god-bez-leta",
     "paragraph": 1,
     "text": "Следующее лето не пришло.",
     "comment": "Тамбора, 1815.",
-    "created_at": "2026-09-02T15:21:18.476Z"
-  },
-  {
-    "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
-    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-    "paragraph": 1,
-    "text": "Она пишет ему из монастыря.",
-    "comment": "this is the mechanism",
-    "created_at": "2026-09-02T15:19:52.200Z"
+    "created_at": "2026-09-02T16:28:08.303Z"
   }
 ]
 ```
@@ -663,6 +664,73 @@ curl -X DELETE http://127.0.0.1:8084/api/quotes/9d3b81c0-2f45-4c88-b7e6-31a0d5e7
 {"error":"no such quote"}
 ```
 
+## `GET /api/reviews`
+
+What is worth recalling today. Answers a list of cards, newest schedules last.
+
+```sh
+curl http://127.0.0.1:8084/api/reviews
+```
+
+```json
+{
+  "due": [
+    {
+      "one_liner": "Письмо шло год и пришло без обратного адреса.",
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "step": 1,
+      "title": "Абеляр и Элоиза"
+    }
+  ]
+}
+```
+
+A card is the piece's title and the line it wants remembered - never its text. Every novella ends with the line its author wrote for exactly this purpose, and a card showing the prose would answer its own question ([ADR 0004](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0004-fixed-review-schedule.md)).
+
+`step` is which return this is, of three. What comes back is everything due **today or earlier**, so a reader who was away for a week finds the backlog rather than an empty screen that quietly dropped six days.
+
+A piece renamed in the vault is skipped rather than drawn as a card with no text. The row survives and the export still carries it.
+
+## `POST /api/reviews/{section}/{piece}`
+
+Answers a card. Answers `204`.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/reviews/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"again":false}'
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+The card is then off today's list:
+
+```sh
+curl http://127.0.0.1:8084/api/reviews
+```
+
+```json
+{
+  "due": []
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `again` | `false` retires this return and sets the next one; `true` keeps the piece's place and brings it back tomorrow. |
+
+`true` is what the app sends when the reader opens the piece from a card. Going back to read something is not the same as having recalled it, so the step is not retired - and it is not counted as a failure either, which would reset a month of schedule for being curious.
+
+A piece with no schedule - never finished, or marked unread on another device - is `404` rather than a silent success, so an app holding a stale card finds out:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/reviews/19-lyubov-i-pary/abelyar-i-eloiza   -H 'content-type: application/json' -d '{"again":false}'
+```
+
+```json
+{"error":"no such review"}
+```
+
 ## `GET /api/export`
 
 Everything the reader has left behind, in one document.
@@ -673,52 +741,60 @@ curl http://127.0.0.1:8084/api/export
 
 ```json
 {
-  "exported_at": "2026-09-02T15:22:12.598Z",
-  "version": "0.4.0",
+  "exported_at": "2026-09-02T16:28:28.881Z",
+  "version": "0.5.0",
   "reading": [
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "status": "read",
-      "paragraph": 3,
-      "updated_at": "2026-09-02T15:20:03.563Z",
-      "read_at": "2026-09-02T15:20:03.563Z"
-    },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T15:22:12.320Z",
-      "read_at": "2026-09-02T15:22:12.320Z"
+      "updated_at": "2026-09-02T16:28:08.266Z",
+      "read_at": "2026-09-02T16:28:08.266Z"
+    },
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "status": "reading",
+      "paragraph": 7,
+      "updated_at": "2026-09-02T16:28:08.296Z",
+      "read_at": null
     }
   ],
   "notes": [
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T15:22:12.327Z"
+      "updated_at": "2026-09-02T16:28:08.301Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T15:22:12.324Z"
+      "updated_at": "2026-09-02T16:28:08.298Z"
     }
   ],
   "quotes": [
+    {
+      "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "paragraph": 1,
+      "text": "Она пишет ему из монастыря.",
+      "comment": "Двадцать лет спустя.",
+      "created_at": "2026-09-02T16:28:08.305Z"
+    },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
       "piece_id": "02-istoriya/god-bez-leta",
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T15:21:18.476Z"
-    },
+      "created_at": "2026-09-02T16:28:08.303Z"
+    }
+  ],
+  "reviews": [
     {
-      "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "paragraph": 1,
-      "text": "Она пишет ему из монастыря.",
-      "comment": "this is the mechanism",
-      "created_at": "2026-09-02T15:19:52.200Z"
+      "done": 1,
+      "due_on": "2026-09-09",
+      "last_seen": "2026-09-02T16:28:28.877Z"
     }
   ]
 }

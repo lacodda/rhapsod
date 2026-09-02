@@ -91,6 +91,16 @@ export interface Quote {
   created_at: string
 }
 
+/** A piece waiting to be recalled today. */
+export interface Card {
+  piece_id: string
+  title: string
+  /** The line the piece wants remembered: the whole of the card's front. */
+  one_liner: string | null
+  /** Which return this is, 1 to 3. */
+  step: number
+}
+
 /** Whether this browser may read, and whether it has to prove anything. */
 export interface Session {
   open: boolean
@@ -205,6 +215,18 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
   }
   return response.status === 204 ? null : ((await response.json()) as T)
 }
+
+export const fetchDue = (): Promise<{ due: Card[] }> => get<{ due: Card[] }>('/reviews')
+
+/**
+ * Answers a card.
+ *
+ * Queued like every other change: recall happens on a phone, and the stand is
+ * at home. `again` is the reader asking for the piece back rather than saying
+ * they remember it.
+ */
+export const answerCard = (pieceId: string, again: boolean): Promise<void> =>
+  queue({ path: `/reviews/${pieceId}`, method: 'POST', body: { again } })
 
 export const fetchNotes = (): Promise<Note[]> => get<Note[]>('/notes')
 

@@ -9,7 +9,12 @@
 
 import { useEffect, useState } from 'react'
 
-export type Route = { name: 'library' } | { name: 'section'; section: string } | { name: 'piece'; id: string } | { name: 'quotes' }
+export type Route =
+  | { name: 'library' }
+  | { name: 'section'; section: string }
+  | { name: 'piece'; id: string }
+  | { name: 'quotes' }
+  | { name: 'today' }
 
 /** Reads the current path as a route. An unknown path is the library. */
 export function parse(path: string): Route {
@@ -17,6 +22,9 @@ export function parse(path: string): Route {
 
   if (parts[0] === 'quotes') {
     return { name: 'quotes' }
+  }
+  if (parts[0] === 'today') {
+    return { name: 'today' }
   }
   if (parts[0] === 'section' && parts[1]) {
     return { name: 'section', section: parts[1] }
@@ -38,6 +46,8 @@ export function href(route: Route): string {
       return `/read/${route.id}`
     case 'quotes':
       return '/quotes'
+    case 'today':
+      return '/today'
     default:
       return '/'
   }

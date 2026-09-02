@@ -37,7 +37,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.4.0","pieces":2}
+{"status":"ok","version":"0.5.0","pieces":2}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server is up, but whether it is serving the library you just published.
@@ -99,9 +99,11 @@ None of it touches the library. The markdown is still read and never written, an
 
 **And now it goes where you go.** The app installs to a home screen and carries the whole library with it - every piece, not only the ones you happened to open - so a train with no signal is a place to read rather than a spinner. Everything you do there is written on the device and shown as done at once: a position, a finished piece, a note, a kept line. When the stand is in reach again the changes are delivered in the order you made them, and the header says how many are still waiting. Where two devices disagree, the change made later wins - by the clock of the device that made it, not by which one reached the Pi first.
 
+**And now it brings the library back.** A piece you finish returns three times - a day later, then a week, then a month - as a card carrying its title and the line it wants remembered, never its text. Two answers, neither of them a grade: **I remember** retires the return, **open it** takes you to the piece and keeps its place in the schedule, because rereading something is not the same as having recalled it. Nothing expires: a week away leaves you the backlog, not an empty screen. When nothing is due, the screen says nothing at all.
+
 The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
 
-Spaced repetition over the lines you marked is what the release after this one builds. Watch this repository.
+Ordering novellas you have not written yet, and a way from a novella to a song, are what the releases after this one build. Watch this repository.
 
 ## Development
 

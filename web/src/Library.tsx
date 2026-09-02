@@ -92,7 +92,16 @@ function SectionRow({ section, read }: { section: Section; read: number }) {
 }
 
 /** The library: what to continue, what it adds up to, and every shelf. */
-export function LibraryScreen({ library, progress }: { library: LibraryIndex; progress: ProgressStore }) {
+export function LibraryScreen({
+  library,
+  progress,
+  due,
+}: {
+  library: LibraryIndex
+  progress: ProgressStore
+  /** How many pieces are waiting to be recalled today. */
+  due: number
+}) {
   const readBySection = new Map<string, number>()
   for (const piece of library.pieces) {
     if (progress.states.get(piece.id)?.status === 'read') {
@@ -111,6 +120,8 @@ export function LibraryScreen({ library, progress }: { library: LibraryIndex; pr
         </p>
       </header>
 
+      {due > 0 ? <Today due={due} /> : null}
+
       {resume ? <Resume piece={resume} /> : null}
 
       <Stats stats={progress.stats} />
@@ -121,6 +132,37 @@ export function LibraryScreen({ library, progress }: { library: LibraryIndex; pr
         ))}
       </ul>
     </div>
+  )
+}
+
+/**
+ * What is waiting to be recalled.
+ *
+ * Above the piece in progress, because this is the part of the screen with a
+ * deadline: the piece being read will still be there this evening, and a
+ * return that is skipped for a week stops being a return.
+ *
+ * Nothing is drawn when nothing is due, which is most days.
+ */
+function Today({ due }: { due: number }) {
+  return (
+    <a
+      href="/today"
+      onClick={(event) => {
+        navigate(event, { name: 'today' })
+      }}
+      className="mx-3 flex items-baseline justify-between gap-3 rounded-xl border border-accent/40 bg-accent/5 p-4 transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    >
+      <span className="flex flex-col gap-1">
+        <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Today</span>
+        <span className="text-lg font-medium leading-snug text-text">
+          {due} {due === 1 ? 'piece' : 'pieces'} to bring back
+        </span>
+      </span>
+      <span aria-hidden className="font-mono text-sm text-accent">
+        &rarr;
+      </span>
+    </a>
   )
 }
 
