@@ -77,7 +77,11 @@ else
     # round trip, and the whole directory on the wire instead of the diff.
     echo "publish-content: rsync not found, falling back to scp"
     echo "publish-content: clearing $target/ so removed pieces do not survive"
-    ssh "$RHAPSOD_PUBLISH_HOST" "rm -rf -- '$dest' && mkdir -p -- '$dest'"
+    # The contents go, the directory itself stays. Removing and recreating it
+    # would give a new inode, and a container that bind-mounts this path keeps
+    # the old one: the files land on the host and the server serves an empty
+    # library forever. Cost the stand its first deployment.
+    ssh "$RHAPSOD_PUBLISH_HOST" "mkdir -p -- '$dest' && find '$dest' -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +"
     echo "publish-content: scp $src/. -> $target/"
     scp -r "$src/." "$target/"
     copier=scp
@@ -88,4 +92,22 @@ fi
 echo "publish-content: reindexing $RHAPSOD_PUBLISH_URL"
 counts=$(curl -fsS -X POST "$RHAPSOD_PUBLISH_URL/api/reindex")
 
+# How many files were sent, and how many the server ended up serving. A copy
+# that lands on the host but not inside the container is invisible to every
+# step above: the files are there, the reindex answers 200, and the reader
+# gets an empty library. This happened on the stand's first deployment - a
+# container started against a directory that was empty at the time keeps
+# serving that emptiness - so the counts are compared rather than reported.
+sent=$(find "$RHAPSOD_PUBLISH_SRC" -mindepth 2 -name '*.md' | wc -l | tr -d ' ')
+serving=$(printf '%s' "$counts" | tr -dc '0-9,' | cut -d, -f1)
+sent=${sent:-0}
+serving=${serving:-0}
+
 echo "publish-content: published with $copier; the server now serves $counts"
+
+if [ "${serving:-0}" -eq 0 ] && [ "$sent" -gt 0 ]; then
+    echo "publish-content: sent $sent pieces but the server serves none." >&2
+    echo "publish-content: the files reached the host; the server is not seeing them." >&2
+    echo "publish-content: restart it so it picks the directory up: docker compose restart" >&2
+    exit 1
+fi

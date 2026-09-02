@@ -389,6 +389,12 @@ fn slug(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut dash = false;
     for ch in name.chars() {
+        // The soft and hard signs carry no sound and no word boundary: they
+        // simply vanish. Treating them as separators put a dash inside a word
+        // (`uplotnitel-nye`), which is what the stand's URLs showed.
+        if matches!(ch, 'ь' | 'Ь' | 'ъ' | 'Ъ') {
+            continue;
+        }
         let mapped = transliterate(ch);
         if mapped.is_empty() {
             if !out.is_empty() && !dash {
@@ -565,6 +571,9 @@ topic: Тема
         assert_eq!(slug("Кейдж и 4′33″"), "keydzh-i-4-33");
         assert_eq!(slug("  Ёж  "), "ezh");
         assert_eq!(slug("Пары"), "pary", "й and ы are not и");
+        // A soft sign is silent, not a word break: it must not leave a dash
+        // in the middle of a word.
+        assert_eq!(slug("Уплотнительные кольца"), "uplotnitelnye-kolca");
     }
 
     #[test]
