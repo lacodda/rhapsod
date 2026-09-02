@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.2] - 2026-09-02
+
+### Bug Fixes
+- Draw the icons instead of borrowing them from a font
+
+
 ## [0.9.1] - 2026-09-02
 
 ### Bug Fixes
