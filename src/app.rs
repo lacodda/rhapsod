@@ -359,6 +359,10 @@ struct Moved {
     paragraph: Option<i64>,
     /// Set to finish or unfinish the piece.
     read: Option<bool>,
+    /// When the device recorded this, so a report drained from an offline
+    /// queue does not overwrite a newer one (ADR 0003). Absent from a report
+    /// sent live, which is the same thing as "now".
+    marked_at: Option<String>,
 }
 
 /// Records where the reader is in a piece.
@@ -380,18 +384,20 @@ async fn record_progress(_: Reader, State(state): State<AppState>, UrlPath((sect
         }
     }
 
+    let marked_at = moved.marked_at.as_deref();
+
     if let Some(paragraph) = moved.paragraph {
-        if let Err(error) = progress::at_paragraph(&state.pool, &id, paragraph).await {
+        if let Err(error) = progress::at_paragraph(&state.pool, &id, paragraph, marked_at).await {
             return failed(&error, "the reading position could not be saved");
         }
     } else if moved.read.is_none()
-        && let Err(error) = progress::opened(&state.pool, &id).await
+        && let Err(error) = progress::opened(&state.pool, &id, marked_at).await
     {
         return failed(&error, "the reading state could not be saved");
     }
 
     if let Some(read) = moved.read
-        && let Err(error) = progress::set_read(&state.pool, &id, read).await
+        && let Err(error) = progress::set_read(&state.pool, &id, read, marked_at).await
     {
         return failed(&error, "the reading state could not be saved");
     }
@@ -454,6 +460,8 @@ async fn read_notes(_: Reader, State(state): State<AppState>) -> Response {
 #[derive(Deserialize)]
 struct NoteBody {
     body: String,
+    /// When the device wrote this; see `Moved::marked_at`.
+    marked_at: Option<String>,
 }
 
 /// Writes the note on a piece.
@@ -472,7 +480,7 @@ async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, 
         }
     }
 
-    match marks::set_note(&state.pool, &id, &note.body).await {
+    match marks::set_note(&state.pool, &id, &note.body, note.marked_at.as_deref()).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => failed(&error, "the note could not be saved"),
     }
@@ -493,6 +501,10 @@ struct NewQuote {
     paragraph: i64,
     text: String,
     comment: Option<String>,
+    /// The identity the device minted for this act of keeping. It is the
+    /// quote's id: a highlight made away from home is addressable there, and
+    /// a delivery retried after a dropped connection lands once (ADR 0003).
+    client_id: String,
 }
 
 /// Keeps a line.
@@ -506,7 +518,16 @@ async fn keep_quote(_: Reader, State(state): State<AppState>, Json(quote): Json<
         }
     }
 
-    match marks::add_quote(&state.pool, &quote.piece_id, quote.paragraph, &quote.text, quote.comment.as_deref()).await {
+    match marks::add_quote(
+        &state.pool,
+        &quote.client_id,
+        &quote.piece_id,
+        quote.paragraph,
+        &quote.text,
+        quote.comment.as_deref(),
+    )
+    .await
+    {
         Ok(kept) => (StatusCode::CREATED, Json(kept)).into_response(),
         // A quote with no text is the app sending a mis-tap, not a server
         // failure: saying so as a 400 lets it tell the difference.
@@ -521,8 +542,8 @@ struct CommentBody {
 }
 
 /// Changes what the reader said about a quote.
-async fn edit_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<i64>, Json(body): Json<CommentBody>) -> Response {
-    match marks::comment_on(&state.pool, id, body.comment.as_deref()).await {
+async fn edit_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<String>, Json(body): Json<CommentBody>) -> Response {
+    match marks::comment_on(&state.pool, &id, body.comment.as_deref()).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => not_found("no such quote"),
         Err(error) => failed(&error, "the comment could not be saved"),
@@ -530,8 +551,8 @@ async fn edit_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPa
 }
 
 /// Removes a quote.
-async fn drop_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<i64>) -> Response {
-    match marks::remove_quote(&state.pool, id).await {
+async fn drop_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<String>) -> Response {
+    match marks::remove_quote(&state.pool, &id).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => not_found("no such quote"),
         Err(error) => failed(&error, "the quote could not be removed"),
@@ -939,12 +960,15 @@ mod tests {
         let (status, quote) = post(
             app.clone(),
             "/api/quotes",
-            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"Июнь 1816 года.","comment":null}"#,
+            r#"{"client_id":"kept-on-a-train","piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"Июнь 1816 года.","comment":null}"#,
         )
         .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(quote["text"], "Июнь 1816 года.");
-        let id = quote["id"].as_i64().expect("a quote has an id");
+        // The id is the one the device minted, not one the server chose: the
+        // app addresses a highlight it made offline by the id it already has.
+        let id = quote["id"].as_str().expect("a quote has an id");
+        assert_eq!(id, "kept-on-a-train");
 
         let (status, _) = post(app.clone(), &format!("/api/quotes/{id}"), r#"{"comment":"this is the mechanism"}"#).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -969,7 +993,7 @@ mod tests {
         let (status, _) = post(
             app(&web, &content, pool().await),
             "/api/quotes",
-            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"   ","comment":null}"#,
+            r#"{"client_id":"a-mis-tap","piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"   ","comment":null}"#,
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1001,7 +1025,7 @@ mod tests {
         post(
             app.clone(),
             "/api/quotes",
-            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"a line","comment":"why"}"#,
+            r#"{"client_id":"a-line-kept","piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"a line","comment":"why"}"#,
         )
         .await;
 

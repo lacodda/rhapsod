@@ -111,7 +111,33 @@ Keeping a sentence you already kept makes a second quote, with its own id. It is
 
 Two readings of the same piece can land on the same line and mean different things by it - the first time for the image, the second for what it turned out to foreshadow, each with its own comment. Refusing the second would be the app telling the reader they already had that thought.
 
-It follows that a quote is identified by its id and not by what it says, which is why `POST /api/quotes` answers with the stored row: the app cannot name the quote it just made until the server has.
+It follows that a quote is identified by its id and not by what it says. That id is **minted on the device that kept the line**, not handed out by the server. A highlight made on a train has to be commentable and removable there too, hours before the stand hears about it - and an id assigned by the server could not be used until the queue drained. `POST /api/quotes` carries the id with it and answers with the stored row; sending the same one twice keeps the line once ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
+
+## Made here, delivered later
+
+Every change described above is written on the device first and shown as done at once - then delivered to the stand whenever it can be reached ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). Nothing waits for the network, because the network is usually a Pi at home and the reading usually happens somewhere else.
+
+Changes queue in the order they were made and are delivered in that order. That matters more than it sounds: marking a piece read, then unread, then read again is three changes to one piece, and delivering them out of sequence would leave the stand holding the wrong one.
+
+A change the stand **refuses** - a quote on a piece that was renamed in the vault, a comment on one already removed - is dropped rather than retried forever, because everything queued behind it would otherwise be held hostage to a change the reader cannot fix. A change the stand **fails** to accept, because it is having a bad moment, is kept and tried again.
+
+### Whoever wrote last, wins
+
+Two devices can produce changes to the same thing while neither can see the other. When they meet, the newer one wins - by the clock of the device that made it, not by the order the two reached the database.
+
+This is why it is the device's time that travels with a change. A piece marked unread on a train and delivered in the evening must not be undone by the "read" it was undoing, just because the desktop's report happened to arrive first.
+
+The reading position is the exception, and only ever moves forward, for the reason given [above](#it-only-moves-forward).
+
+A phone with a wrong clock can therefore override a right one. For one reader this is a curiosity rather than a risk, and it is written down here so it is not rediscovered later as a bug.
+
+### What the app tells you
+
+Nothing, in the ordinary case. At home, with everything delivered, there is nothing worth saying and a tick on every screen would be noise.
+
+When there is something to know, the header says it: how many changes are **kept on this phone**, or that the stand is away. The wording is deliberate - the changes are saved, just not *there* yet, and "unsaved" would be a lie about work the reader can see on their screen.
+
+The one thing worth knowing about it: those changes live in the browser's storage until they are delivered. Clearing the browser's data for the site while something is waiting throws it away. The stand is the durable copy; the queue is a queue.
 
 ## Taking it back out
 

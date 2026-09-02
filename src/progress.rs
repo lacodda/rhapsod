@@ -43,13 +43,15 @@ pub struct Stats {
 /// # Errors
 ///
 /// Fails when the database rejects the write.
-pub async fn opened(pool: &SqlitePool, piece_id: &str) -> Result<()> {
+pub async fn opened(pool: &SqlitePool, piece_id: &str, marked_at: Option<&str>) -> Result<()> {
     sqlx::query(
-        "INSERT INTO reading_state (piece_id, status) VALUES (?, 'reading')
+        "INSERT INTO reading_state (piece_id, status, marked_at) VALUES (?, 'reading', ?)
          ON CONFLICT (piece_id) DO UPDATE
-            SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+            SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                marked_at  = max(coalesce(marked_at, ''), coalesce(excluded.marked_at, ''))",
     )
     .bind(piece_id)
+    .bind(marked_at)
     .execute(pool)
     .await
     .context("failed to record that the piece was opened")?;
@@ -66,16 +68,18 @@ pub async fn opened(pool: &SqlitePool, piece_id: &str) -> Result<()> {
 /// # Errors
 ///
 /// Fails when the database rejects the write.
-pub async fn at_paragraph(pool: &SqlitePool, piece_id: &str, paragraph: i64) -> Result<()> {
+pub async fn at_paragraph(pool: &SqlitePool, piece_id: &str, paragraph: i64, marked_at: Option<&str>) -> Result<()> {
     let paragraph = paragraph.max(0);
     sqlx::query(
-        "INSERT INTO reading_state (piece_id, status, paragraph) VALUES (?, 'reading', ?)
+        "INSERT INTO reading_state (piece_id, status, paragraph, marked_at) VALUES (?, 'reading', ?, ?)
          ON CONFLICT (piece_id) DO UPDATE
             SET paragraph  = max(paragraph, excluded.paragraph),
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                marked_at  = max(coalesce(marked_at, ''), coalesce(excluded.marked_at, ''))",
     )
     .bind(piece_id)
     .bind(paragraph)
+    .bind(marked_at)
     .execute(pool)
     .await
     .context("failed to record the reading position")?;
@@ -84,35 +88,51 @@ pub async fn at_paragraph(pool: &SqlitePool, piece_id: &str, paragraph: i64) -> 
 
 /// Marks a piece finished, or puts a finished one back to being read.
 ///
+/// Unlike the position, this does not only move one way, so a late delivery
+/// cannot be resolved by taking the larger value: a piece marked unread on a
+/// train and delivered at home would lose to the "read" it was undoing. The
+/// device's own clock decides instead, and a change older than what is stored
+/// is dropped (ADR 0003).
+///
 /// # Errors
 ///
 /// Fails when the database rejects the write.
-pub async fn set_read(pool: &SqlitePool, piece_id: &str, read: bool) -> Result<()> {
+pub async fn set_read(pool: &SqlitePool, piece_id: &str, read: bool, marked_at: Option<&str>) -> Result<()> {
+    // The `WHERE` on the upsert is what drops a stale change, and it reads the
+    // same in both statements: an empty string stands in for "no time known",
+    // which sorts before every real stamp - correct for the rows written
+    // before the queue existed.
     if read {
         sqlx::query(
-            "INSERT INTO reading_state (piece_id, status, read_at)
-             VALUES (?, 'read', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+            "INSERT INTO reading_state (piece_id, status, read_at, marked_at)
+             VALUES (?, 'read', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
              ON CONFLICT (piece_id) DO UPDATE
                 SET status     = 'read',
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    marked_at  = excluded.marked_at,
                     -- The day a piece was finished is set once. Re-reading it
                     -- does not move the day it was first read, which is what
                     -- a streak counts.
-                    read_at    = coalesce(read_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+                    read_at    = coalesce(read_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+              WHERE coalesce(excluded.marked_at, '') >= coalesce(reading_state.marked_at, '')",
         )
         .bind(piece_id)
+        .bind(marked_at)
         .execute(pool)
         .await
         .context("failed to mark the piece read")?;
     } else {
         sqlx::query(
-            "INSERT INTO reading_state (piece_id, status) VALUES (?, 'reading')
+            "INSERT INTO reading_state (piece_id, status, marked_at) VALUES (?, 'reading', ?)
              ON CONFLICT (piece_id) DO UPDATE
                 SET status     = 'reading',
                     read_at    = NULL,
-                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    marked_at  = excluded.marked_at
+              WHERE coalesce(excluded.marked_at, '') >= coalesce(reading_state.marked_at, '')",
         )
         .bind(piece_id)
+        .bind(marked_at)
         .execute(pool)
         .await
         .context("failed to mark the piece unread")?;
@@ -273,7 +293,7 @@ mod tests {
     #[tokio::test]
     async fn opening_a_piece_starts_it() {
         let pool = pool().await;
-        opened(&pool, "02-istoriya/god-bez-leta").await.unwrap();
+        opened(&pool, "02-istoriya/god-bez-leta", None).await.unwrap();
 
         let states = all(&pool).await.unwrap();
         assert_eq!(states.len(), 1);
@@ -285,8 +305,8 @@ mod tests {
     async fn reopening_a_finished_piece_does_not_unfinish_it() {
         // A reader who returns to a favourite has not undone having read it.
         let pool = pool().await;
-        set_read(&pool, "a/b", true).await.unwrap();
-        opened(&pool, "a/b").await.unwrap();
+        set_read(&pool, "a/b", true, None).await.unwrap();
+        opened(&pool, "a/b", None).await.unwrap();
         assert_eq!(all(&pool).await.unwrap()[0].status, "read");
     }
 
@@ -295,30 +315,30 @@ mod tests {
         // A phone that syncs a stale position after the desktop moved on
         // would otherwise send the reader back up the page.
         let pool = pool().await;
-        at_paragraph(&pool, "a/b", 12).await.unwrap();
-        at_paragraph(&pool, "a/b", 3).await.unwrap();
+        at_paragraph(&pool, "a/b", 12, None).await.unwrap();
+        at_paragraph(&pool, "a/b", 3, None).await.unwrap();
         assert_eq!(all(&pool).await.unwrap()[0].paragraph, 12);
 
-        at_paragraph(&pool, "a/b", 20).await.unwrap();
+        at_paragraph(&pool, "a/b", 20, None).await.unwrap();
         assert_eq!(all(&pool).await.unwrap()[0].paragraph, 20);
     }
 
     #[tokio::test]
     async fn a_negative_position_is_the_top() {
         let pool = pool().await;
-        at_paragraph(&pool, "a/b", -5).await.unwrap();
+        at_paragraph(&pool, "a/b", -5, None).await.unwrap();
         assert_eq!(all(&pool).await.unwrap()[0].paragraph, 0);
     }
 
     #[tokio::test]
     async fn finishing_and_unfinishing_are_both_possible() {
         let pool = pool().await;
-        set_read(&pool, "a/b", true).await.unwrap();
+        set_read(&pool, "a/b", true, None).await.unwrap();
         let state = &all(&pool).await.unwrap()[0];
         assert_eq!(state.status, "read");
         assert!(state.read_at.is_some());
 
-        set_read(&pool, "a/b", false).await.unwrap();
+        set_read(&pool, "a/b", false, None).await.unwrap();
         let state = &all(&pool).await.unwrap()[0];
         assert_eq!(state.status, "reading");
         assert!(state.read_at.is_none(), "an unfinished piece still carried a finishing date");
@@ -329,21 +349,21 @@ mod tests {
         // The streak counts the day a piece was first read; re-reading an old
         // piece must not silently repair a broken streak.
         let pool = pool().await;
-        set_read(&pool, "a/b", true).await.unwrap();
+        set_read(&pool, "a/b", true, None).await.unwrap();
         sqlx::query("UPDATE reading_state SET read_at = '2026-01-01T10:00:00.000Z' WHERE piece_id = 'a/b'")
             .execute(&pool)
             .await
             .unwrap();
-        set_read(&pool, "a/b", true).await.unwrap();
+        set_read(&pool, "a/b", true, None).await.unwrap();
         assert_eq!(all(&pool).await.unwrap()[0].read_at.as_deref(), Some("2026-01-01T10:00:00.000Z"));
     }
 
     #[tokio::test]
     async fn continue_offers_the_last_unfinished_piece() {
         let pool = pool().await;
-        opened(&pool, "a/first").await.unwrap();
+        opened(&pool, "a/first", None).await.unwrap();
         // A finished piece is not something to continue.
-        set_read(&pool, "a/second", true).await.unwrap();
+        set_read(&pool, "a/second", true, None).await.unwrap();
         sqlx::query("UPDATE reading_state SET updated_at = '2030-01-01T00:00:00.000Z' WHERE piece_id = 'a/second'")
             .execute(&pool)
             .await
@@ -351,6 +371,59 @@ mod tests {
 
         let next = continue_with(&pool).await.unwrap().expect("there is an unfinished piece");
         assert_eq!(next.piece_id, "a/first");
+    }
+
+    #[tokio::test]
+    async fn a_change_from_an_offline_queue_does_not_undo_a_newer_one() {
+        // The case the queue exists for: a piece is marked unread on a train,
+        // and the phone delivers it after the desktop has marked it read. The
+        // device clock decides, not the order the two reached the database.
+        let pool = pool().await;
+        set_read(&pool, "a/b", true, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
+        set_read(&pool, "a/b", false, Some("2026-09-02T09:00:00.000Z")).await.unwrap();
+
+        let state = &all(&pool).await.unwrap()[0];
+        assert_eq!(state.status, "read", "a change made earlier undid a later one");
+        assert!(state.read_at.is_some(), "the piece lost the day it was finished");
+    }
+
+    #[tokio::test]
+    async fn a_newer_change_from_the_queue_still_lands() {
+        // The other direction of the same rule: late delivery is not stale
+        // delivery, and a queue that could never write would be worse than no
+        // queue at all.
+        let pool = pool().await;
+        set_read(&pool, "a/b", true, Some("2026-09-02T09:00:00.000Z")).await.unwrap();
+        set_read(&pool, "a/b", false, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
+
+        let state = &all(&pool).await.unwrap()[0];
+        assert_eq!(state.status, "reading", "a newer change was dropped as stale");
+        assert!(state.read_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_change_with_no_time_does_not_overwrite_one_that_has_it() {
+        // Rows written before the queue existed carry no time, and a live
+        // report carries none either. Neither may beat a stamped change.
+        let pool = pool().await;
+        set_read(&pool, "a/b", true, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
+        set_read(&pool, "a/b", false, None).await.unwrap();
+        assert_eq!(all(&pool).await.unwrap()[0].status, "read");
+    }
+
+    #[tokio::test]
+    async fn the_same_report_delivered_twice_lands_once() {
+        // A connection dropped mid-drain leaves the app unsure whether the
+        // write landed, so it retries; the retry must change nothing.
+        let pool = pool().await;
+        let at = Some("2026-09-02T12:00:00.000Z");
+        set_read(&pool, "a/b", true, at).await.unwrap();
+        let first = all(&pool).await.unwrap()[0].clone();
+        set_read(&pool, "a/b", true, at).await.unwrap();
+
+        let again = all(&pool).await.unwrap();
+        assert_eq!(again.len(), 1);
+        assert_eq!(again[0].read_at, first.read_at, "a redelivery moved the day it was finished");
     }
 
     #[test]

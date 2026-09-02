@@ -4,10 +4,13 @@ import { ApiError, fetchLibrary, fetchSession, type LibraryIndex, type Session }
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { QuotesScreen } from '@/Quotes'
 import { ReaderScreen } from '@/Reader'
+import { cacheLibrary } from '@/offline'
 import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
 import { useProgress } from '@/useProgress'
+import { useSync } from '@/useSync'
+import type { SyncState } from '@/sync'
 
 /**
  * The reading app.
@@ -25,6 +28,7 @@ export function App() {
   const mayRead = session?.reader === true
   const progress = useProgress(mayRead)
   const marks = useMarks(mayRead)
+  const sync = useSync()
 
   useEffect(() => {
     let cancelled = false
@@ -47,7 +51,11 @@ export function App() {
     let cancelled = false
     void fetchLibrary()
       .then((index) => {
-        if (!cancelled) setLibrary(index)
+        if (cancelled) return
+        setLibrary(index)
+        // Everything, not only what gets opened: the promise is that the
+        // library read at home is the library available on a train.
+        cacheLibrary(index)
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof ApiError ? cause.message : 'The library could not be read.')
@@ -63,7 +71,7 @@ export function App() {
 
   return (
     <div className="min-h-dvh">
-      <Header quotes={marks.quotes.length} />
+      <Header quotes={marks.quotes.length} sync={sync} />
       <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
         {session === null ? (
           <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
@@ -98,7 +106,7 @@ export function App() {
  * It scrolls away with the page instead of sitting over it - on a phone a
  * sticky bar costs a line of text on every screen of a seven-minute read.
  */
-function Header({ quotes }: { quotes: number }) {
+function Header({ quotes, sync }: { quotes: number; sync: SyncState }) {
   return (
     <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
       <a
@@ -126,8 +134,42 @@ function Header({ quotes }: { quotes: number }) {
             kept {quotes}
           </a>
         ) : null}
+        <SyncMark sync={sync} />
         <span className="px-2 font-mono text-[0.6875rem] text-dim">v{__APP_VERSION__}</span>
       </span>
     </header>
+  )
+}
+
+/**
+ * Whether anything the reader did is still waiting for the stand.
+ *
+ * Nothing is shown in the ordinary case - at home, with an empty queue, there
+ * is nothing to say, and a green tick on every screen is noise. It appears
+ * only when there is something to know: changes are waiting, or the stand
+ * cannot be reached.
+ *
+ * It says what is true rather than what it fears: "kept on this phone" is the
+ * honest description of a change written locally, where "offline" would be
+ * about the network and "unsaved" would be wrong - it is saved, just not
+ * there yet.
+ */
+function SyncMark({ sync }: { sync: SyncState }) {
+  if (sync.waiting === 0 && sync.reachable) return null
+
+  const label = sync.waiting > 0 ? `${sync.waiting} kept on this phone` : 'the stand is away'
+  return (
+    <span
+      className="px-2 font-mono text-[0.6875rem] text-dim"
+      // The count is not a decoration: a reader who is about to wipe the
+      // browser's data should be able to find out that something is waiting.
+      title={
+        sync.waiting > 0
+          ? 'Changes made here are kept on this device and sent when the library is in reach.'
+          : 'The library is out of reach. It comes back when you are home.'
+      }
+    >
+      {sync.syncing ? 'sending…' : label}
+    </span>
   )
 }

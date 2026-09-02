@@ -30,7 +30,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.3.0","pieces":2}
+{"status":"ok","version":"0.4.0","pieces":2}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -358,8 +358,15 @@ curl -X POST http://127.0.0.1:8084/api/progress/19-lyubov-i-pary/abelyar-i-eloiz
 | --- | --- |
 | `paragraph` | Index of the paragraph last seen. |
 | `read` | `true` finishes the piece, `false` puts it back to being read. |
+| `marked_at` | When the device recorded this, as an ISO 8601 timestamp. |
 
-Both fields are optional and both may be sent at once.
+All three fields are optional, and the first two may be sent at once.
+
+`marked_at` is what makes an offline queue safe ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). The app writes changes locally and delivers them when it can reach the stand, so a report can arrive long after it was made - and **a report older than what is stored is dropped**. Without it, a piece marked unread on a train would be undone by the "read" it was undoing, simply because the other device's report happened to arrive first.
+
+A report sent live carries no `marked_at`, which reads as "older than anything the queue can deliver": a live report never overrides a stamped change.
+
+The answer is `204` either way. A rejected-as-stale report is not an error - the app is delivering something it recorded honestly, and the server has something newer - so there is nothing for the app to do about it and nothing to tell the reader.
 
 The position **only moves forward**. A stale report is accepted and changes nothing:
 
@@ -467,6 +474,8 @@ HTTP/1.1 204 No Content
 
 The whole note every time, not a diff. It is a few hundred words at most, typed by one person on one device at a time, and a merge algorithm would be more machinery than the problem has. The app saves after a pause in the typing rather than on every keystroke, so this is a request per thought rather than per character.
 
+An optional `marked_at` carries the time the device wrote the note, and works exactly as it does for [progress](#post-apiprogresssectionpiece): a note delivered from an offline queue does not overwrite one written later. **Clearing is a write like any other**, so a note emptied on a train and delivered after the same note was rewritten at home is dropped rather than taking the rewrite with it.
+
 **An empty body deletes the note:**
 
 ```sh
@@ -505,20 +514,20 @@ curl http://127.0.0.1:8084/api/quotes
 ```json
 [
   {
-    "id": 2,
+    "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
     "piece_id": "02-istoriya/god-bez-leta",
     "paragraph": 1,
     "text": "Следующее лето не пришло.",
     "comment": "Тамбора, 1815.",
-    "created_at": "2026-09-02T11:22:52.250Z"
+    "created_at": "2026-09-02T15:21:18.476Z"
   },
   {
-    "id": 1,
+    "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
     "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
     "paragraph": 1,
     "text": "Она пишет ему из монастыря.",
-    "comment": "Двадцать лет спустя.",
-    "created_at": "2026-09-02T11:22:52.174Z"
+    "comment": "this is the mechanism",
+    "created_at": "2026-09-02T15:19:52.200Z"
   }
 ]
 ```
@@ -538,12 +547,12 @@ Why the text rather than offsets is in [What the reader remembers](/rhapsod/conc
 
 ## `POST /api/quotes`
 
-Keeps a line. Answers `201` with the quote as stored - the app needs the `id` back before it can offer to comment on it or remove it.
+Keeps a line. Answers `201` with the quote as stored.
+
+`client_id` is required, and it **is** the quote's id: it is minted by the device that kept the line, so a highlight made with the stand out of reach can be commented on and removed straight away rather than waiting for an id to come back ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/quotes \
-  -H 'content-type: application/json' \
-  -d '{"piece_id":"19-lyubov-i-pary/abelyar-i-eloiza","paragraph":1,"text":"Она пишет ему из монастыря.","comment":"Двадцать лет спустя."}'
+curl -i -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism"}'
 ```
 
 ```
@@ -552,31 +561,35 @@ content-type: application/json
 ```
 
 ```json
-{"id":1,"piece_id":"19-lyubov-i-pary/abelyar-i-eloiza","paragraph":1,"text":"Она пишет ему из монастыря.","comment":"Двадцать лет спустя.","created_at":"2026-09-02T11:22:52.174Z"}
+{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
 ```
 
 `comment` is optional and may be `null`; a blank one is stored as `null` rather than as an empty string, so a client has one thing to check.
 
-**The same line can be kept twice.** Posting the identical body again is a second quote with its own id, not an error:
+**The same line can be kept twice** - under a different `client_id`. Two readings of the same piece can mark the same sentence, and the second is not a mistake to refuse:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes \
-  -H 'content-type: application/json' \
-  -d '{"piece_id":"02-istoriya/god-bez-leta","paragraph":1,"text":"Следующее лето не пришло.","comment":null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 1, "text": "Следующее лето не пришло.", "comment": null}'
 ```
 
 ```json
-{"id":3,"piece_id":"02-istoriya/god-bez-leta","paragraph":1,"text":"Следующее лето не пришло.","comment":null,"created_at":"2026-09-02T11:22:52.329Z"}
+{"id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 1, "text": "Следующее лето не пришло.", "comment": null, "created_at": "2026-09-02T15:21:18.476Z"}
 ```
 
-Two readings of the same piece can mark the same sentence, and the second is not a mistake to refuse.
+**Sending the same one twice keeps it once.** A connection dropped mid-delivery leaves the app unsure whether the quote landed, so it retries; the second arrival answers with the row already stored, down to its `created_at`:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism"}'
+```
+
+```json
+{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
+```
 
 A quote with no text is a mis-tap the app sent, not a server failure, and saying so as a `400` lets it tell the difference:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes \
-  -H 'content-type: application/json' \
-  -d '{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"   ","comment":null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "aa", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 0, "text": "   ", "comment": null}'
 ```
 
 ```json
@@ -586,9 +599,7 @@ curl -X POST http://127.0.0.1:8084/api/quotes \
 A quote on a piece that is not in the library is `404`:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes \
-  -H 'content-type: application/json' \
-  -d '{"piece_id":"02-istoriya/nope","paragraph":0,"text":"a line","comment":null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "bb", "piece_id": "02-istoriya/nope", "paragraph": 0, "text": "a line", "comment": null}'
 ```
 
 ```json
@@ -597,10 +608,10 @@ curl -X POST http://127.0.0.1:8084/api/quotes \
 
 ## `POST /api/quotes/{id}`
 
-Changes what the reader said about a quote. Answers `204`.
+Changes what the reader said about a quote. Answers `204`. The `{id}` is the one the app minted when it kept the line, so it can say this about a highlight the stand has not heard of yet.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/quotes/2 \
+curl -i -X POST http://127.0.0.1:8084/api/quotes/1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7 \
   -H 'content-type: application/json' -d '{"comment":"Тамбора, 1815."}'
 ```
 
@@ -611,7 +622,7 @@ HTTP/1.1 204 No Content
 `null` - or a blank string - takes the comment back:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes/2 \
+curl -X POST http://127.0.0.1:8084/api/quotes/1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7 \
   -H 'content-type: application/json' -d '{"comment":null}'
 ```
 
@@ -620,7 +631,7 @@ Only the comment can be changed. The text and the paragraph are what the reader 
 A quote that is gone answers `404` rather than pretending:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes/999 \
+curl -X POST http://127.0.0.1:8084/api/quotes/00000000-0000-0000-0000-000000000000 \
   -H 'content-type: application/json' -d '{"comment":"x"}'
 ```
 
@@ -635,7 +646,7 @@ The app can be holding a stale list - a quote removed on the phone, commented on
 Removes a quote. Answers `204`.
 
 ```sh
-curl -i -X DELETE http://127.0.0.1:8084/api/quotes/3
+curl -i -X DELETE http://127.0.0.1:8084/api/quotes/9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62
 ```
 
 ```
@@ -645,7 +656,7 @@ HTTP/1.1 204 No Content
 Removing it twice is `404`, not a second success:
 
 ```sh
-curl -X DELETE http://127.0.0.1:8084/api/quotes/3
+curl -X DELETE http://127.0.0.1:8084/api/quotes/9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62
 ```
 
 ```json
@@ -662,52 +673,52 @@ curl http://127.0.0.1:8084/api/export
 
 ```json
 {
-  "exported_at": "2026-09-02T11:25:07.935Z",
-  "version": "0.2.0",
+  "exported_at": "2026-09-02T15:22:12.598Z",
+  "version": "0.4.0",
   "reading": [
     {
       "piece_id": "02-istoriya/god-bez-leta",
-      "status": "reading",
-      "paragraph": 7,
-      "updated_at": "2026-09-02T11:23:10.120Z",
-      "read_at": null
+      "status": "read",
+      "paragraph": 3,
+      "updated_at": "2026-09-02T15:20:03.563Z",
+      "read_at": "2026-09-02T15:20:03.563Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T11:23:10.171Z",
-      "read_at": "2026-09-02T11:23:10.171Z"
+      "updated_at": "2026-09-02T15:22:12.320Z",
+      "read_at": "2026-09-02T15:22:12.320Z"
     }
   ],
   "notes": [
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "body": "Письма пережили обоих. Это и есть сюжет.",
-      "updated_at": "2026-09-02T11:22:44.935Z"
+      "piece_id": "02-istoriya/god-bez-leta",
+      "body": "Год без лета — и целая эпоха следом.",
+      "updated_at": "2026-09-02T15:22:12.327Z"
     },
     {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "body": "Снег в июне — и потом Франкенштейн.",
-      "updated_at": "2026-09-02T11:22:38.896Z"
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "body": "Письма шли дольше, чем длится иная жизнь.",
+      "updated_at": "2026-09-02T15:22:12.324Z"
     }
   ],
   "quotes": [
     {
-      "id": 2,
+      "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
       "piece_id": "02-istoriya/god-bez-leta",
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T11:22:52.250Z"
+      "created_at": "2026-09-02T15:21:18.476Z"
     },
     {
-      "id": 1,
+      "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
-      "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T11:22:52.174Z"
+      "comment": "this is the mechanism",
+      "created_at": "2026-09-02T15:19:52.200Z"
     }
   ]
 }

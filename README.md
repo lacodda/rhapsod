@@ -37,7 +37,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.3.0","pieces":2}
+{"status":"ok","version":"0.4.0","pieces":2}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server is up, but whether it is serving the library you just published.
@@ -97,9 +97,11 @@ A stand can be locked. `rhapsod hash` makes the value for `RHAPSOD_PASSWORD_HASH
 
 None of it touches the library. The markdown is still read and never written, and `GET /api/export` hands the whole of it back - reading state, notes and quotes in one snapshot - for `tools/export-marks.sh` and `tools/export-marks.ps1` to write to a file and a script of yours to fold into the vault. One document rather than one request per kind, because a script writing into a vault needs all three from the same moment.
 
+**And now it goes where you go.** The app installs to a home screen and carries the whole library with it - every piece, not only the ones you happened to open - so a train with no signal is a place to read rather than a spinner. Everything you do there is written on the device and shown as done at once: a position, a finished piece, a note, a kept line. When the stand is in reach again the changes are delivered in the order you made them, and the header says how many are still waiting. Where two devices disagree, the change made later wins - by the clock of the device that made it, not by which one reached the Pi first.
+
 The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
 
-Spaced repetition over the lines you marked, and offline reading with a sync queue, are what the releases after this one build. Watch this repository.
+Spaced repetition over the lines you marked is what the release after this one builds. Watch this repository.
 
 ## Development
 

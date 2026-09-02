@@ -4,7 +4,14 @@
  * The whole index arrives in a single request: the reading app is meant to work
  * on a phone with no way to reach the stand, so it holds the library in memory
  * from the first screen and asks for a piece's text only when it is opened.
+ *
+ * Reads go over the wire and fail when the stand is away - the service worker
+ * answers them from its cache instead. Writes never fail: they go into the
+ * local queue and are delivered when the stand comes back (ADR 0003).
  */
+
+import { enqueue, mintId, type Change } from '@/queue'
+import { drain, sawServer } from '@/sync'
 
 /** A shelf of the library. */
 export interface Section {
@@ -69,7 +76,14 @@ export interface Note {
 
 /** A line the reader kept, with an optional comment of their own. */
 export interface Quote {
-  id: number
+  /**
+   * Minted on the device that kept the line, not assigned by the server.
+   *
+   * A highlight made on a train has to be commented on and removed there too,
+   * hours before the stand hears about it - which an id handed out by the
+   * server could not give it (ADR 0003).
+   */
+  id: string
   piece_id: string
   paragraph: number
   text: string
@@ -113,14 +127,44 @@ async function get<T>(path: string): Promise<T> {
   } catch {
     // The stand is a Pi at home: unreachable is the normal case on a train,
     // not an exception worth a stack trace.
+    sawServer(false)
     throw new ApiError('The library is out of reach. It comes back when you are home.', 0)
   }
 
+  // The stand answered, whatever it said: a 404 is the server being there and
+  // saying no, which is the opposite of being away.
+  sawServer(true)
   if (!response.ok) {
     throw new ApiError(response.status === 404 ? 'There is nothing here.' : 'The library did not answer.', response.status)
   }
   return (await response.json()) as T
 }
+
+/**
+ * Queues a change and asks for a delivery.
+ *
+ * The promise resolves once the change is in the local store, not once the
+ * server has it: what the reader sees is their own action taking effect, and
+ * that must not wait for a Pi on a network they may not be on.
+ */
+async function queue(change: Change): Promise<void> {
+  try {
+    await enqueue(change)
+  } catch {
+    // A browser that will not open IndexedDB still reads. Try the wire once
+    // so a change is not silently dropped on a working connection.
+    void fetch(`/api${change.path}`, {
+      method: change.method,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(change.body),
+    }).catch(() => undefined)
+    return
+  }
+  void drain()
+}
+
+/** The device's clock, as the server wants to read it. */
+const now = (): string => new Date().toISOString()
 
 export const fetchLibrary = (): Promise<LibraryIndex> => get<LibraryIndex>('/library')
 
@@ -136,6 +180,13 @@ export const fetchProgress = (): Promise<Progress> => get<Progress>('/progress')
 export const fetchNext = (after: string): Promise<{ next: PieceSummary | null }> =>
   get<{ next: PieceSummary | null }>(`/next?after=${encodeURIComponent(after)}`)
 
+/**
+ * Sends a request that has to happen now, rather than being queued.
+ *
+ * Signing in is the whole of this: a session cannot be established against a
+ * stand that is not there, and a queued sign-in would be a promise to log in
+ * later, which is not what the button says.
+ */
 async function send<T>(path: string, method: string, body?: unknown): Promise<T | null> {
   let response: Response
   try {
@@ -145,8 +196,10 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
+    sawServer(false)
     throw new ApiError('The library is out of reach. It comes back when you are home.', 0)
   }
+  sawServer(true)
   if (!response.ok) {
     throw new ApiError(response.status === 401 ? 'Sign in to read.' : 'The library did not answer.', response.status)
   }
@@ -157,15 +210,30 @@ export const fetchNotes = (): Promise<Note[]> => get<Note[]>('/notes')
 
 export const fetchQuotes = (): Promise<Quote[]> => get<Quote[]>('/quotes')
 
-export const saveNote = (id: string, body: string): Promise<null> => send<null>(`/notes/${id}`, 'POST', { body }).then(() => null)
+export const saveNote = (id: string, body: string): Promise<void> =>
+  queue({ path: `/notes/${id}`, method: 'POST', body: { body, marked_at: now() } })
 
-export const keepQuote = (quote: { piece_id: string; paragraph: number; text: string; comment: string | null }): Promise<Quote | null> =>
-  send<Quote>('/quotes', 'POST', quote)
+/**
+ * Keeps a line.
+ *
+ * The quote is returned as the app will hold it, without asking the server:
+ * the id is minted here so the reader can comment on or remove a highlight
+ * they made on a train, hours before the stand ever hears about it.
+ */
+export function keepQuote(quote: { piece_id: string; paragraph: number; text: string; comment: string | null }): Quote {
+  const kept: Quote = {
+    ...quote,
+    id: mintId(),
+    created_at: now(),
+  }
+  void queue({ path: '/quotes', method: 'POST', body: { ...quote, client_id: kept.id } })
+  return kept
+}
 
-export const commentOnQuote = (id: number, comment: string | null): Promise<null> =>
-  send<null>(`/quotes/${id}`, 'POST', { comment }).then(() => null)
+export const commentOnQuote = (id: string, comment: string | null): Promise<void> =>
+  queue({ path: `/quotes/${id}`, method: 'POST', body: { comment } })
 
-export const dropQuote = (id: number): Promise<null> => send<null>(`/quotes/${id}`, 'DELETE').then(() => null)
+export const dropQuote = (id: string): Promise<void> => queue({ path: `/quotes/${id}`, method: 'DELETE', body: {} })
 
 export const signIn = (password: string): Promise<Session | null> => send<Session>('/session', 'POST', { password })
 
@@ -174,11 +242,11 @@ export const signOut = (): Promise<Session | null> => send<Session>('/session', 
 /**
  * Reports where the reader is.
  *
- * Failures are swallowed: this fires while someone is reading, and an error
- * toast over the text they are in the middle of would be worse than a lost
- * position. What is lost is one paragraph of precision, and the next report
- * fixes it.
+ * Queued like every other change, so a piece read on a train is read when the
+ * phone gets home. The call returns before the change is stored: this fires
+ * from a scroll handler, and awaiting a database write per paragraph would be
+ * felt in the scrolling.
  */
 export function report(id: string, moved: { paragraph?: number; read?: boolean }): void {
-  void send(`/progress/${id}`, 'POST', moved).catch(() => undefined)
+  void queue({ path: `/progress/${id}`, method: 'POST', body: { ...moved, marked_at: now() } })
 }

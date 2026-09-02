@@ -24,4 +24,10 @@ export default tseslint.config(
     files: ['*.config.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // The service worker runs in its own global scope - `self`, `caches`, and
+    // the fetch and message events - which is neither the page's nor Node's.
+    files: ['public/sw.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
 )

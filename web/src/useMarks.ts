@@ -23,9 +23,9 @@ export interface MarksStore {
   /** Keeps a line. */
   keep: (quote: { piece_id: string; paragraph: number; text: string; comment: string | null }) => void
   /** Changes what the reader said about a quote. */
-  comment: (id: number, comment: string | null) => void
+  comment: (id: string, comment: string | null) => void
   /** Removes a quote. */
-  drop: (id: number) => void
+  drop: (id: string) => void
 }
 
 export function useMarks(enabled: boolean): MarksStore {
@@ -57,13 +57,19 @@ export function useMarks(enabled: boolean): MarksStore {
 
   const quotesIn = useCallback(
     (pieceId: string): Quote[] =>
-      quotes.filter((quote) => quote.piece_id === pieceId).sort((a, b) => a.paragraph - b.paragraph || a.id - b.id),
+      quotes
+        .filter((quote) => quote.piece_id === pieceId)
+        // Two lines kept from the same paragraph are ordered by when they were
+        // kept. The tiebreak is not on the id: ids are minted on the device
+        // and say nothing about order, and subtracting two of them would give
+        // NaN - which sorts as "equal" and quietly leaves the order to chance.
+        .sort((a, b) => a.paragraph - b.paragraph || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)),
     [quotes],
   )
 
   const setNote = useCallback((pieceId: string, body: string): void => {
     const trimmed = body.trim()
-    void saveNote(pieceId, trimmed).catch(() => undefined)
+    void saveNote(pieceId, trimmed)
     setNotes((held) => {
       const without = held.filter((note) => note.piece_id !== pieceId)
       // An emptied note is no note, here as on the server.
@@ -72,24 +78,20 @@ export function useMarks(enabled: boolean): MarksStore {
   }, [])
 
   const keep = useCallback((quote: { piece_id: string; paragraph: number; text: string; comment: string | null }): void => {
-    // The id comes from the server, so the quote is added when it answers
-    // rather than optimistically: a highlight the reader could not then
-    // comment on or remove would be worse than one that appears a moment late.
-    void keepQuote(quote)
-      .then((kept) => {
-        if (kept) setQuotes((held) => [kept, ...held])
-      })
-      .catch(() => undefined)
+    // The quote appears at once, with the id the device minted for it. It used
+    // to wait for the server to answer with an id - which on a train never
+    // came, leaving a reader who marked a line with nothing to show for it.
+    setQuotes((held) => [keepQuote(quote), ...held])
   }, [])
 
-  const comment = useCallback((id: number, text: string | null): void => {
+  const comment = useCallback((id: string, text: string | null): void => {
     const trimmed = text?.trim() ?? null
-    void commentOnQuote(id, trimmed === '' ? null : trimmed).catch(() => undefined)
+    void commentOnQuote(id, trimmed === '' ? null : trimmed)
     setQuotes((held) => held.map((quote) => (quote.id === id ? { ...quote, comment: trimmed === '' ? null : trimmed } : quote)))
   }, [])
 
-  const drop = useCallback((id: number): void => {
-    void dropQuote(id).catch(() => undefined)
+  const drop = useCallback((id: string): void => {
+    void dropQuote(id)
     setQuotes((held) => held.filter((quote) => quote.id !== id))
   }, [])
 

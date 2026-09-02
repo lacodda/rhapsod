@@ -73,3 +73,107 @@ async fn a_published_file_can_be_read_through_the_api() {
     );
     assert_eq!(piece["one_liner"], "Письмо шло год и пришло без обратного адреса.");
 }
+
+/// The migrations up to the one being tested, applied to an empty database.
+///
+/// Applying a prefix rather than all of them is the point: the upgrade a live
+/// stand performs starts from the schema it already has, and a test that
+/// migrates from empty every time never exercises that path at all.
+async fn migrated_up_to(pool: &sqlx::SqlitePool, last_version: i64) {
+    use sqlx::Executor as _;
+
+    let migrator = sqlx::migrate!();
+    let mut connection = pool.acquire().await.expect("a connection");
+
+    // sqlx accepts only `&'static str` as SQL, to keep dynamic strings out of
+    // queries. These are compile-time constants from `migrate!()` that happen
+    // to be reachable only through a local, so leaking them says what they are
+    // rather than working around the rule; the count is the number of
+    // migrations in the crate.
+    //
+    // sqlx's own runner is not used here at all: it would apply every
+    // migration, and the schema being started from is the point of this
+    // helper.
+    let wanted: Vec<(i64, &'static str)> = migrator
+        .iter()
+        .filter(|migration| migration.version <= last_version)
+        .map(|migration| (migration.version, &*Box::leak(migration.sql.as_str().to_owned().into_boxed_str())))
+        .collect();
+
+    for (version, sql) in wanted {
+        // Several statements in one string, which is what `execute` on a
+        // connection takes.
+        connection
+            .execute(sql)
+            .await
+            .unwrap_or_else(|error| panic!("migration {version} should apply: {error}"));
+    }
+
+    // sqlx records what it has applied, and a migrator run afterwards trusts
+    // that table: without these rows it would re-apply 0001 onto a database
+    // that already has it and fail on a table that exists.
+    connection
+        .execute(
+            "CREATE TABLE IF NOT EXISTS _sqlx_migrations (
+                version BIGINT PRIMARY KEY,
+                description TEXT NOT NULL,
+                installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN NOT NULL,
+                checksum BLOB NOT NULL,
+                execution_time BIGINT NOT NULL
+            )",
+        )
+        .await
+        .expect("the migration bookkeeping table");
+    for migration in migrator.iter().filter(|migration| migration.version <= last_version) {
+        sqlx::query("INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?, ?, TRUE, ?, 0)")
+            .bind(migration.version)
+            .bind(migration.description.as_ref())
+            .bind(migration.checksum.as_ref())
+            .execute(&mut *connection)
+            .await
+            .expect("recording an applied migration");
+    }
+}
+
+#[tokio::test]
+async fn the_lines_a_reader_kept_survive_the_change_of_identity() {
+    // The riskiest thing in the offline release: quotes stopped being keyed by
+    // a number the server chose and became keyed by an id the device mints,
+    // which means the table is rebuilt under a reader who already has
+    // highlights in it. Losing those would be losing the part of the library
+    // that is theirs and not recoverable from the vault.
+    let dir = tempfile::tempdir().expect("a temporary directory");
+    let url = format!("sqlite://{}?mode=rwc", dir.path().join("rhapsod.db").display());
+    let pool = sqlx::SqlitePool::connect(&url).await.expect("the database should open");
+
+    // The schema as it stood before the queue existed, with a line kept in it.
+    // 0003 is the last migration before the offline release.
+    migrated_up_to(&pool, 3).await;
+    sqlx::query("INSERT INTO quotes (piece_id, paragraph, text, comment) VALUES (?, ?, ?, ?)")
+        .bind("02-istoriya/god-bez-leta")
+        .bind(3_i64)
+        .bind("the line that was kept")
+        .bind("and what was said about it")
+        .execute(&pool)
+        .await
+        .expect("the old schema should take a quote");
+
+    // The upgrade, exactly as a stand performs it on the first start after
+    // the release.
+    sqlx::migrate!().run(&pool).await.expect("the migrations should apply over the old schema");
+
+    let (id, text, comment, paragraph): (String, String, Option<String>, i64) = sqlx::query_as("SELECT id, text, comment, paragraph FROM quotes")
+        .fetch_one(&pool)
+        .await
+        .expect("the kept line should still be there");
+    assert_eq!(text, "the line that was kept", "the reader's own words did not survive the upgrade");
+    assert_eq!(comment.as_deref(), Some("and what was said about it"));
+    assert_eq!(paragraph, 3, "the quote lost the paragraph it came from");
+    assert!(!id.is_empty(), "the migrated quote has no id to address it by");
+
+    // And it is addressable: a quote whose id the app cannot use is a
+    // highlight the reader can see but never remove.
+    let removed = sqlx::query("DELETE FROM quotes WHERE id = ?").bind(&id).execute(&pool).await.unwrap();
+    assert_eq!(removed.rows_affected(), 1, "the migrated quote could not be addressed by its id");
+}

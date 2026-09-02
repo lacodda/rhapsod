@@ -6,6 +6,16 @@
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      The colour the phone paints around the app: the dark theme's background,
+      so an installed reader does not flash a white frame on opening. It is a
+      literal because a manifest and a meta tag cannot read a CSS token; the
+      value is `--bg` of dowel's dark theme with rhapsod's accent mixed in, and
+      the release gate checks the two have not drifted apart.
+    -->
+    <meta name="theme-color" content="#181b1a" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#eef1ed" media="(prefers-color-scheme: light)" />
     <title>rhapsod</title>
   </head>
   <body>

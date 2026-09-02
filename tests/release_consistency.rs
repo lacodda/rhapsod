@@ -221,3 +221,58 @@ fn captured_output_shows_the_version_being_shipped() {
         stale.join("\n  ")
     );
 }
+
+/// Every place a colour is written down as a literal.
+///
+/// The theme is dowel's, where `--bg` is computed from tokens, and a manifest
+/// and a `<meta>` tag cannot read CSS. So the installed app's frame colour is
+/// spelled out by hand in two files - and a hand-copied colour is exactly the
+/// kind of fact that drifts once and is noticed a release later, as a white
+/// flash on opening the app on a phone.
+const DARK_BACKGROUND: &str = "#181b1a";
+const LIGHT_BACKGROUND: &str = "#eef1ed";
+
+#[test]
+fn the_installed_app_is_painted_the_colour_the_app_actually_is() {
+    let manifest = read("web/public/manifest.webmanifest");
+    for field in ["background_color", "theme_color"] {
+        let line = manifest
+            .lines()
+            .find(|line| line.contains(field))
+            .unwrap_or_else(|| panic!("the manifest has no {field}"));
+        assert!(
+            line.contains(DARK_BACKGROUND),
+            "the manifest's {field} is not {DARK_BACKGROUND}, so an installed reader opens on the wrong colour: {}",
+            line.trim()
+        );
+    }
+
+    // The two `theme-color` tags, one per scheme. A phone paints the frame
+    // around the app with these before a stylesheet has loaded.
+    let index = read("web/index.html");
+    for colour in [DARK_BACKGROUND, LIGHT_BACKGROUND] {
+        assert!(
+            index.contains(colour),
+            "index.html has no theme-color of {colour}; the frame around the app will not match it"
+        );
+    }
+}
+
+#[test]
+fn the_service_worker_takes_the_version_it_is_built_with() {
+    // The worker caches the shell under a name carrying the app's version, so
+    // that a deploy retires the previous one. The placeholder is substituted
+    // at build time (see the plugin in vite.config.ts); if the token is ever
+    // renamed on one side only, every release would share one cache and
+    // readers would sit on an old build with no way to be updated.
+    let worker = read("web/public/sw.js");
+    assert!(
+        worker.contains("__APP_VERSION__"),
+        "sw.js no longer carries the __APP_VERSION__ placeholder the build stamps"
+    );
+    let config = read("web/vite.config.ts");
+    assert!(
+        config.contains("__APP_VERSION__") && config.contains("dist/sw.js"),
+        "the build no longer stamps a version into dist/sw.js"
+    );
+}
