@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use rhapsod::{app, config, db};
+use rhapsod::{app, config, db, library};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -53,6 +53,15 @@ async fn serve(config: &config::Config) -> Result<()> {
 
     let pool = db::connect(&config.database_url).await?;
 
+    // The index is built before the port is bound: a server that answers
+    // before it has read the library would serve an empty one for the first
+    // seconds after every restart.
+    let content_dir = config.content_dir.clone();
+    let library = tokio::task::spawn_blocking(move || library::Library::load(&content_dir))
+        .await
+        .context("the library could not be indexed")??;
+    tracing::info!(pieces = library.len(), sections = library.sections().len(), "library indexed");
+
     let listener = TcpListener::bind(config.addr)
         .await
         .with_context(|| format!("failed to bind {}", config.addr))?;
@@ -63,7 +72,7 @@ async fn serve(config: &config::Config) -> Result<()> {
         "rhapsod listening"
     );
 
-    axum::serve(listener, app::router(pool, &config.web_dir))
+    axum::serve(listener, app::router(pool, &config.web_dir, library, config.content_dir.clone()))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;
