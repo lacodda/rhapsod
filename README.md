@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/lacodda/rhapsod/main/assets/banner.svg" alt="rhapsod" width="720"></p>
+
 # rhapsod
 
 [![CI](https://github.com/lacodda/rhapsod/actions/workflows/ci.yml/badge.svg)](https://github.com/lacodda/rhapsod/actions/workflows/ci.yml)

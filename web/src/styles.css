@@ -9,12 +9,12 @@
 
 /*
  * The accent is stated here rather than imported from `dowel-ui/accents/`,
- * because the line's registry does not carry rhapsod yet. When it does, this
- * block becomes one import. Terracotta: the colour of a clay tablet, which is
- * what a library was before it was paper.
+ * because dowel-ui does not carry a rhapsod accent yet. When it does, this
+ * block becomes one import. Field green is the product colour rhapsod holds
+ * in the line's brand registry.
  */
 :root {
-  --accent-base: #d96a3f;
+  --accent-base: #6cb14e;
 }
 
 body {
