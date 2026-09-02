@@ -33,7 +33,9 @@ async fn stand() -> (axum::Router, tempfile::TempDir, tempfile::TempDir) {
     let index = rhapsod::library::Library::load(content.path()).expect("the library should index");
 
     let web = tempfile::tempdir().expect("a temporary directory");
-    let app = rhapsod::app::router(pool, web.path(), index, content.path().to_path_buf());
+    // No password: the stand runs open on a home network by default, and
+    // the locked case has its own test below.
+    let app = rhapsod::app::router(pool, web.path(), index, content.path().to_path_buf(), None);
     (app, data, content)
 }
 

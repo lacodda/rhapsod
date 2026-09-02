@@ -74,6 +74,7 @@ Everything comes from the environment; a `.env` file is read first, and `.env.ex
 | `RHAPSOD_DATABASE_URL` | no | `sqlite://data/rhapsod.db?mode=rwc` | The SQLite file holding everything the reader remembers. |
 | `RHAPSOD_ADDR` | no | `0.0.0.0:8084` | Socket address the HTTP server binds to. |
 | `RHAPSOD_WEB_DIR` | no | `web/dist` | Directory holding the built app, served for every path outside `/api`. |
+| `RHAPSOD_PASSWORD_HASH` | no | - | Argon2 hash of the reading password, from `rhapsod hash`. Unset leaves the stand open, which is how a home network usually runs it. |
 | `RUST_LOG` | no | `rhapsod=info,tower_http=info` | Log filter, in `tracing-subscriber` `EnvFilter` syntax. |
 
 ## Status

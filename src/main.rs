@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use rhapsod::{app, config, db, library};
+use rhapsod::{app, auth, config, db, library};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -17,6 +17,15 @@ struct Cli {
 enum Command {
     /// Run the HTTP server: the API and the reading app.
     Serve,
+    /// Hash a password for `RHAPSOD_PASSWORD_HASH`.
+    ///
+    /// Without a hash to put in the variable, locking a stand means finding
+    /// an Argon2 tool elsewhere, and most of what turns up online is a web
+    /// form asking for the password.
+    Hash {
+        /// The password to hash. Prompted for if omitted.
+        password: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -32,13 +41,24 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("rhapsod=info,tower_http=info")))
         .init();
 
-    let config = config::Config::from_env()?;
     let cli = Cli::parse();
 
+    // The configuration is read only where it is needed: hashing a password
+    // is the first thing an owner does, before there is a library to point
+    // RHAPSOD_CONTENT_DIR at.
     match cli.command {
+        Some(Command::Hash { password }) => {
+            let password = match password {
+                Some(password) => password,
+                None => rpassword::prompt_password("Password: ").context("failed to read the password")?,
+            };
+            anyhow::ensure!(!password.trim().is_empty(), "an empty password is not a password");
+            println!("{}", auth::hash(&password)?);
+            Ok(())
+        }
         // Running the binary with no arguments serves, which is what a
         // container image or a systemd unit expects.
-        None | Some(Command::Serve) => serve(&config).await,
+        None | Some(Command::Serve) => serve(&config::Config::from_env()?).await,
     }
 }
 
@@ -72,10 +92,13 @@ async fn serve(config: &config::Config) -> Result<()> {
         "rhapsod listening"
     );
 
-    axum::serve(listener, app::router(pool, &config.web_dir, library, config.content_dir.clone()))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("server error")?;
+    axum::serve(
+        listener,
+        app::router(pool, &config.web_dir, library, config.content_dir.clone(), config.password_hash.clone()),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .context("server error")?;
     Ok(())
 }
 

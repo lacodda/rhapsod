@@ -10,13 +10,15 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::SqlitePool;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
+use crate::auth::{self, Reader};
 use crate::library::{Library, PieceSummary, Section};
+use crate::progress;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,6 +29,8 @@ pub struct AppState {
     pub library: Arc<RwLock<Library>>,
     /// Where the library is read from, so a reindex knows what to re-read.
     pub content_dir: PathBuf,
+    /// Argon2 hash of the reading password; `None` leaves the stand open.
+    pub password_hash: Option<String>,
 }
 
 /// The router: the API under `/api`, the reading app everywhere else.
@@ -35,11 +39,12 @@ pub struct AppState {
 /// `index.html` otherwise, so a deep link into a novella loads the app rather
 /// than a 404. The API never falls through to it: a misspelled endpoint has to
 /// look like a mistake, not like a page.
-pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: PathBuf) -> Router {
+pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: PathBuf, password_hash: Option<String>) -> Router {
     let state = AppState {
         pool,
         library: Arc::new(RwLock::new(library)),
         content_dir,
+        password_hash,
     };
 
     let api = Router::new()
@@ -49,6 +54,10 @@ pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: P
         .route("/sections/{section}", get(section_pieces))
         .route("/pieces/{section}/{piece}", get(piece))
         .route("/reindex", post(reindex))
+        .route("/session", get(session).post(sign_in).delete(sign_out))
+        .route("/progress", get(read_progress))
+        .route("/progress/{section}/{piece}", post(record_progress))
+        .route("/next", get(what_next))
         .fallback(api_not_found)
         .with_state(state);
 
@@ -218,6 +227,211 @@ fn not_found(message: &'static str) -> Response {
     (StatusCode::NOT_FOUND, Json(json!({ "error": message }))).into_response()
 }
 
+/// Whether this browser is signed in, and whether it has to be.
+///
+/// The app asks this first: an open stand and a signed-in reader look the same
+/// to it, and a locked one gets the sign-in screen.
+#[derive(Serialize)]
+struct SessionState {
+    /// True when the stand has no password: everyone is a reader.
+    open: bool,
+    /// True when this browser may read.
+    reader: bool,
+}
+
+async fn session(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    let open = state.password_hash.is_none();
+    let reader = if open {
+        true
+    } else {
+        match auth::token_from_headers(&headers) {
+            Some(token) => auth::is_live(&state.pool, &token).await.unwrap_or(false),
+            None => false,
+        }
+    };
+    Json(SessionState { open, reader }).into_response()
+}
+
+#[derive(Deserialize)]
+struct SignIn {
+    password: String,
+}
+
+/// Signs in, setting the session cookie.
+async fn sign_in(State(state): State<AppState>, Json(body): Json<SignIn>) -> Response {
+    let Some(hash) = state.password_hash.as_deref() else {
+        // Nothing to sign in to. Saying so beats handing out a session that
+        // protects nothing and would confuse the app's own state.
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this stand has no password" }))).into_response();
+    };
+
+    match auth::verify(&body.password, hash) {
+        Ok(true) => {}
+        Ok(false) => return (StatusCode::UNAUTHORIZED, Json(json!({ "error": "that is not the password" }))).into_response(),
+        Err(error) => {
+            // A hash the server cannot parse is a deployment error; reading it
+            // as a wrong password would leave the owner typing the right one
+            // forever against a server that cannot check it.
+            tracing::error!(%error, "the configured password hash cannot be used");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "the stand's password is misconfigured" })),
+            )
+                .into_response();
+        }
+    }
+
+    let token = auth::new_token();
+    if let Err(error) = auth::start(&state.pool, &token).await {
+        return failed(&error, "the session could not be started");
+    }
+
+    ([(header::SET_COOKIE, auth::cookie(&token))], Json(SessionState { open: false, reader: true })).into_response()
+}
+
+/// Signs out, ending the session rather than only forgetting the cookie.
+async fn sign_out(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    if let Some(token) = auth::token_from_headers(&headers)
+        && let Err(error) = auth::end(&state.pool, &token).await
+    {
+        return failed(&error, "the session could not be ended");
+    }
+    let open = state.password_hash.is_none();
+    ([(header::SET_COOKIE, auth::cleared_cookie())], Json(SessionState { open, reader: open })).into_response()
+}
+
+/// Everything the reader has read, and what it adds up to.
+#[derive(Serialize)]
+struct Progress {
+    pieces: Vec<progress::State>,
+    stats: progress::Stats,
+    /// The piece to continue, if there is one.
+    continue_with: Option<String>,
+}
+
+async fn read_progress(_: Reader, State(state): State<AppState>) -> Response {
+    let pieces = match progress::all(&state.pool).await {
+        Ok(pieces) => pieces,
+        Err(error) => return failed(&error, "the reading state could not be read"),
+    };
+
+    // The library is cloned out of the lock rather than held across the
+    // queries below: a read lock held over an await would block a reindex for
+    // as long as the database takes.
+    let library = {
+        let Ok(held) = state.library.read() else {
+            return lock_poisoned();
+        };
+        held.clone()
+    };
+
+    let totals = match progress::stats(&state.pool, &library).await {
+        Ok(totals) => totals,
+        Err(error) => return failed(&error, "the statistics could not be read"),
+    };
+    let continue_with = match progress::continue_with(&state.pool).await {
+        Ok(unfinished) => unfinished.map(|row| row.piece_id),
+        Err(error) => return failed(&error, "the reading state could not be read"),
+    };
+
+    Json(Progress {
+        pieces,
+        stats: totals,
+        continue_with,
+    })
+    .into_response()
+}
+
+/// What the app reports as the reader moves.
+#[derive(Deserialize)]
+struct Moved {
+    /// Paragraph last seen, if the report is about position.
+    paragraph: Option<i64>,
+    /// Set to finish or unfinish the piece.
+    read: Option<bool>,
+}
+
+/// Records where the reader is in a piece.
+///
+/// One endpoint for both kinds of report: they arrive from the same screen,
+/// often in the same second, and splitting them would only make the app choose
+/// between two calls.
+async fn record_progress(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>, Json(moved): Json<Moved>) -> Response {
+    let id = format!("{section}/{piece}");
+
+    // A report about a piece that is not in the library is a stale phone or a
+    // typed URL; storing it would leave rows no screen can ever show.
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    if let Some(paragraph) = moved.paragraph {
+        if let Err(error) = progress::at_paragraph(&state.pool, &id, paragraph).await {
+            return failed(&error, "the reading position could not be saved");
+        }
+    } else if moved.read.is_none()
+        && let Err(error) = progress::opened(&state.pool, &id).await
+    {
+        return failed(&error, "the reading state could not be saved");
+    }
+
+    if let Some(read) = moved.read
+        && let Err(error) = progress::set_read(&state.pool, &id, read).await
+    {
+        return failed(&error, "the reading state could not be saved");
+    }
+
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// What the reader asks for at the end of a piece.
+#[derive(Deserialize)]
+struct After {
+    /// The piece just finished, so the answer can come from another shelf.
+    after: Option<String>,
+}
+
+/// What to read next.
+///
+/// The default is an unread piece from another shelf: reading straight down
+/// one shelf turns thirty pieces about paradoxes into a textbook, and the
+/// format is built for the opposite. Within that, reading order decides, so
+/// the answer is the same on every device and does not shuffle underfoot.
+async fn what_next(_: Reader, State(state): State<AppState>, axum::extract::Query(after): axum::extract::Query<After>) -> Response {
+    let touched = match progress::all(&state.pool).await {
+        Ok(states) => states,
+        Err(error) => return failed(&error, "the reading state could not be read"),
+    };
+    let read: std::collections::HashSet<String> = touched.into_iter().filter(|row| row.status == "read").map(|row| row.piece_id).collect();
+
+    with_library(&state, |library| {
+        let current_section = after.after.as_deref().and_then(|id| library.piece(id)).map(|piece| piece.section.clone());
+
+        let summaries = library.summaries();
+        let unread: Vec<&PieceSummary> = summaries.iter().filter(|piece| !read.contains(&piece.id)).collect();
+
+        // Another shelf first; if everything unread is on this one, the shelf
+        // itself is the answer rather than nothing.
+        let pick = unread
+            .iter()
+            .find(|piece| current_section.as_deref() != Some(piece.section.as_str()))
+            .or_else(|| unread.first())
+            .map(|piece| (*piece).clone());
+
+        Json(json!({ "next": pick })).into_response()
+    })
+}
+
+fn failed(error: &anyhow::Error, message: &'static str) -> Response {
+    tracing::error!(%error, message);
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": message }))).into_response()
+}
+
 /// Anything under `/api` that does not exist is a client's mistake, answered
 /// in JSON like every other API failure.
 async fn api_not_found() -> Response {
@@ -268,7 +482,9 @@ mod tests {
 
     fn app(web: &tempfile::TempDir, content: &tempfile::TempDir, pool: SqlitePool) -> Router {
         let library = Library::load(content.path()).expect("the library should load");
-        router(pool, web.path(), library, content.path().to_path_buf())
+        // No password: an open stand is how this runs on a home network, and
+        // the locked case is exercised where it matters, in the auth tests.
+        router(pool, web.path(), library, content.path().to_path_buf(), None)
     }
 
     async fn get_json(app: Router, uri: &str) -> (StatusCode, serde_json::Value) {
@@ -399,7 +615,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let content = content_root();
         let library = Library::load(content.path()).unwrap();
-        let response = router(pool().await, dir.path(), library, content.path().to_path_buf())
+        let response = router(pool().await, dir.path(), library, content.path().to_path_buf(), None)
             .oneshot(Request::get("/").body(Body::empty()).unwrap())
             .await
             .unwrap();

@@ -29,6 +29,12 @@ pub struct Config {
     pub database_url: String,
     /// Directory holding the built SPA (`RHAPSOD_WEB_DIR`).
     pub web_dir: PathBuf,
+    /// Argon2 hash of the reading password (`RHAPSOD_PASSWORD_HASH`).
+    ///
+    /// Absent means the stand is open: on a home network with one reader that
+    /// is a reasonable way to run, and demanding a password before there is
+    /// anything to protect would only teach the owner to set an empty one.
+    pub password_hash: Option<String>,
 }
 
 impl Config {
@@ -56,11 +62,13 @@ impl Config {
         let web_dir = lookup("RHAPSOD_WEB_DIR")
             .filter(|path| !path.trim().is_empty())
             .map_or_else(|| PathBuf::from(DEFAULT_WEB_DIR), PathBuf::from);
+        let password_hash = lookup("RHAPSOD_PASSWORD_HASH").filter(|hash| !hash.trim().is_empty());
         Ok(Self {
             addr,
             content_dir,
             database_url,
             web_dir,
+            password_hash,
         })
     }
 }
@@ -116,6 +124,18 @@ mod tests {
         let config = Config::from_lookup(env(&[CONTENT, ("RHAPSOD_DATABASE_URL", ""), ("RHAPSOD_WEB_DIR", " ")])).unwrap();
         assert_eq!(config.database_url, DEFAULT_DATABASE_URL);
         assert_eq!(config.web_dir, PathBuf::from(DEFAULT_WEB_DIR));
+    }
+
+    #[test]
+    fn a_stand_without_a_password_is_open() {
+        // One reader on a home network: making a password mandatory before
+        // there is anything to protect only teaches the owner to set a blank
+        // one.
+        let config = Config::from_lookup(env(&[CONTENT])).unwrap();
+        assert!(config.password_hash.is_none());
+
+        let config = Config::from_lookup(env(&[CONTENT, ("RHAPSOD_PASSWORD_HASH", "  ")])).unwrap();
+        assert!(config.password_hash.is_none(), "a blank hash is not a password");
     }
 
     #[test]
