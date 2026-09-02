@@ -60,6 +60,23 @@ export interface Progress {
   continue_with: string | null
 }
 
+/** A note on one piece, in the reader's own words. */
+export interface Note {
+  piece_id: string
+  body: string
+  updated_at: string
+}
+
+/** A line the reader kept, with an optional comment of their own. */
+export interface Quote {
+  id: number
+  piece_id: string
+  paragraph: number
+  text: string
+  comment: string | null
+  created_at: string
+}
+
 /** Whether this browser may read, and whether it has to prove anything. */
 export interface Session {
   open: boolean
@@ -135,6 +152,20 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
   }
   return response.status === 204 ? null : ((await response.json()) as T)
 }
+
+export const fetchNotes = (): Promise<Note[]> => get<Note[]>('/notes')
+
+export const fetchQuotes = (): Promise<Quote[]> => get<Quote[]>('/quotes')
+
+export const saveNote = (id: string, body: string): Promise<null> => send<null>(`/notes/${id}`, 'POST', { body }).then(() => null)
+
+export const keepQuote = (quote: { piece_id: string; paragraph: number; text: string; comment: string | null }): Promise<Quote | null> =>
+  send<Quote>('/quotes', 'POST', quote)
+
+export const commentOnQuote = (id: number, comment: string | null): Promise<null> =>
+  send<null>(`/quotes/${id}`, 'POST', { comment }).then(() => null)
+
+export const dropQuote = (id: number): Promise<null> => send<null>(`/quotes/${id}`, 'DELETE').then(() => null)
 
 export const signIn = (password: string): Promise<Session | null> => send<Session>('/session', 'POST', { password })
 

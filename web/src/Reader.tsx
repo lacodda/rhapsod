@@ -11,11 +11,20 @@ import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, fetchNext, fetchPiece, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
 import { Empty, minutes } from '@/Library'
+import { KeepBar, KeptLines, NoteEditor, useSelection } from '@/Marks'
 import { go } from '@/routing'
+import type { MarksStore } from '@/useMarks'
 import type { ProgressStore } from '@/useProgress'
 
-/** Renders the light markdown the format uses inside a line: `**bold**`. */
-function Rich({ text }: { text: string }) {
+/**
+ * Renders the light markdown the format uses inside a line - `**bold**` - and
+ * marks any kept lines found in it.
+ *
+ * The kept lines are matched by their text: an edit in the vault at worst
+ * loses a highlight, where an offset would silently move it onto the wrong
+ * sentence.
+ */
+function Rich({ text, marked }: { text: string; marked?: string[] }) {
   const parts = text.split(/\*\*(.+?)\*\*/gu)
   return (
     <>
@@ -26,11 +35,30 @@ function Rich({ text }: { text: string }) {
             {part}
           </strong>
         ) : (
-          part
+          <Marked key={index} text={part} marked={marked} />
         ),
       )}
     </>
   )
+}
+
+/** One run of plain text, with the kept lines inside it picked out. */
+function Marked({ text, marked }: { text: string; marked?: string[] }) {
+  if (!marked || marked.length === 0) return <>{text}</>
+
+  // Longest first, so a quote inside another quote does not split it.
+  for (const quote of [...marked].sort((a, b) => b.length - a.length)) {
+    const at = text.indexOf(quote)
+    if (at === -1) continue
+    return (
+      <>
+        <Marked text={text.slice(0, at)} marked={marked} />
+        <mark className="bg-accent/20 text-text">{quote}</mark>
+        <Marked text={text.slice(at + quote.length)} marked={marked} />
+      </>
+    )
+  }
+  return <>{text}</>
 }
 
 /** A trailing block, set apart from the prose it follows. */
@@ -50,7 +78,17 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
  * fresh screen rather than clearing this one's state on the way in: a piece
  * half-replaced by the next one is a frame the reader should never see.
  */
-export function ReaderScreen({ library, id, progress }: { library: LibraryIndex; id: string; progress: ProgressStore }) {
+export function ReaderScreen({
+  library,
+  id,
+  progress,
+  marks,
+}: {
+  library: LibraryIndex
+  id: string
+  progress: ProgressStore
+  marks: MarksStore
+}) {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [next, setNext] = useState<PieceSummary | null>(null)
@@ -139,6 +177,16 @@ export function ReaderScreen({ library, id, progress }: { library: LibraryIndex;
     }
   }, [piece, id, atParagraph])
 
+  const [selection, clearSelection] = useSelection(piece !== null)
+  const kept = marks.quotesIn(id)
+  // The lines kept from this piece, matched back onto the text by their words
+  // rather than by an offset: a piece edited in the vault would shift every
+  // offset, and a highlight on the wrong sentence is worse than none.
+  const highlights = new Map<number, string[]>()
+  for (const quote of kept) {
+    highlights.set(quote.paragraph, [...(highlights.get(quote.paragraph) ?? []), quote.text])
+  }
+
   const order = library.pieces.map((summary) => summary.id)
   const at = order.indexOf(id)
   const previous = at > 0 ? (library.pieces[at - 1] ?? null) : null
@@ -193,18 +241,28 @@ export function ReaderScreen({ library, id, progress }: { library: LibraryIndex;
         </p>
       </header>
 
-      <div className="flex flex-col gap-5">
+      <div className="relative flex flex-col gap-5">
         {piece.paragraphs.map((paragraph, index) => (
           <p
             key={index}
+            data-paragraph={index}
             ref={(element) => {
               paragraphs.current[index] = element
             }}
             className="text-pretty text-[1.0625rem] leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
           >
-            <Rich text={paragraph} />
+            <Rich text={paragraph} marked={highlights.get(index)} />
           </p>
         ))}
+        {selection ? (
+          <KeepBar
+            selection={selection}
+            onKeep={(text, at) => {
+              marks.keep({ piece_id: id, paragraph: at, text, comment: null })
+              clearSelection()
+            }}
+          />
+        ) : null}
       </div>
 
       {piece.neighbours.length > 0 ? (
@@ -238,6 +296,16 @@ export function ReaderScreen({ library, id, progress }: { library: LibraryIndex;
           </ul>
         </Block>
       ) : null}
+
+      {kept.length > 0 ? (
+        <Block title="Kept lines">
+          <KeptLines quotes={kept} marks={marks} />
+        </Block>
+      ) : null}
+
+      <Block title="Note">
+        <NoteEditor pieceId={id} marks={marks} />
+      </Block>
 
       <Finish id={id} isRead={isRead} next={next} previous={previous} progress={progress} />
     </article>

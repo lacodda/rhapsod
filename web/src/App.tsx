@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { ApiError, fetchLibrary, fetchSession, type LibraryIndex, type Session } from '@/api'
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
+import { QuotesScreen } from '@/Quotes'
 import { ReaderScreen } from '@/Reader'
 import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
+import { useMarks } from '@/useMarks'
 import { useProgress } from '@/useProgress'
 
 /**
@@ -22,6 +24,7 @@ export function App() {
 
   const mayRead = session?.reader === true
   const progress = useProgress(mayRead)
+  const marks = useMarks(mayRead)
 
   useEffect(() => {
     let cancelled = false
@@ -60,7 +63,7 @@ export function App() {
 
   return (
     <div className="min-h-dvh">
-      <Header />
+      <Header quotes={marks.quotes.length} />
       <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
         {session === null ? (
           <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
@@ -76,7 +79,9 @@ export function App() {
             detail="Publish a directory of markdown files to the stand, and they appear here."
           />
         ) : route.name === 'piece' ? (
-          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} />
+          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} marks={marks} />
+        ) : route.name === 'quotes' ? (
+          <QuotesScreen library={library} marks={marks} />
         ) : route.name === 'section' ? (
           <SectionScreen library={library} section={route.section} progress={progress} />
         ) : (
@@ -93,7 +98,7 @@ export function App() {
  * It scrolls away with the page instead of sitting over it - on a phone a
  * sticky bar costs a line of text on every screen of a seven-minute read.
  */
-function Header() {
+function Header({ quotes }: { quotes: number }) {
   return (
     <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
       <a
@@ -107,7 +112,22 @@ function Header() {
       >
         rhapsod
       </a>
-      <span className="px-2 font-mono text-[0.6875rem] text-dim">v{__APP_VERSION__}</span>
+      <span className="flex items-baseline gap-3">
+        {quotes > 0 ? (
+          <a
+            href="/quotes"
+            onClick={(event) => {
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+              event.preventDefault()
+              go({ name: 'quotes' })
+            }}
+            className="rounded-md px-2 py-1 font-mono text-xs text-dim hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            kept {quotes}
+          </a>
+        ) : null}
+        <span className="px-2 font-mono text-[0.6875rem] text-dim">v{__APP_VERSION__}</span>
+      </span>
     </header>
   )
 }
