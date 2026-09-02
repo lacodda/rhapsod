@@ -23,12 +23,17 @@ No parameters, and no session: this endpoint stays open even on a stand that has
 ```json
 {
   "status": "ok",
-  "version": "0.1.1",
-  "pieces": 2
+  "version": "0.7.0",
+  "pieces": 2,
+  "indexed_seconds_ago": 1450
 }
 ```
 
-`version` is the server's own package version, which makes the endpoint the authoritative answer to "what is actually deployed here". `pieces` is how many pieces the index currently holds, which answers the other half of that question: whether the library being served is the one that was published. Every endpoint is on the [API reference](/rhapsod/reference/api/).
+`version` is the server's own package version, which makes the endpoint the authoritative answer to "what is actually deployed here". `pieces` is how many pieces the index currently holds, which answers the other half of that question: whether the library being served is the one that was published.
+
+`indexed_seconds_ago` is how long ago the library was last indexed, which is to say how long ago publishing last reached this stand. Publishing ends in a reindex, so a number that keeps growing past a day means a publish did not arrive - something a piece count cannot tell you, because a library published three weeks ago has a perfectly good count of its own and answers every request exactly like a fresh one.
+
+Every endpoint is on the [API reference](/rhapsod/reference/api/).
 
 ## Why degraded is not down
 

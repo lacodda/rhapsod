@@ -79,7 +79,7 @@ One JSON object with four keys.
 {
   "exported_at": "2026-09-02T17:42:02.006Z",
   "since": null,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",

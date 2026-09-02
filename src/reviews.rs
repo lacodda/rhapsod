@@ -9,7 +9,7 @@
 //! is retired or shown again, not how long the next gap is.
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::library::Library;
@@ -22,7 +22,7 @@ use crate::library::Library;
 const INTERVALS: [i64; 3] = [1, 7, 30];
 
 /// Where a piece stands in its schedule.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::FromRow)]
 pub struct Review {
     pub piece_id: String,
     /// Returns answered so far, 0 to 3.

@@ -29,6 +29,12 @@ pub struct AppState {
     /// answering. A read lock is held only long enough to clone what a
     /// response needs, so publishing content never blocks a reader mid-page.
     pub library: Arc<RwLock<Library>>,
+    /// When the index was last built, so health can say how old it is.
+    ///
+    /// A stand that answers correctly from a library published three weeks ago
+    /// looks exactly like one publishing reached this morning; the difference
+    /// only shows in a number nobody was keeping.
+    pub indexed_at: Arc<RwLock<std::time::Instant>>,
     /// Where the library is read from, so a reindex knows what to re-read.
     pub content_dir: PathBuf,
     /// Argon2 hash of the reading password; `None` leaves the stand open.
@@ -45,10 +51,18 @@ pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: P
     let state = AppState {
         pool,
         library: Arc::new(RwLock::new(library)),
+        indexed_at: Arc::new(RwLock::new(std::time::Instant::now())),
         content_dir,
         password_hash,
     };
+    router_with(state, web_dir)
+}
 
+/// The router over a state that is already built.
+///
+/// Split out so a caller can hold the state it hands over - which is what
+/// lets a test age the index instead of sleeping until it is old.
+pub fn router_with(state: AppState, web_dir: &Path) -> Router {
     let api = Router::new()
         .route("/health", get(health))
         .route("/library", get(library_index))
@@ -111,6 +125,13 @@ struct Health {
     status: &'static str,
     version: &'static str,
     pieces: usize,
+    /// Seconds since the library was last indexed.
+    ///
+    /// Publishing ends in a reindex, so this is how long ago the stand last
+    /// heard from the vault. A number that keeps growing past a day means a
+    /// publish did not arrive - which a piece count cannot tell you, because
+    /// an old library has a perfectly good count of its own.
+    indexed_seconds_ago: u64,
 }
 
 /// Liveness and readiness in one place: the process answers, the database
@@ -119,8 +140,18 @@ struct Health {
 async fn health(State(state): State<AppState>) -> Response {
     let version = env!("CARGO_PKG_VERSION");
     let pieces = state.library.read().map_or(0, |library| library.len());
+    let indexed_seconds_ago = state.indexed_at.read().map_or(0, |stamped| stamped.elapsed().as_secs());
     match sqlx::query("SELECT 1").execute(&state.pool).await {
-        Ok(_) => (StatusCode::OK, Json(Health { status: "ok", version, pieces })).into_response(),
+        Ok(_) => (
+            StatusCode::OK,
+            Json(Health {
+                status: "ok",
+                version,
+                pieces,
+                indexed_seconds_ago,
+            }),
+        )
+            .into_response(),
         Err(error) => {
             tracing::error!(%error, "health check: database unreachable");
             (
@@ -129,6 +160,7 @@ async fn health(State(state): State<AppState>) -> Response {
                     status: "degraded",
                     version,
                     pieces,
+                    indexed_seconds_ago,
                 }),
             )
                 .into_response()
@@ -215,6 +247,9 @@ async fn reindex(State(state): State<AppState>) -> Response {
     match state.library.write() {
         Ok(mut held) => *held = library,
         Err(_) => return lock_poisoned(),
+    }
+    if let Ok(mut stamped) = state.indexed_at.write() {
+        *stamped = std::time::Instant::now();
     }
     tracing::info!(pieces, sections, "library reindexed");
     Json(json!({ "pieces": pieces, "sections": sections })).into_response()
@@ -753,6 +788,49 @@ mod tests {
         assert_eq!(body["status"], "ok");
         assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(body["pieces"], 1, "health should say what library the server is serving");
+        assert!(body["indexed_seconds_ago"].is_u64(), "health should say how old the index is");
+    }
+
+    #[tokio::test]
+    async fn publishing_resets_the_age_of_the_index() {
+        // The number exists to answer "did the publish arrive?". A stand
+        // serving a library published three weeks ago answers every request
+        // exactly like one publishing reached this morning, so the only thing
+        // that makes the field worth having is that a reindex moves it.
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).expect("the library should load");
+        let state = AppState {
+            pool: pool().await,
+            library: Arc::new(RwLock::new(library)),
+            indexed_at: Arc::new(RwLock::new(std::time::Instant::now())),
+            content_dir: content.path().to_path_buf(),
+            password_hash: None,
+        };
+
+        // Age the index rather than waiting for it to age: a sleep here would
+        // be a second spent on every run of the suite, forever.
+        let hours_ago = std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_mins(150))
+            .expect("the clock can go back two and a half hours");
+        *state.indexed_at.write().unwrap() = hours_ago;
+
+        let app = router_with(state.clone(), web.path());
+        let (_, old_index) = get_json(app.clone(), "/api/health").await;
+        assert!(
+            old_index["indexed_seconds_ago"].as_u64().unwrap() >= 9000,
+            "health did not report a stale index: {}",
+            old_index["indexed_seconds_ago"]
+        );
+
+        let response = app.clone().oneshot(Request::post("/api/reindex").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let (_, fresh) = get_json(app, "/api/health").await;
+        assert!(
+            fresh["indexed_seconds_ago"].as_u64().unwrap() < 60,
+            "a reindex did not make the index new again: {}",
+            fresh["indexed_seconds_ago"]
+        );
     }
 
     #[tokio::test]

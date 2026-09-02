@@ -6,9 +6,11 @@
 
 pub mod app;
 pub mod auth;
+pub mod backup;
 pub mod config;
 pub mod db;
 pub mod library;
 pub mod marks;
 pub mod progress;
+pub mod restore;
 pub mod reviews;

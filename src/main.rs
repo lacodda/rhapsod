@@ -17,6 +17,16 @@ struct Cli {
 enum Command {
     /// Run the HTTP server: the API and the reading app.
     Serve,
+    /// Put a reader's side back into a database from an export.
+    ///
+    /// For a stand that was rebuilt: the image is pulled again and the library
+    /// republished from the vault, but what the reader did exists nowhere else
+    /// unless it was carried out. Rows that are already there are left alone,
+    /// so running this against a live stand cannot overwrite anything.
+    Restore {
+        /// The export document, as `GET /api/export` produces it.
+        file: std::path::PathBuf,
+    },
     /// Hash a password for `RHAPSOD_PASSWORD_HASH`.
     ///
     /// Without a hash to put in the variable, locking a stand means finding
@@ -56,6 +66,31 @@ async fn main() -> Result<()> {
             println!("{}", auth::hash(&password)?);
             Ok(())
         }
+        Some(Command::Restore { file }) => {
+            let config = config::Config::from_env()?;
+            let document = tokio::fs::read_to_string(&file)
+                .await
+                .with_context(|| format!("failed to read the export at {}", file.display()))?;
+            let export: rhapsod::restore::Export = serde_json::from_str(&document).with_context(|| format!("{} is not an export document", file.display()))?;
+
+            let pool = db::connect(&config.database_url).await?;
+            let done = rhapsod::restore::restore(&pool, &export).await?;
+
+            println!(
+                "restored {} pieces of reading state, {} notes, {} quotes, {} schedules from an export taken at {}",
+                done.reading, done.notes, done.quotes, done.reviews, export.exported_at
+            );
+            // Silence about what was skipped would read as "nothing to do"
+            // when the real answer is "this stand already had it".
+            let skipped = (export.reading.len() - done.reading)
+                + (export.notes.len() - done.notes)
+                + (export.quotes.len() - done.quotes)
+                + (export.reviews.len() - done.reviews);
+            if skipped > 0 {
+                println!("{skipped} rows were already there and were left alone");
+            }
+            Ok(())
+        }
         // Running the binary with no arguments serves, which is what a
         // container image or a systemd unit expects.
         None | Some(Command::Serve) => serve(&config::Config::from_env()?).await,
@@ -81,6 +116,14 @@ async fn serve(config: &config::Config) -> Result<()> {
         .await
         .context("the library could not be indexed")??;
     tracing::info!(pieces = library.len(), sections = library.sections().len(), "library indexed");
+
+    // A copy a day of the one file that cannot be republished. Spawned rather
+    // than awaited: a stand that refused to serve because it could not write a
+    // backup would make the safety net the thing that breaks.
+    match db::file_of(&config.database_url) {
+        Ok(file) => rhapsod::backup::spawn(pool.clone(), file),
+        Err(error) => tracing::warn!(%error, "backups are off: the database path could not be worked out"),
+    }
 
     let listener = TcpListener::bind(config.addr)
         .await

@@ -10,6 +10,20 @@ use anyhow::{Context, Result};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 
+/// The file a `SQLite` URL points at.
+///
+/// The same rule `connect` uses, in one place: a second copy of "how a URL
+/// becomes a path" would drift, and the one that drifted would be the one
+/// writing backups next to a database that is somewhere else.
+///
+/// # Errors
+///
+/// Fails when the URL is not a valid `SQLite` URL.
+pub fn file_of(url: &str) -> Result<std::path::PathBuf> {
+    let options = SqliteConnectOptions::from_str(url).with_context(|| format!("not a valid SQLite URL: {url}"))?;
+    Ok(options.get_filename().to_path_buf())
+}
+
 /// Opens the database and brings the schema up to date.
 ///
 /// Every entry point does this: a server against an outdated schema fails in
