@@ -78,7 +78,7 @@ Two consequences worth knowing before the first run:
 - **The destination directory belongs to rhapsod.** Anything in it that is not part of your library gets deleted. Publish into a directory that holds nothing else - `/srv/rhapsod/content`, not a home directory.
 - **Pointing `RHAPSOD_PUBLISH_SRC` at the wrong directory empties the stand.** A source with no markdown in it mirrors faithfully: the shelf ends up empty. The reindex counts are how you notice immediately - `{"pieces":0,"sections":0}` after a publish that should have moved nothing.
 
-Nothing about your reading is at risk either way. Progress, notes and highlights live in the database, keyed to the piece, and never in the content directory ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)). Republishing a piece - or removing and restoring it - leaves what you marked in it intact.
+Nothing about your reading is at risk either way. Progress, notes and highlights live in the database, keyed to the piece, and never in the content directory ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)). Republishing a piece - or removing and restoring it - leaves what you marked in it intact. Getting those marks back out is the other direction, and its own script: [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
 
 ## When it refuses
 

@@ -18,9 +18,22 @@ A `.env` file in the working directory is read first, so all of these can live t
 
 ## What the server does not read
 
-`RHAPSOD_PUBLISH_SRC`, `RHAPSOD_PUBLISH_HOST`, `RHAPSOD_PUBLISH_DEST` and `RHAPSOD_PUBLISH_URL` look like server configuration and are not. They are read by the publishing scripts in `tools/`, which run on the machine the library is written on and talk to the server only through `POST /api/reindex`; the server never looks at them. They are documented with the tool that uses them, in [Publishing content](/rhapsod/guides/publishing-content/).
+Six variables look like server configuration and are not. They are read by the scripts in `tools/`, which run on the machine the library is written on; the server never looks at them.
 
-They share the `.env` file with the table above because a development machine is often both the thing running the server and the thing publishing to a stand, and one file for both halves beats two.
+| Variable | Read by | Purpose |
+| --- | --- | --- |
+| `RHAPSOD_PUBLISH_SRC` | `publish-content.*` | The local library directory to publish. |
+| `RHAPSOD_PUBLISH_HOST` | `publish-content.*` | The ssh host to publish to. |
+| `RHAPSOD_PUBLISH_DEST` | `publish-content.*` | The directory on that host to publish into. |
+| `RHAPSOD_PUBLISH_URL` | both | Base URL of the stand: reindexed after a publish, asked for the export. |
+| `RHAPSOD_EXPORT_TO` | `export-marks.*` | Where to write the export document. Defaults to `./rhapsod-export.json`. |
+| `RHAPSOD_PASSWORD` | `export-marks.*` | The reading password, in plain text, for exporting from a locked stand. |
+
+They are documented with the tools that use them, in [Publishing content](/rhapsod/guides/publishing-content/) and [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
+
+`RHAPSOD_PASSWORD` is worth telling apart from `RHAPSOD_PASSWORD_HASH` above. The hash is what the server reads to decide whether a password is right; this is the password itself, typed by a reader and sent to `POST /api/session`. The hash belongs on the stand, the password belongs on the machine that exports from it, and a stand that read the plaintext would be storing the answer next to the lock.
+
+These share the `.env` file with the table above because a development machine is often both the thing running the server and the thing publishing to a stand, and one file for both halves beats two.
 
 ## How it is read
 

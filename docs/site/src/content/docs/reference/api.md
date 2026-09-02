@@ -1,6 +1,6 @@
 ---
 title: API
-description: Every endpoint the server answers - the library, the session, reading progress, what to read next, and the reindex the publishing script calls.
+description: Every endpoint the server answers - the library, the session, reading progress, notes and quotes, the export, and the reindex the publishing script calls.
 ---
 
 The API lives under `/api`. It is JSON in and JSON out.
@@ -13,6 +13,8 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/session`, `POST`, `DELETE` | Open. The app has to be able to ask whether it needs a password. |
 | `GET /api/library`, `/sections`, `/sections/{section}`, `/pieces/...` | Needs a session. |
 | `GET /api/progress`, `POST /api/progress/...`, `GET /api/next` | Needs a session. |
+| `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes and the quotes at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -416,12 +418,325 @@ curl 'http://127.0.0.1:8084/api/next?after=19-lyubov-i-pary/abelyar-i-eloiza'
 
 Within the preference, reading order decides, so the answer is the same on every device and does not shuffle underfoot. The piece comes back with the same fields `/api/library` gives, but serialised in alphabetical order rather than that endpoint's declared order; read them by name.
 
+## `GET /api/notes`
+
+Every note the reader has written, newest first. One request, like the progress: the shelves mark which pieces carry a note, and asking per piece would be a request per row.
+
+```sh
+curl http://127.0.0.1:8084/api/notes
+```
+
+```json
+[
+  {
+    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "body": "Письма пережили обоих. Это и есть сюжет.",
+    "updated_at": "2026-09-02T11:22:44.935Z"
+  },
+  {
+    "piece_id": "02-istoriya/god-bez-leta",
+    "body": "Снег в июне — и потом Франкенштейн.",
+    "updated_at": "2026-09-02T11:22:38.896Z"
+  }
+]
+```
+
+A reader who has written nothing gets `[]`.
+
+| Field | Meaning |
+| --- | --- |
+| `piece_id` | The piece the note is about. There is at most one note per piece. |
+| `body` | Markdown, as typed, trimmed of surrounding whitespace. |
+| `updated_at` | When it was last written. This is what orders the list. |
+
+**A piece missing from this list has no note.** An emptied note is deleted rather than kept as an empty row, so the presence of a `piece_id` here is exactly what a note marker on a shelf means.
+
+## `POST /api/notes/{section}/{piece}`
+
+Writes the note on a piece. Answers `204` with no body.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/notes/19-lyubov-i-pary/abelyar-i-eloiza \
+  -H 'content-type: application/json' \
+  -d '{"body":"Письма пережили обоих. Это и есть сюжет."}'
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+The whole note every time, not a diff. It is a few hundred words at most, typed by one person on one device at a time, and a merge algorithm would be more machinery than the problem has. The app saves after a pause in the typing rather than on every keystroke, so this is a request per thought rather than per character.
+
+**An empty body deletes the note:**
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/notes/19-lyubov-i-pary/abelyar-i-eloiza \
+  -H 'content-type: application/json' -d '{"body":"   "}'
+curl http://127.0.0.1:8084/api/notes
+```
+
+```json
+[]
+```
+
+Whitespace counts as empty. There is no separate `DELETE`: clearing the textarea is how a reader deletes a note, and an endpoint they could not reach that way would be one the app never called.
+
+A note on a piece that is not in the library is refused:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/notes/02-istoriya/nope \
+  -H 'content-type: application/json' -d '{"body":"x"}'
+```
+
+```json
+{"error":"no such piece"}
+```
+
+`404`. Same rule as progress: it is a stale phone or a typed URL, and storing it would leave a note no screen can ever show.
+
+## `GET /api/quotes`
+
+Every line the reader kept, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/quotes
+```
+
+```json
+[
+  {
+    "id": 2,
+    "piece_id": "02-istoriya/god-bez-leta",
+    "paragraph": 1,
+    "text": "Следующее лето не пришло.",
+    "comment": "Тамбора, 1815.",
+    "created_at": "2026-09-02T11:22:52.250Z"
+  },
+  {
+    "id": 1,
+    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "paragraph": 1,
+    "text": "Она пишет ему из монастыря.",
+    "comment": "Двадцать лет спустя.",
+    "created_at": "2026-09-02T11:22:52.174Z"
+  }
+]
+```
+
+| Field | Meaning |
+| --- | --- |
+| `id` | The quote's own id. A quote is not identified by what it says, because the same line can be kept twice. |
+| `piece_id` | The piece it came from. |
+| `paragraph` | Index of the paragraph it was selected in - the same index the reading position uses. |
+| `text` | The exact words the reader selected, trimmed. **This, and not a pair of offsets, is what anchors the highlight.** |
+| `comment` | What they wanted to say about it, or `null`. |
+| `created_at` | When it was kept. This orders the list, newest first. |
+
+Newest first is the order the quotes page wants; the reading view sorts the quotes of one piece by `paragraph` itself, so they appear down the text in the order they occur in it.
+
+Why the text rather than offsets is in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
+
+## `POST /api/quotes`
+
+Keeps a line. Answers `201` with the quote as stored - the app needs the `id` back before it can offer to comment on it or remove it.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/quotes \
+  -H 'content-type: application/json' \
+  -d '{"piece_id":"19-lyubov-i-pary/abelyar-i-eloiza","paragraph":1,"text":"Она пишет ему из монастыря.","comment":"Двадцать лет спустя."}'
+```
+
+```
+HTTP/1.1 201 Created
+content-type: application/json
+```
+
+```json
+{"id":1,"piece_id":"19-lyubov-i-pary/abelyar-i-eloiza","paragraph":1,"text":"Она пишет ему из монастыря.","comment":"Двадцать лет спустя.","created_at":"2026-09-02T11:22:52.174Z"}
+```
+
+`comment` is optional and may be `null`; a blank one is stored as `null` rather than as an empty string, so a client has one thing to check.
+
+**The same line can be kept twice.** Posting the identical body again is a second quote with its own id, not an error:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes \
+  -H 'content-type: application/json' \
+  -d '{"piece_id":"02-istoriya/god-bez-leta","paragraph":1,"text":"Следующее лето не пришло.","comment":null}'
+```
+
+```json
+{"id":3,"piece_id":"02-istoriya/god-bez-leta","paragraph":1,"text":"Следующее лето не пришло.","comment":null,"created_at":"2026-09-02T11:22:52.329Z"}
+```
+
+Two readings of the same piece can mark the same sentence, and the second is not a mistake to refuse.
+
+A quote with no text is a mis-tap the app sent, not a server failure, and saying so as a `400` lets it tell the difference:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes \
+  -H 'content-type: application/json' \
+  -d '{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"   ","comment":null}'
+```
+
+```json
+{"error":"a quote needs some text"}
+```
+
+A quote on a piece that is not in the library is `404`:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes \
+  -H 'content-type: application/json' \
+  -d '{"piece_id":"02-istoriya/nope","paragraph":0,"text":"a line","comment":null}'
+```
+
+```json
+{"error":"no such piece"}
+```
+
+## `POST /api/quotes/{id}`
+
+Changes what the reader said about a quote. Answers `204`.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/quotes/2 \
+  -H 'content-type: application/json' -d '{"comment":"Тамбора, 1815."}'
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+`null` - or a blank string - takes the comment back:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes/2 \
+  -H 'content-type: application/json' -d '{"comment":null}'
+```
+
+Only the comment can be changed. The text and the paragraph are what the reader selected, and a quote whose words could be edited would no longer be a quote.
+
+A quote that is gone answers `404` rather than pretending:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/quotes/999 \
+  -H 'content-type: application/json' -d '{"comment":"x"}'
+```
+
+```json
+{"error":"no such quote"}
+```
+
+The app can be holding a stale list - a quote removed on the phone, commented on from the desktop - and this is how it finds out.
+
+## `DELETE /api/quotes/{id}`
+
+Removes a quote. Answers `204`.
+
+```sh
+curl -i -X DELETE http://127.0.0.1:8084/api/quotes/3
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+Removing it twice is `404`, not a second success:
+
+```sh
+curl -X DELETE http://127.0.0.1:8084/api/quotes/3
+```
+
+```json
+{"error":"no such quote"}
+```
+
+## `GET /api/export`
+
+Everything the reader has left behind, in one document.
+
+```sh
+curl http://127.0.0.1:8084/api/export
+```
+
+```json
+{
+  "exported_at": "2026-09-02T11:25:07.935Z",
+  "version": "0.2.0",
+  "reading": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "status": "reading",
+      "paragraph": 7,
+      "updated_at": "2026-09-02T11:23:10.120Z",
+      "read_at": null
+    },
+    {
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "status": "read",
+      "paragraph": 0,
+      "updated_at": "2026-09-02T11:23:10.171Z",
+      "read_at": "2026-09-02T11:23:10.171Z"
+    }
+  ],
+  "notes": [
+    {
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "body": "Письма пережили обоих. Это и есть сюжет.",
+      "updated_at": "2026-09-02T11:22:44.935Z"
+    },
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "body": "Снег в июне — и потом Франкенштейн.",
+      "updated_at": "2026-09-02T11:22:38.896Z"
+    }
+  ],
+  "quotes": [
+    {
+      "id": 2,
+      "piece_id": "02-istoriya/god-bez-leta",
+      "paragraph": 1,
+      "text": "Следующее лето не пришло.",
+      "comment": "Тамбора, 1815.",
+      "created_at": "2026-09-02T11:22:52.250Z"
+    },
+    {
+      "id": 1,
+      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "paragraph": 1,
+      "text": "Она пишет ему из монастыря.",
+      "comment": "Двадцать лет спустя.",
+      "created_at": "2026-09-02T11:22:52.174Z"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `exported_at` | When the snapshot was taken, so a vault knows what it is merging. |
+| `version` | The server that produced it. |
+| `reading` | The rows `GET /api/progress` returns as `pieces`, without the derived statistics. |
+| `notes` | What `GET /api/notes` returns. |
+| `quotes` | What `GET /api/quotes` returns. |
+
+A reader who has done nothing gets the same shape with three empty arrays and a real `exported_at`.
+
+**One document rather than an endpoint per kind.** This is read by a script that writes the result back into markdown in a vault, and that script needs the three kinds to be from the same moment: a quote whose piece was finished between two requests would be filed under a reading state that no longer matched it. A snapshot taken in one request is what makes it safe to run at any time, including while somebody is reading.
+
+The statistics are deliberately not in it. `read`, `words` and `streak` are derived from these rows and from the library, and a document carrying both the facts and a summary of them would have two answers to keep in agreement.
+
+Nothing here is the library's. The markdown files are never written ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)); this endpoint is how what a reader made of them gets back out. The scripts that call it are in [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
+
 ## Failures
 
 | Condition | Status | Body |
 | --- | --- | --- |
 | Unknown shelf | `404` | `{"error":"no such section"}` |
-| Unknown piece, reading it or reporting progress on it | `404` | `{"error":"no such piece"}` |
+| Unknown piece, reading it or reporting progress, a note or a quote on it | `404` | `{"error":"no such piece"}` |
+| A quote that is gone, commenting on it or removing it | `404` | `{"error":"no such quote"}` |
+| Keeping a quote with no text in it | `400` | `{"error":"a quote needs some text"}` |
 | Unknown path under `/api` | `404` | `{"error":"no such endpoint"}` |
 | No session on a locked stand | `401` | `{"error":"sign in to read"}` |
 | The wrong password | `401` | `{"error":"that is not the password"}` |

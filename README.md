@@ -21,7 +21,9 @@ You finish it, and say so: finishing is a button, because scrolling to the botto
 
 Evening, at home, on the desktop. The same place, the same marks: what the reader remembers lives in one SQLite file on the stand, which is also the file a backup is a copy of. You pick up a piece you left half-read on the phone, and the position does not jump backwards when the phone catches up - it only ever moves forward. Meanwhile a new piece was published to the library directory; the server indexed it, and it is on the shelf, unread, next in line.
 
-Later. Notes in the margin, the lines worth keeping coming back on a schedule, and the whole library cached for a train with no signal - that is what the releases after this one build.
+A line stops you, and you keep it: drag across the sentence, tap once, and it is yours - with a thought beside it if you have one. At the foot of the piece you write what it left you with. None of that goes into the markdown; it lives beside it, and one command brings all of it back to the vault when you want it there.
+
+Later. The lines worth keeping coming back on a schedule, and the whole library cached for a train with no signal - that is what the releases after this one build.
 
 ## Running it on a Pi
 
@@ -91,9 +93,13 @@ The reader now keeps your place. A piece is **not opened**, **reading** or **rea
 
 A stand can be locked. `rhapsod hash` makes the value for `RHAPSOD_PASSWORD_HASH`; without it the stand is open, which is how one reader on a home network usually runs it. Sessions are rows rather than signed tokens, so signing out actually ends one.
 
+**And now it keeps what you make of it.** Drag across a sentence and a bar appears over it - nothing asks you to enter a mode first - and the line is kept, with a comment if you have one. Every piece takes a note in your own words, saved a moment after you stop typing rather than on every keystroke. A kept line is anchored by its **words**, not by an offset into the file: a piece edited in the vault would shift every offset silently, and a highlight that lands on the wrong sentence is worse than one that no longer matches. An emptied note is deleted rather than stored empty, so a note marker never appears on a piece with nothing written about it; and the same line can be kept twice, because two readings can mark the same sentence and the second is not a mistake.
+
+None of it touches the library. The markdown is still read and never written, and `GET /api/export` hands the whole of it back - reading state, notes and quotes in one snapshot - for `tools/export-marks.sh` and `tools/export-marks.ps1` to write to a file and a script of yours to fold into the vault. One document rather than one request per kind, because a script writing into a vault needs all three from the same moment.
+
 The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
 
-Notes and highlights, spaced repetition over the lines you marked, and offline reading with a sync queue are what the releases after this one build. Watch this repository.
+Spaced repetition over the lines you marked, and offline reading with a sync queue, are what the releases after this one build. Watch this repository.
 
 ## Development
 

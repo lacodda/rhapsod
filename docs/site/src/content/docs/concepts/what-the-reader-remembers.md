@@ -1,6 +1,6 @@
 ---
 title: What the reader remembers
-description: The three statuses, the paragraph position and why it is an index, the streak rule, and why what comes next is from another shelf.
+description: The three statuses, the paragraph position and why it is an index, the streak rule, why a quote is its words rather than a place in the file, and how it all comes back out.
 ---
 
 The library is files and never changes as you read it ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)). Everything about *your* reading of it lives in one SQLite file: where you are, what you have finished, and what that adds up to.
@@ -73,15 +73,66 @@ When everything unread is on the shelf just finished, that shelf is the answer r
 
 When nothing is unread, the app says that was the last unread piece. That is an ending, not an error.
 
+## Notes, and the lines worth keeping
+
+Two more things the reader leaves behind, and neither of them belongs to the library. A note is what a piece left you with; a quote is a line out of it you did not want to lose. The markdown files are never written ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)) - both live in the same SQLite file as the progress, and both come back out through [the export](#taking-it-back-out).
+
+### One note per piece
+
+A note is a piece of markdown in your own words, and there is exactly one of them per piece.
+
+Not a thread, not a list of dated entries. A note about a piece is a thing you revise rather than append to: reading it again a month later changes what you think, and the honest record of that is the new sentence, not the old one with a timestamp beside it. It is saved a moment after you stop typing rather than on every keystroke, because a note is typed in bursts and one save per character would be one save per thought.
+
+Notes are kept apart from the reading state, in their own table. A note outlives the reading of a piece: marking something unread, or finishing it, must not put at risk what you wrote about it.
+
+### An emptied note is no note
+
+Clear the textarea and the note is deleted, not stored as an empty string.
+
+This is the same rule as the unopened status, for the same reason. A shelf marks which pieces carry a note, and an empty row would put that mark on a piece with nothing written about it - a lie on the shelf, and one you could not clear, because there would be no way to say "there is nothing here" other than the thing you just did. Whitespace counts as empty; a note of three spaces is not a note.
+
+So there is no separate delete. Emptying the note *is* deleting it, which is how a reader would expect it to work and the only gesture the app has to offer.
+
+### A quote is its words, not a place in the file
+
+A quote stores the **text** the reader selected. Not a character offset, not a range, not a line number.
+
+Offsets would be smaller and faster, and they would be wrong the first time you fixed a typo. The library is published from a vault and republished whenever a piece is edited; every edit above a highlight shifts its offsets by however many characters were added or removed, and nothing tells the server that happened. The highlight would still resolve - to whatever sentence now sits at that position.
+
+That is the failure worth avoiding. A highlight that lands on the wrong sentence is worse than one that no longer matches, because it is confidently wrong: it shows you a line you never marked and attributes your own comment to it. Matching by text can only fail in the honest direction. The app finds a highlight again by searching the paragraph for the quoted words; if a piece was rewritten hard enough that they are gone, the highlight is no longer drawn on the text - and the quote itself, with its comment, is still on the quotes page, still readable, still yours.
+
+The paragraph index is kept alongside, but only as a hint: it says where to look first and orders the quotes of one piece down the page. It is not what identifies the quote.
+
+Only the comment can be edited afterwards. The text and the paragraph are what you selected, and a quote whose words could be changed would no longer be a quote.
+
+### The same line can be kept twice
+
+Keeping a sentence you already kept makes a second quote, with its own id. It is not a duplicate to reject.
+
+Two readings of the same piece can land on the same line and mean different things by it - the first time for the image, the second for what it turned out to foreshadow, each with its own comment. Refusing the second would be the app telling the reader they already had that thought.
+
+It follows that a quote is identified by its id and not by what it says, which is why `POST /api/quotes` answers with the stored row: the app cannot name the quote it just made until the server has.
+
+## Taking it back out
+
+Everything above - the reading state, the notes, the quotes - comes back as one JSON document from `GET /api/export`.
+
+One document rather than one endpoint per kind, because of what reads it: a script that writes your marks into the vault the library was published from. That script needs the three kinds to be from the same moment. Fetched separately, a piece finished between two requests would be filed under a reading state that no longer described it, and the vault would record something that was never true at any instant. A snapshot taken in one request is what makes the script safe to run at any time, including while somebody is reading on a phone in the next room.
+
+The export is a read. It changes nothing on the stand, and running it twice differs only in the file it writes. The walk-through is in [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
+
 ## Where it lives, and what happens to it
 
 One SQLite file, the one `RHAPSOD_DATABASE_URL` points at. A backup is a copy of it.
 
-Progress is keyed to the piece id, which is derived from the file's path. Re-publishing the library changes what is on the shelf and nothing about your reading of it - but **renaming a file or its section changes the id**, and the row against the old id no longer finds anything. That is the honest outcome: a renamed file is a different link, and the old progress pointed at a piece that no longer exists under that name. Renames are cheap in a vault and not free here.
+Progress, notes and quotes are all keyed to the piece id, which is derived from the file's path. Re-publishing the library changes what is on the shelf and nothing about your reading of it - but **renaming a file or its section changes the id**, and the rows against the old id no longer find anything. That is the honest outcome: a renamed file is a different link, and the old progress pointed at a piece that no longer exists under that name. Renames are cheap in a vault and not free here.
+
+Nothing is deleted when that happens. The rows stay, keyed to an id no piece answers to, and a quote whose piece is gone still shows on the quotes page under the id it came from rather than vanishing - which is also what you would want if the rename were a mistake about to be undone. The export carries them out either way, so a rename never silently loses a note.
 
 Sessions live in the same file and are unrelated to any of this. Locking or unlocking a stand does not touch what has been read; see [Locking a stand](/rhapsod/guides/locking-a-stand/).
 
 ## See also
 
 - [The library](/rhapsod/concepts/the-library/) - what a piece is, and how its id is formed.
-- [API](/rhapsod/reference/api/) - `GET /api/progress`, `POST /api/progress/{section}/{piece}` and `GET /api/next`, with real responses.
+- [API](/rhapsod/reference/api/) - the progress, notes, quotes and export endpoints, with real responses.
+- [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/) - the export document, and the scripts that fetch it.
