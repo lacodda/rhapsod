@@ -15,6 +15,12 @@ rhapsod is configured entirely through the environment. There is no configuratio
 
 A `.env` file in the working directory is read first, so all of these can live there during development. The file is never committed; `.env.example` shows the shape.
 
+## What the server does not read
+
+`RHAPSOD_PUBLISH_SRC`, `RHAPSOD_PUBLISH_HOST`, `RHAPSOD_PUBLISH_DEST` and `RHAPSOD_PUBLISH_URL` look like server configuration and are not. They are read by the publishing scripts in `tools/`, which run on the machine the library is written on and talk to the server only through `POST /api/reindex`; the server never looks at them. They are documented with the tool that uses them, in [Publishing content](/rhapsod/guides/publishing-content/).
+
+They share the `.env` file with the table above because a development machine is often both the thing running the server and the thing publishing to a stand, and one file for both halves beats two.
+
 ## How it is read
 
 The server reads the environment once at startup and fails immediately if it cannot build a valid configuration:

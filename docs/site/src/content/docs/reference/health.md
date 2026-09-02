@@ -23,11 +23,12 @@ No authentication, no parameters.
 ```json
 {
   "status": "ok",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "pieces": 2
 }
 ```
 
-`version` is the server's own package version, which makes the endpoint the authoritative answer to "what is actually deployed here".
+`version` is the server's own package version, which makes the endpoint the authoritative answer to "what is actually deployed here". `pieces` is how many pieces the index currently holds, which answers the other half of that question: whether the library being served is the one that was published. Every endpoint is on the [API reference](/rhapsod/reference/api/).
 
 ## Why degraded is not down
 

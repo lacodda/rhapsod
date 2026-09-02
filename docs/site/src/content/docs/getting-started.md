@@ -3,7 +3,7 @@ title: Getting started
 description: Run rhapsod locally - the server over a directory of markdown, the reading app, and this documentation site.
 ---
 
-rhapsod is one process: a Rust server over a SQLite file, serving a JSON API and a React app. At the foundation stage there is no library index yet, so "getting started" means running the pieces on your own machine and seeing them answer.
+rhapsod is one process: a Rust server over a SQLite file, serving a JSON API and a React app. "Getting started" means pointing it at a directory of markdown on your own machine and watching it come back as a library.
 
 ## What you need
 
@@ -41,7 +41,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.1.0"}
+{"status":"ok","version":"0.1.0","pieces":1}
 ```
 
 ## The app
@@ -64,5 +64,8 @@ pnpm dev
 
 ## Next
 
+- [The library](/rhapsod/concepts/the-library/) - how a directory of markdown becomes shelves and pieces.
+- [API](/rhapsod/reference/api/) - every endpoint, with real responses.
+- [Publishing content](/rhapsod/guides/publishing-content/) - getting a library onto the stand.
 - [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/) - the stand.
 - [Configuration](/rhapsod/reference/configuration/) - every variable the server reads.

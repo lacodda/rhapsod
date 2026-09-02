@@ -44,4 +44,16 @@ Copying while the server runs is safe: the database is in WAL mode. Restoring is
 
 ## Updating the library
 
-Publish the new files into the directory `RHAPSOD_CONTENT` points at. The server re-indexes; nothing about your reading is lost, because none of it lives in that directory ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
+Publish the new files into the directory `RHAPSOD_CONTENT` points at, then ask the server to read it again:
+
+```sh
+curl -X POST http://pi:8084/api/reindex
+```
+
+```json
+{"pieces":2,"sections":2}
+```
+
+The index lives in memory, so the reindex is what turns new files into a library; without it they would wait for a restart. `tools/publish-content.sh` and `tools/publish-content.ps1` do the copy and this call in one step - see [Publishing content](/rhapsod/guides/publishing-content/).
+
+Nothing about your reading is lost, because none of it lives in that directory ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).

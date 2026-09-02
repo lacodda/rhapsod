@@ -132,6 +132,14 @@ fn the_readme_documents_every_environment_variable() {
     // exist. A variable added to the code and not to the table is invisible
     // until someone reads the source, which is not what a self-hosted product
     // can ask of them.
+    //
+    // The rule is "read by the server", not "starts with RHAPSOD_", which is
+    // why this scans `config.rs` for `lookup(...)` rather than grepping the
+    // repository for the prefix. `.env.example` also carries `RHAPSOD_PUBLISH_*`
+    // for the scripts in `tools/`; those are never read by any Rust code, they
+    // belong in the publishing guide rather than in the server's configuration
+    // table, and a check that swept the prefix would demand they be documented
+    // as server configuration - which would be a lie.
     let config = read("src/config.rs");
     let readme = read("README.md");
     let example = read(".env.example");
