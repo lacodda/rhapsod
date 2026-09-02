@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.0] - 2026-09-02
+
+### Features
+- Reach the library without leaving the piece
+
+
 ## [0.7.0] - 2026-09-02
 
 ### Features
