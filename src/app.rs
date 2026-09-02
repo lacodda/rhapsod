@@ -137,10 +137,14 @@ struct LibraryIndex {
 
 /// The whole index in one response.
 ///
+/// Behind the reader gate like everything else about the library: a password
+/// that protects the reading state but hands out the text protects nothing
+/// that matters. On an open stand the gate lets everyone through.
+///
 /// One request rather than one per section: the app caches the library for
 /// offline reading, and a phone on a home network pays for round trips more
 /// than for bytes.
-async fn library_index(State(state): State<AppState>) -> Response {
+async fn library_index(_: Reader, State(state): State<AppState>) -> Response {
     with_library(&state, |library| {
         Json(LibraryIndex {
             sections: library.sections().to_vec(),
@@ -150,11 +154,11 @@ async fn library_index(State(state): State<AppState>) -> Response {
     })
 }
 
-async fn sections(State(state): State<AppState>) -> Response {
+async fn sections(_: Reader, State(state): State<AppState>) -> Response {
     with_library(&state, |library| Json(library.sections().to_vec()).into_response())
 }
 
-async fn section_pieces(State(state): State<AppState>, UrlPath(section): UrlPath<String>) -> Response {
+async fn section_pieces(_: Reader, State(state): State<AppState>, UrlPath(section): UrlPath<String>) -> Response {
     with_library(&state, |library| {
         if library.sections().iter().all(|shelf| shelf.id != section) {
             return not_found("no such section");
@@ -167,7 +171,7 @@ async fn section_pieces(State(state): State<AppState>, UrlPath(section): UrlPath
 ///
 /// The id is two path segments rather than one escaped string: it is a shelf
 /// and a piece on it, and a URL that shows that is one a person can edit.
-async fn piece(State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>) -> Response {
+async fn piece(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>) -> Response {
     let id = format!("{section}/{piece}");
     with_library(&state, |library| {
         library
@@ -657,6 +661,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK, "the session did not let the reader in");
+    }
+
+    #[tokio::test]
+    async fn a_locked_stand_does_not_hand_out_the_text() {
+        // The first live run of a locked stand answered /api/library and every
+        // piece in it without a session: the password protected the reading
+        // state and gave away the library, which is the wrong way round.
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let hash = crate::auth::hash("a good passphrase").unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
+
+        for path in [
+            "/api/library",
+            "/api/sections",
+            "/api/sections/02-istoriya",
+            "/api/pieces/02-istoriya/god-bez-leta",
+        ] {
+            let (status, _) = get_json(app.clone(), path).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
+        }
+
+        // The app has to be able to ask whether it needs a password, and the
+        // stand has to be able to say it is alive, without one.
+        for path in ["/api/session", "/api/health"] {
+            let (status, _) = get_json(app.clone(), path).await;
+            assert_eq!(status, StatusCode::OK, "{path} should answer before signing in");
+        }
     }
 
     #[tokio::test]
