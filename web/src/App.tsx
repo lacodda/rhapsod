@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { ApiError, fetchLibrary, type LibraryIndex } from '@/api'
+import { ApiError, fetchLibrary, fetchSession, type LibraryIndex, type Session } from '@/api'
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { ReaderScreen } from '@/Reader'
 import { go, useRoute } from '@/routing'
+import { SignInScreen } from '@/SignIn'
+import { useProgress } from '@/useProgress'
 
 /**
  * The reading app.
@@ -14,10 +16,31 @@ import { go, useRoute } from '@/routing'
  */
 export function App() {
   const route = useRoute()
+  const [session, setSession] = useState<Session | null>(null)
   const [library, setLibrary] = useState<LibraryIndex | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const mayRead = session?.reader === true
+  const progress = useProgress(mayRead)
+
   useEffect(() => {
+    let cancelled = false
+    void fetchSession()
+      .then((state) => {
+        if (!cancelled) setSession(state)
+      })
+      .catch(() => {
+        // A stand that cannot say whether it is locked is a stand that cannot
+        // be read either; the library fetch below reports the real problem.
+        if (!cancelled) setSession({ open: true, reader: true })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mayRead) return undefined
     let cancelled = false
     void fetchLibrary()
       .then((index) => {
@@ -29,13 +52,21 @@ export function App() {
     return () => {
       cancelled = true
     }
+  }, [mayRead])
+
+  const signedIn = useCallback(() => {
+    setSession({ open: false, reader: true })
   }, [])
 
   return (
     <div className="min-h-dvh">
       <Header />
       <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
-        {error !== null ? (
+        {session === null ? (
+          <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
+        ) : !mayRead ? (
+          <SignInScreen onSignedIn={signedIn} />
+        ) : error !== null ? (
           <Empty title={error} />
         ) : !library ? (
           <p className="px-3 py-12 text-sm text-dim">Reading the shelves…</p>
@@ -45,11 +76,11 @@ export function App() {
             detail="Publish a directory of markdown files to the stand, and they appear here."
           />
         ) : route.name === 'piece' ? (
-          <ReaderScreen key={route.id} library={library} id={route.id} />
+          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} />
         ) : route.name === 'section' ? (
-          <SectionScreen library={library} section={route.section} />
+          <SectionScreen library={library} section={route.section} progress={progress} />
         ) : (
-          <LibraryScreen library={library} />
+          <LibraryScreen library={library} progress={progress} />
         )}
       </main>
     </div>
@@ -59,7 +90,7 @@ export function App() {
 /**
  * The one fixed thing on every screen: the way back to the shelves.
  *
- * It scrolls away with the page instead of sitting over it — on a phone a
+ * It scrolls away with the page instead of sitting over it - on a phone a
  * sticky bar costs a line of text on every screen of a seven-minute read.
  */
 function Header() {

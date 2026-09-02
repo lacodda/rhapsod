@@ -37,6 +37,35 @@ export interface LibraryIndex {
   pieces: PieceSummary[]
 }
 
+/** How far the reader got with one piece. */
+export interface ReadingState {
+  piece_id: string
+  status: 'reading' | 'read'
+  paragraph: number
+  updated_at: string
+  read_at: string | null
+}
+
+/** What the reader has read. */
+export interface Stats {
+  read: number
+  words: number
+  streak: number
+}
+
+/** Everything the reader has read, and what it adds up to. */
+export interface Progress {
+  pieces: ReadingState[]
+  stats: Stats
+  continue_with: string | null
+}
+
+/** Whether this browser may read, and whether it has to prove anything. */
+export interface Session {
+  open: boolean
+  reader: boolean
+}
+
 /** What the server says about itself. */
 export interface Health {
   status: string
@@ -81,3 +110,44 @@ export const fetchLibrary = (): Promise<LibraryIndex> => get<LibraryIndex>('/lib
 export const fetchPiece = (id: string): Promise<Piece> => get<Piece>(`/pieces/${id}`)
 
 export const fetchHealth = (): Promise<Health> => get<Health>('/health')
+
+export const fetchSession = (): Promise<Session> => get<Session>('/session')
+
+export const fetchProgress = (): Promise<Progress> => get<Progress>('/progress')
+
+/** The next unread piece, from another shelf when there is one. */
+export const fetchNext = (after: string): Promise<{ next: PieceSummary | null }> =>
+  get<{ next: PieceSummary | null }>(`/next?after=${encodeURIComponent(after)}`)
+
+async function send<T>(path: string, method: string, body?: unknown): Promise<T | null> {
+  let response: Response
+  try {
+    response = await fetch(`/api${path}`, {
+      method,
+      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch {
+    throw new ApiError('The library is out of reach. It comes back when you are home.', 0)
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status === 401 ? 'Sign in to read.' : 'The library did not answer.', response.status)
+  }
+  return response.status === 204 ? null : ((await response.json()) as T)
+}
+
+export const signIn = (password: string): Promise<Session | null> => send<Session>('/session', 'POST', { password })
+
+export const signOut = (): Promise<Session | null> => send<Session>('/session', 'DELETE')
+
+/**
+ * Reports where the reader is.
+ *
+ * Failures are swallowed: this fires while someone is reading, and an error
+ * toast over the text they are in the middle of would be worse than a lost
+ * position. What is lost is one paragraph of precision, and the next report
+ * fixes it.
+ */
+export function report(id: string, moved: { paragraph?: number; read?: boolean }): void {
+  void send(`/progress/${id}`, 'POST', moved).catch(() => undefined)
+}

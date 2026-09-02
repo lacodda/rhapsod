@@ -7,11 +7,12 @@
  * blocks are set apart from the prose because they are not part of the read.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { ApiError, fetchPiece, type LibraryIndex, type Piece } from '@/api'
+import { ApiError, fetchNext, fetchPiece, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
 import { Empty, minutes } from '@/Library'
 import { go } from '@/routing'
+import type { ProgressStore } from '@/useProgress'
 
 /** Renders the light markdown the format uses inside a line: `**bold**`. */
 function Rich({ text }: { text: string }) {
@@ -32,19 +33,6 @@ function Rich({ text }: { text: string }) {
   )
 }
 
-/** The piece's prose, one paragraph per element. */
-function Prose({ paragraphs }: { paragraphs: string[] }) {
-  return (
-    <div className="flex flex-col gap-5">
-      {paragraphs.map((paragraph, index) => (
-        <p key={index} className="text-pretty text-[1.0625rem] leading-[1.75] text-text sm:text-lg sm:leading-[1.8]">
-          <Rich text={paragraph} />
-        </p>
-      ))}
-    </div>
-  )
-}
-
 /** A trailing block, set apart from the prose it follows. */
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -55,13 +43,6 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
-/** The one line the piece wants remembered. */
-function OneLiner({ line }: { line: string }) {
-  return (
-    <blockquote className="border-l-2 border-accent pl-4 text-lg font-medium leading-snug text-text">{line}</blockquote>
-  )
-}
-
 /**
  * The reading view for one piece.
  *
@@ -69,9 +50,15 @@ function OneLiner({ line }: { line: string }) {
  * fresh screen rather than clearing this one's state on the way in: a piece
  * half-replaced by the next one is a frame the reader should never see.
  */
-export function ReaderScreen({ library, id }: { library: LibraryIndex; id: string }) {
+export function ReaderScreen({ library, id, progress }: { library: LibraryIndex; id: string; progress: ProgressStore }) {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [next, setNext] = useState<PieceSummary | null>(null)
+  const paragraphs = useRef<(HTMLParagraphElement | null)[]>([])
+  const restored = useRef(false)
+
+  const state = progress.states.get(id)
+  const isRead = state?.status === 'read'
 
   useEffect(() => {
     let cancelled = false
@@ -87,16 +74,74 @@ export function ReaderScreen({ library, id }: { library: LibraryIndex; id: strin
     }
   }, [id])
 
-  // The reading position is the top of the page for every new piece; the
-  // browser would otherwise keep the scroll of the list it came from.
+  // What to offer at the end. Asked for while the reader is still reading, so
+  // the card is there when they arrive rather than appearing under their thumb.
   useEffect(() => {
-    window.scrollTo({ top: 0 })
-  }, [])
+    let cancelled = false
+    void fetchNext(id)
+      .then((answer) => {
+        if (!cancelled) setNext(answer.next)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
+  const { opened } = progress
+  useEffect(() => {
+    opened(id)
+  }, [id, opened])
+
+  // Restore the reading position once both the text and the reader's progress
+  // are here. Waiting for both matters: the progress arrives on its own
+  // request, and restoring on the text alone put every piece back at the top -
+  // which is what the first live run of this screen did.
+  const savedAt = state?.paragraph ?? null
+  useEffect(() => {
+    if (!piece || savedAt === null || restored.current) return
+    restored.current = true
+    // A piece opened from the top starts at the top: scrolling to paragraph
+    // zero would be a jump for no reason.
+    if (savedAt <= 0) return
+    const element = paragraphs.current[savedAt]
+    if (element) {
+      element.scrollIntoView({ block: 'start' })
+      // A paragraph flush against the top edge reads as a page that was cut;
+      // the header's height back is where a person would have stopped.
+      window.scrollBy({ top: -72 })
+    }
+  }, [piece, savedAt])
+
+  // Follow the reader down the page. The reported paragraph is the last one
+  // whose top has passed the middle of the screen: that is the line being
+  // read, not the one about to appear.
+  const { atParagraph } = progress
+  useEffect(() => {
+    if (!piece) return undefined
+    let frame = 0
+    const onScroll = (): void => {
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        const middle = window.innerHeight / 2
+        let at = 0
+        paragraphs.current.forEach((element, index) => {
+          if (element && element.getBoundingClientRect().top < middle) at = index
+        })
+        atParagraph(id, at)
+      })
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
+  }, [piece, id, atParagraph])
 
   const order = library.pieces.map((summary) => summary.id)
   const at = order.indexOf(id)
-  const previous = at > 0 ? library.pieces[at - 1] : null
-  const next = at >= 0 && at < order.length - 1 ? library.pieces[at + 1] : null
+  const previous = at > 0 ? (library.pieces[at - 1] ?? null) : null
 
   // On a desktop the arrows are the fastest way through a library; on a phone
   // there is no keyboard and the links below do the same job.
@@ -148,7 +193,19 @@ export function ReaderScreen({ library, id }: { library: LibraryIndex; id: strin
         </p>
       </header>
 
-      <Prose paragraphs={piece.paragraphs} />
+      <div className="flex flex-col gap-5">
+        {piece.paragraphs.map((paragraph, index) => (
+          <p
+            key={index}
+            ref={(element) => {
+              paragraphs.current[index] = element
+            }}
+            className="text-pretty text-[1.0625rem] leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
+          >
+            <Rich text={paragraph} />
+          </p>
+        ))}
+      </div>
 
       {piece.neighbours.length > 0 ? (
         <Block title="Neighbours">
@@ -164,7 +221,9 @@ export function ReaderScreen({ library, id }: { library: LibraryIndex; id: strin
 
       {piece.one_liner ? (
         <Block title="In one line">
-          <OneLiner line={piece.one_liner} />
+          <blockquote className="border-l-2 border-accent pl-4 text-lg font-medium leading-snug text-text">
+            {piece.one_liner}
+          </blockquote>
         </Block>
       ) : null}
 
@@ -180,32 +239,78 @@ export function ReaderScreen({ library, id }: { library: LibraryIndex; id: strin
         </Block>
       ) : null}
 
-      <nav className="flex items-stretch justify-between gap-3 border-t border-line pt-6 pb-4">
-        {previous ? <Step piece={previous} direction="previous" /> : <span />}
-        {next ? <Step piece={next} direction="next" /> : <span />}
-      </nav>
+      <Finish id={id} isRead={isRead} next={next} previous={previous} progress={progress} />
     </article>
   )
 }
 
-/** The way on: the piece before this one, or the one after it. */
-function Step({ piece, direction }: { piece: { id: string; title: string }; direction: 'previous' | 'next' }) {
+/**
+ * The end of a piece: whether it is finished, and what comes next.
+ *
+ * Finishing is a button rather than something that happens on reaching the
+ * bottom: scrolling past the song seed to see how long a piece is should not
+ * silently mark it read, and a reader who abandons one halfway has not
+ * finished it either.
+ */
+function Finish({
+  id,
+  isRead,
+  next,
+  previous,
+  progress,
+}: {
+  id: string
+  isRead: boolean
+  next: PieceSummary | null
+  previous: PieceSummary | null
+  progress: ProgressStore
+}) {
   return (
-    <a
-      href={`/read/${piece.id}`}
-      onClick={(event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
-        event.preventDefault()
-        go({ name: 'piece', id: piece.id })
-      }}
-      className={`flex max-w-[48%] flex-col gap-1 rounded-lg px-3 py-2 transition-colors hover:bg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-        direction === 'next' ? 'items-end text-right' : 'items-start text-left'
-      }`}
-    >
-      <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">
-        {direction === 'next' ? 'Next' : 'Previous'}
-      </span>
-      <span className="text-sm font-medium leading-snug text-text">{piece.title}</span>
-    </a>
+    <div className="flex flex-col gap-6 border-t border-line pt-6 pb-4">
+      <button
+        type="button"
+        onClick={() => {
+          progress.setRead(id, !isRead)
+        }}
+        className={`self-start rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+          isRead ? 'bg-soft text-dim hover:text-text' : 'bg-accent text-on-accent hover:opacity-90'
+        }`}
+      >
+        {isRead ? 'Read · mark unread' : 'Mark as read'}
+      </button>
+
+      {next ? (
+        <a
+          href={`/read/${next.id}`}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+            event.preventDefault()
+            go({ name: 'piece', id: next.id })
+          }}
+          className="flex flex-col gap-2 rounded-xl border border-line p-4 transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Next, unread</span>
+          <span className="text-lg font-medium leading-snug text-text">{next.title}</span>
+          {next.one_liner ? <span className="text-sm leading-snug text-dim">{next.one_liner}</span> : null}
+          <span className="font-mono text-xs text-dim">{minutes(next.words)} min</span>
+        </a>
+      ) : (
+        <p className="text-sm text-dim">That was the last unread piece.</p>
+      )}
+
+      {previous ? (
+        <a
+          href={`/read/${previous.id}`}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+            event.preventDefault()
+            go({ name: 'piece', id: previous.id })
+          }}
+          className="self-start rounded-lg px-3 py-2 text-sm text-dim transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          ← {previous.title}
+        </a>
+      ) : null}
+    </div>
   )
 }

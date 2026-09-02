@@ -161,6 +161,13 @@ impl FromRequestParts<AppState> for Reader {
     type Rejection = Response;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        // A stand with no password has no gate: everyone who can reach it is
+        // the reader. Without this, an open stand answered the library but
+        // refused to remember anything about reading it - which is what the
+        // first live run showed.
+        if state.password_hash.is_none() {
+            return Ok(Self);
+        }
         let Some(token) = token_from(parts) else {
             return Err(unauthorised());
         };

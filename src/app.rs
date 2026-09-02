@@ -571,6 +571,139 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_open_stand_remembers_reading_without_a_sign_in() {
+        // A stand with no password has no gate. The first live run showed the
+        // opposite: the library answered and every progress call came back
+        // "sign in to read", so an open stand could be read but never
+        // remembered anything.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, _) = get_json(app.clone(), "/api/progress").await;
+        assert_eq!(status, StatusCode::OK, "an open stand refused to report progress");
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/progress/02-istoriya/god-bez-leta")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"paragraph":3}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+        let (_, body) = get_json(app, "/api/progress").await;
+        assert_eq!(body["pieces"][0]["paragraph"], 3, "the position was not kept");
+    }
+
+    #[tokio::test]
+    async fn a_locked_stand_asks_for_the_password_first() {
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let hash = crate::auth::hash("a good passphrase").unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
+
+        let (status, body) = get_json(app.clone(), "/api/session").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["open"], false);
+        assert_eq!(body["reader"], false);
+
+        let (status, body) = get_json(app.clone(), "/api/progress").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["error"], "sign in to read");
+
+        // The wrong password does not open it, and the right one does.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/session")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"password":"not it"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/session")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"password":"a good passphrase"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let cookie = response
+            .headers()
+            .get(axum::http::header::SET_COOKIE)
+            .expect("signing in should set a cookie")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let token = cookie.split(';').next().unwrap().to_string();
+        let response = app
+            .oneshot(
+                Request::get("/api/progress")
+                    .header(axum::http::header::COOKIE, token)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "the session did not let the reader in");
+    }
+
+    #[tokio::test]
+    async fn what_to_read_next_comes_from_another_shelf() {
+        // Reading straight down one shelf turns thirty pieces about paradoxes
+        // into a textbook; the format is built for the opposite.
+        let (web, content) = (web_root(), content_root());
+        write_piece(content.path(), "19 — Любовь и пары", "Абеляр и Элоиза", "Париж.");
+        let app = app(&web, &content, pool().await);
+
+        let (status, body) = get_json(app.clone(), "/api/next?after=02-istoriya/god-bez-leta").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["next"]["section"], "19-lyubov-i-pary");
+
+        // With everything else read, the shelf just finished is the answer
+        // rather than nothing at all.
+        app.clone()
+            .oneshot(
+                Request::post("/api/progress/19-lyubov-i-pary/abelyar-i-eloiza")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"read":true}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (_, body) = get_json(app, "/api/next?after=02-istoriya/god-bez-leta").await;
+        assert_eq!(body["next"]["id"], "02-istoriya/god-bez-leta");
+    }
+
+    #[tokio::test]
+    async fn progress_about_a_piece_that_is_not_there_is_refused() {
+        // A stale phone or a typed URL; storing it would leave rows no screen
+        // can ever show.
+        let (web, content) = (web_root(), content_root());
+        let response = app(&web, &content, pool().await)
+            .oneshot(
+                Request::post("/api/progress/02-istoriya/nope")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"paragraph":1}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn an_existing_file_is_served_as_it_is() {
         let (web, content) = (web_root(), content_root());
         let response = app(&web, &content, pool().await)
