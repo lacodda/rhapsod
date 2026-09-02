@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.1] - 2026-09-02
+
+### Bug Fixes
+- Carry the plan to the stand and the requests back
+
+
 ## [0.9.0] - 2026-09-02
 
 ### Features
