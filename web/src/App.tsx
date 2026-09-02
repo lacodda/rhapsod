@@ -1,40 +1,82 @@
 import { useEffect, useState } from 'react'
 
-import { describe, fetchHealth, type ServerState } from '@/health'
+import { ApiError, fetchLibrary, type LibraryIndex } from '@/api'
+import { Empty, LibraryScreen, SectionScreen } from '@/Library'
+import { ReaderScreen } from '@/Reader'
+import { go, useRoute } from '@/routing'
 
 /**
- * The shell, before there is anything to read.
+ * The reading app.
  *
- * One page in the line's theme: the name, the version this build carries, and
- * a line about the server it is talking to. The library, the reading view and
- * everything the reader remembers arrive in the versions that introduce them.
+ * The index is fetched once and held: every screen after the first is rendered
+ * from memory, which is what makes moving through the library feel like turning
+ * pages rather than loading them. A piece's text is fetched when it is opened.
  */
 export function App() {
-  const [server, setServer] = useState<ServerState>({ kind: 'checking' })
+  const route = useRoute()
+  const [library, setLibrary] = useState<LibraryIndex | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    void fetchHealth().then((state) => {
-      if (!cancelled) setServer(state)
-    })
+    void fetchLibrary()
+      .then((index) => {
+        if (!cancelled) setLibrary(index)
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof ApiError ? cause.message : 'The library could not be read.')
+      })
     return () => {
       cancelled = true
     }
   }, [])
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col justify-center gap-6 px-6 py-12">
-      <header className="flex items-baseline gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight text-text">Hello, rhapsod</h1>
-        <span className="rounded-md bg-soft px-2 py-0.5 font-mono text-xs text-dim">v{__APP_VERSION__}</span>
-      </header>
-      <p className="text-base leading-relaxed text-dim">
-        A self-hosted reader for a markdown library: progress, notes and spaced repetition. This is the shell; the
-        library is next.
-      </p>
-      <p className="border-t border-line pt-4 text-sm text-dim" aria-live="polite">
-        {describe(server)}
-      </p>
-    </main>
+    <div className="min-h-dvh">
+      <Header />
+      <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
+        {error !== null ? (
+          <Empty title={error} />
+        ) : !library ? (
+          <p className="px-3 py-12 text-sm text-dim">Reading the shelves…</p>
+        ) : library.pieces.length === 0 ? (
+          <Empty
+            title="The library is empty."
+            detail="Publish a directory of markdown files to the stand, and they appear here."
+          />
+        ) : route.name === 'piece' ? (
+          <ReaderScreen key={route.id} library={library} id={route.id} />
+        ) : route.name === 'section' ? (
+          <SectionScreen library={library} section={route.section} />
+        ) : (
+          <LibraryScreen library={library} />
+        )}
+      </main>
+    </div>
+  )
+}
+
+/**
+ * The one fixed thing on every screen: the way back to the shelves.
+ *
+ * It scrolls away with the page instead of sitting over it — on a phone a
+ * sticky bar costs a line of text on every screen of a seven-minute read.
+ */
+function Header() {
+  return (
+    <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
+      <a
+        href="/"
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+          event.preventDefault()
+          go({ name: 'library' })
+        }}
+        className="flex items-baseline gap-2 rounded-md px-2 py-1 font-mono text-sm font-semibold tracking-tight text-text hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        rhapsod
+      </a>
+      <span className="px-2 font-mono text-[0.6875rem] text-dim">v{__APP_VERSION__}</span>
+    </header>
   )
 }
