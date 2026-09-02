@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::{self, Reader};
 use crate::library::{Library, PieceSummary, Section};
+use crate::marks;
 use crate::progress;
 
 #[derive(Clone)]
@@ -58,6 +59,11 @@ pub fn router(pool: SqlitePool, web_dir: &Path, library: Library, content_dir: P
         .route("/progress", get(read_progress))
         .route("/progress/{section}/{piece}", post(record_progress))
         .route("/next", get(what_next))
+        .route("/notes", get(read_notes))
+        .route("/notes/{section}/{piece}", post(write_note))
+        .route("/quotes", get(read_quotes).post(keep_quote))
+        .route("/quotes/{id}", post(edit_quote).delete(drop_quote))
+        .route("/export", get(export))
         .fallback(api_not_found)
         .with_state(state);
 
@@ -436,6 +442,147 @@ fn failed(error: &anyhow::Error, message: &'static str) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": message }))).into_response()
 }
 
+/// Every note the reader has written.
+async fn read_notes(_: Reader, State(state): State<AppState>) -> Response {
+    match marks::notes(&state.pool).await {
+        Ok(notes) => Json(notes).into_response(),
+        Err(error) => failed(&error, "the notes could not be read"),
+    }
+}
+
+/// What the app sends when a note changes.
+#[derive(Deserialize)]
+struct NoteBody {
+    body: String,
+}
+
+/// Writes the note on a piece.
+///
+/// The whole note every time rather than a diff: it is a few hundred words at
+/// most, typed by one person on one device at a time, and a merge algorithm
+/// would be more machinery than the problem has.
+async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>, Json(note): Json<NoteBody>) -> Response {
+    let id = format!("{section}/{piece}");
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    match marks::set_note(&state.pool, &id, &note.body).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => failed(&error, "the note could not be saved"),
+    }
+}
+
+/// Every quote the reader has kept.
+async fn read_quotes(_: Reader, State(state): State<AppState>) -> Response {
+    match marks::quotes(&state.pool).await {
+        Ok(quotes) => Json(quotes).into_response(),
+        Err(error) => failed(&error, "the quotes could not be read"),
+    }
+}
+
+/// What the app sends when a line is kept.
+#[derive(Deserialize)]
+struct NewQuote {
+    piece_id: String,
+    paragraph: i64,
+    text: String,
+    comment: Option<String>,
+}
+
+/// Keeps a line.
+async fn keep_quote(_: Reader, State(state): State<AppState>, Json(quote): Json<NewQuote>) -> Response {
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&quote.piece_id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    match marks::add_quote(&state.pool, &quote.piece_id, quote.paragraph, &quote.text, quote.comment.as_deref()).await {
+        Ok(kept) => (StatusCode::CREATED, Json(kept)).into_response(),
+        // A quote with no text is the app sending a mis-tap, not a server
+        // failure: saying so as a 400 lets it tell the difference.
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error.to_string() }))).into_response(),
+    }
+}
+
+/// What the app sends when a comment changes.
+#[derive(Deserialize)]
+struct CommentBody {
+    comment: Option<String>,
+}
+
+/// Changes what the reader said about a quote.
+async fn edit_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<i64>, Json(body): Json<CommentBody>) -> Response {
+    match marks::comment_on(&state.pool, id, body.comment.as_deref()).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such quote"),
+        Err(error) => failed(&error, "the comment could not be saved"),
+    }
+}
+
+/// Removes a quote.
+async fn drop_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<i64>) -> Response {
+    match marks::remove_quote(&state.pool, id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such quote"),
+        Err(error) => failed(&error, "the quote could not be removed"),
+    }
+}
+
+/// Everything the reader has left behind, in one document.
+#[derive(Serialize)]
+struct Export {
+    /// When the export was taken, so a vault knows what it is merging.
+    exported_at: String,
+    version: &'static str,
+    reading: Vec<progress::State>,
+    notes: Vec<marks::Note>,
+    quotes: Vec<marks::Quote>,
+}
+
+/// The whole of the reader's side of the library, for the vault to take back.
+///
+/// One document rather than an endpoint per kind: this is read by a script
+/// that writes the result into markdown files, and a consistent snapshot in
+/// one request is what makes that safe to run at any moment.
+async fn export(_: Reader, State(state): State<AppState>) -> Response {
+    let reading = match progress::all(&state.pool).await {
+        Ok(reading) => reading,
+        Err(error) => return failed(&error, "the reading state could not be read"),
+    };
+    let notes = match marks::notes(&state.pool).await {
+        Ok(notes) => notes,
+        Err(error) => return failed(&error, "the notes could not be read"),
+    };
+    let quotes = match marks::quotes(&state.pool).await {
+        Ok(quotes) => quotes,
+        Err(error) => return failed(&error, "the quotes could not be read"),
+    };
+
+    let exported_at = sqlx::query_scalar::<_, String>("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or_default();
+
+    Json(Export {
+        exported_at,
+        version: env!("CARGO_PKG_VERSION"),
+        reading,
+        notes,
+        quotes,
+    })
+    .into_response()
+}
+
 /// Anything under `/api` that does not exist is a client's mistake, answered
 /// in JSON like every other API failure.
 async fn api_not_found() -> Response {
@@ -733,6 +880,148 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Sends a body to an endpoint and returns the status.
+    async fn post(app: Router, uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
+        let response = app
+            .oneshot(
+                Request::post(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
+    #[tokio::test]
+    async fn a_note_is_written_read_back_and_cleared() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, _) = post(app.clone(), "/api/notes/02-istoriya/god-bez-leta", r#"{"body":"the letter took a year"}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (_, body) = get_json(app.clone(), "/api/notes").await;
+        assert_eq!(body[0]["piece_id"], "02-istoriya/god-bez-leta");
+        assert_eq!(body[0]["body"], "the letter took a year");
+
+        // An emptied note is no note: a marker on a piece with nothing written
+        // about it would be a lie on the shelf.
+        let (status, _) = post(app.clone(), "/api/notes/02-istoriya/god-bez-leta", r#"{"body":"  "}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, body) = get_json(app, "/api/notes").await;
+        assert_eq!(body.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_note_about_a_piece_that_is_not_there_is_refused() {
+        let (web, content) = (web_root(), content_root());
+        let (status, body) = post(app(&web, &content, pool().await), "/api/notes/02-istoriya/nope", r#"{"body":"x"}"#).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such piece");
+    }
+
+    #[tokio::test]
+    async fn a_quote_is_kept_commented_and_removed() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, quote) = post(
+            app.clone(),
+            "/api/quotes",
+            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"Июнь 1816 года.","comment":null}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(quote["text"], "Июнь 1816 года.");
+        let id = quote["id"].as_i64().expect("a quote has an id");
+
+        let (status, _) = post(app.clone(), &format!("/api/quotes/{id}"), r#"{"comment":"this is the mechanism"}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (_, body) = get_json(app.clone(), "/api/quotes").await;
+        assert_eq!(body[0]["comment"], "this is the mechanism");
+
+        let response = app
+            .clone()
+            .oneshot(Request::delete(format!("/api/quotes/{id}")).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let (_, body) = get_json(app, "/api/quotes").await;
+        assert_eq!(body.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_quote_with_no_text_is_a_mistake_not_a_failure() {
+        // A selection of nothing is a mis-tap in the app; 400 lets it tell
+        // that apart from a server that broke.
+        let (web, content) = (web_root(), content_root());
+        let (status, _) = post(
+            app(&web, &content, pool().await),
+            "/api/quotes",
+            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"   ","comment":null}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn changing_a_quote_that_is_gone_says_so() {
+        // Two devices, one stale list: the app has to learn the quote is gone
+        // rather than believe it changed something.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+        let (status, body) = post(app.clone(), "/api/quotes/999", r#"{"comment":"x"}"#).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such quote");
+
+        let response = app.oneshot(Request::delete("/api/quotes/999").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_export_carries_everything_the_reader_left() {
+        // One document, because a script writes it back into markdown files
+        // and a snapshot taken in one request is what makes that safe.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+        post(app.clone(), "/api/notes/02-istoriya/god-bez-leta", r#"{"body":"a note"}"#).await;
+        post(
+            app.clone(),
+            "/api/quotes",
+            r#"{"piece_id":"02-istoriya/god-bez-leta","paragraph":0,"text":"a line","comment":"why"}"#,
+        )
+        .await;
+
+        let (status, body) = get_json(app, "/api/export").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(body["reading"][0]["status"], "read");
+        assert_eq!(body["notes"][0]["body"], "a note");
+        assert_eq!(body["quotes"][0]["text"], "a line");
+        assert!(body["exported_at"].as_str().is_some_and(|stamp| stamp.ends_with('Z')));
+    }
+
+    #[tokio::test]
+    async fn a_locked_stand_keeps_the_marks_to_itself() {
+        // Notes and quotes are the reader's own words about what they read;
+        // if the text is behind the password, these are too.
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let hash = crate::auth::hash("a good passphrase").unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
+
+        for path in ["/api/notes", "/api/quotes", "/api/export"] {
+            let (status, _) = get_json(app.clone(), path).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
+        }
     }
 
     #[tokio::test]
