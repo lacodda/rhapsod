@@ -1,0 +1,25 @@
+# Development: the server in a container, reading a local library.
+#
+# There is no database service - the database is a file (ADR 0001), and it
+# lives in the `data` volume. Most development runs `cargo run -- serve` on
+# the host instead and never touches this file; it exists so the image can be
+# tried the way the stand runs it, without a Pi.
+#
+# The library comes from a directory next to this file. `content/` is
+# gitignored: put a few markdown files with frontmatter in it, or point
+# RHAPSOD_CONTENT at a published copy of your vault.
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      RUST_LOG: ${RUST_LOG:-rhapsod=debug,tower_http=info}
+    ports:
+      - "${RHAPSOD_PORT:-8084}:8084"
+    volumes:
+      - ${RHAPSOD_CONTENT:-./content}:/content:ro
+      - data:/data
+
+volumes:
+  data:

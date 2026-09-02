@@ -1,0 +1,30 @@
+# The stand: the server and nothing else listening.
+#
+# One process serves the API and the reading app; the database is a file in
+# the `data` volume, and a backup is a copy of it. The library is a directory
+# on the host - the published copy of the author's vault (ADR 0002) - mounted
+# read-only, because the server never edits content.
+#
+# Settings come from a .env file next to this one, which is never committed:
+#
+#   RHAPSOD_CONTENT=/srv/rhapsod/content   # where the library is published to
+#   RHAPSOD_PORT=8084                        # the stand's address
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-rhapsod=info,tower_http=info}
+    ports:
+      # 8084 on the host: the other services on this machine hold the ports
+      # below it. The port is the stand's address, so it is not a default to
+      # change lightly.
+      - "${RHAPSOD_PORT:-8084}:8084"
+    volumes:
+      - ${RHAPSOD_CONTENT:?set RHAPSOD_CONTENT in .env to the library directory}:/content:ro
+      - data:/data
+
+volumes:
+  data:

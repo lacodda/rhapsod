@@ -1,0 +1,20 @@
+/* Brand accent: rhapsod terracotta, provisional until the line registers it. */
+:root {
+	--sl-color-accent: #d96a3f;
+	--sl-color-accent-high: #f0b59a;
+	--sl-color-accent-low: #4a2314;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent: #b5502a;
+	--sl-color-accent-high: #6e2f17;
+	--sl-color-accent-low: #fae6dc;
+}
+
+.hero h1 {
+	letter-spacing: -0.02em;
+}
+
+.hero .tagline {
+	max-width: 44ch;
+}

@@ -1,0 +1,49 @@
+---
+title: A reader for your own library
+description: rhapsod serves a directory of markdown as a reading app - progress, notes and spaced repetition, on a Raspberry Pi at home, readable anywhere.
+template: splash
+# The hero carries the product name; repeating it as the page title renders as
+# "rhapsod | rhapsod" in the browser tab and in search results.
+head:
+  - tag: title
+    content: rhapsod - a self-hosted reader
+hero:
+  tagline: A self-hosted reader for a markdown library. Publish a directory of files with frontmatter; read them on your phone with your place kept, your notes beside the text, and the lines worth remembering coming back on schedule.
+  actions:
+    - text: Get started
+      link: /rhapsod/getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/lacodda/rhapsod
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Foundation stage">
+This is the v0.1 foundation: the server, the app shell and the release rails stand, and the architecture is recorded. The library index, the reading view, progress, notes and repetition are what the next releases build.
+</Aside>
+
+## What rhapsod is
+
+<CardGrid stagger>
+	<Card title="Files in, reading out" icon="document">
+		The library is a directory of markdown with frontmatter, published from wherever you write. The server indexes it and never edits it; what it remembers about your reading lives in one SQLite file.
+	</Card>
+	<Card title="Reads anywhere" icon="laptop">
+		The app caches the whole library and queues what you do offline. It syncs when the Pi is reachable, and no VPN is assumed.
+	</Card>
+	<Card title="One container on a Pi" icon="rocket">
+		A single process serves the API and the app; state is one file in one volume, and a backup is a copy of it.
+	</Card>
+	<Card title="Remembering, not just reading" icon="star">
+		Progress, notes and highlights - and spaced repetition over the lines you marked, so the library stays read rather than merely finished.
+	</Card>
+</CardGrid>
+
+## Where to go next
+
+- [Getting started](/rhapsod/getting-started/) - run the server and the app locally.
+- [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/) - the stand, with Docker Compose.
+- [The library](/rhapsod/concepts/the-library/) - what a piece of content is, and what the frontmatter says.

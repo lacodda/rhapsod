@@ -1,0 +1,26 @@
+@import 'tailwindcss';
+
+/*
+ * The theme is dowel's: the token vocabulary of the lacodda line, in dark and
+ * light, with everything worked out from one accent colour. What is left in
+ * this file is what belongs to a reading app rather than to the line.
+ */
+@import 'dowel-ui/theme.css';
+
+/*
+ * The accent is stated here rather than imported from `dowel-ui/accents/`,
+ * because the line's registry does not carry rhapsod yet. When it does, this
+ * block becomes one import. Terracotta: the colour of a clay tablet, which is
+ * what a library was before it was paper.
+ */
+:root {
+  --accent-base: #d96a3f;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
