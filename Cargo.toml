@@ -20,6 +20,7 @@ exclude = [
     ".github/",
     "cliff.toml",
     "rustfmt.toml",
+    "assets/screenshot.png",
     "assets/social-preview.png",
     "assets/logo-512.png",
     "assets/apple-touch-icon.png",

@@ -10,7 +10,7 @@
 You write in markdown - novellas, essays, whatever a vault holds - and publish a directory of those files to a Raspberry Pi at home. **rhapsod** turns that directory into a reading app on your phone: it keeps your place, holds your notes and highlights beside the text, and brings the lines you marked back to you on a schedule, so the library stays read rather than merely finished. It reads offline and syncs when you are home; no VPN, no account, no third party.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lacodda/rhapsod/main/assets/screenshot.png" alt="rhapsod - the reading view (screenshot to come)" width="720">
+  <img src="https://raw.githubusercontent.com/lacodda/rhapsod/main/assets/screenshot.png" alt="rhapsod - the reading view on a phone" width="720">
 </p>
 
 ## A day with it
@@ -78,7 +78,9 @@ Everything comes from the environment; a `.env` file is read first, and `.env.ex
 
 ## Status
 
-Foundation, v0.1: the server, the app shell and the release rails stand, and the architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md). The server answers `/api/health` and serves the app; the app says hello in the line's theme. The library index, the reading view, progress, notes and repetition are what the next releases build. Watch this repository.
+v0.1, reading: a directory of markdown files becomes a library you can read on a phone and on a desktop. The server indexes the directory and answers it over the API; the app renders the shelves, a shelf and a piece, and moves between pieces with the arrow keys or the links at the foot of the text. The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
+
+What the reader remembers - where you stopped, your notes and highlights, the repetition schedule - is what v0.2 and the releases after it build. Watch this repository.
 
 ## Development
 
