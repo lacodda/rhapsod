@@ -13,6 +13,7 @@
 #   RHAPSOD_PUBLISH_HOST=pi
 #   RHAPSOD_PUBLISH_DEST=/srv/rhapsod/content
 #   RHAPSOD_PUBLISH_URL=http://pi:8084
+#   RHAPSOD_PUBLISH_TOPICS=./plan.md          # optional: what could be written
 #
 #   ./tools/publish-content.sh
 set -euo pipefail
@@ -87,6 +88,19 @@ else
     copier=scp
 fi
 
+# The plan of topics, if there is one. It travels as `topics.md` beside the
+# library so the reader can ask for something that has not been written yet.
+#
+# Copied after the library rather than with it, and this order is not
+# incidental: the plan usually lives elsewhere in the author's vault, so it is
+# not in the source directory, and rsync's `--delete` would remove it as a
+# stray if it arrived first.
+if [ -n "${RHAPSOD_PUBLISH_TOPICS:-}" ]; then
+    [ -f "$RHAPSOD_PUBLISH_TOPICS" ] || die "RHAPSOD_PUBLISH_TOPICS is not a file: $RHAPSOD_PUBLISH_TOPICS"
+    echo "publish-content: topics $RHAPSOD_PUBLISH_TOPICS -> $target/topics.md"
+    scp "$RHAPSOD_PUBLISH_TOPICS" "$target/topics.md"
+fi
+
 # The server holds the index in memory, so files on disk are not yet a
 # library: without this the new pieces would wait for a restart.
 echo "publish-content: reindexing $RHAPSOD_PUBLISH_URL"
@@ -98,7 +112,8 @@ counts=$(curl -fsS -X POST "$RHAPSOD_PUBLISH_URL/api/reindex")
 # gets an empty library. This happened on the stand's first deployment - a
 # container started against a directory that was empty at the time keeps
 # serving that emptiness - so the counts are compared rather than reported.
-sent=$(find "$RHAPSOD_PUBLISH_SRC" -mindepth 2 -name '*.md' | wc -l | tr -d ' ')
+sent=$(find "$RHAPSOD_PUBLISH_SRC" -mindepth 2 -name '*.md' | wc -l | tr -d ' 
+')
 serving=$(printf '%s' "$counts" | tr -dc '0-9,' | cut -d, -f1)
 sent=${sent:-0}
 serving=${serving:-0}

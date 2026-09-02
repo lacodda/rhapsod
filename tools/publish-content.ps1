@@ -12,6 +12,7 @@
 #   $env:RHAPSOD_PUBLISH_HOST = 'pi'
 #   $env:RHAPSOD_PUBLISH_DEST = '/srv/rhapsod/content'
 #   $env:RHAPSOD_PUBLISH_URL = 'http://pi:8084'
+#   $env:RHAPSOD_PUBLISH_TOPICS = './plan.md'   # optional: what could be written
 #
 #   .\tools\publish-content.ps1
 #
@@ -100,6 +101,23 @@ else {
     & scp -r "$src/." "$target/"
     if (-not $?) { Stop-WithReason 'scp failed; the stand is in a partial state, run the script again' }
     $copier = 'scp'
+}
+
+# The plan of topics, if there is one. It travels as `topics.md` beside the
+# library so the reader can ask for something that has not been written yet.
+#
+# Copied after the library rather than with it, and this order is not
+# incidental: the plan usually lives elsewhere in the author's vault, so it is
+# not in the source directory, and rsync's `--delete` would remove it as a
+# stray if it arrived first.
+$topics = $env:RHAPSOD_PUBLISH_TOPICS
+if ($topics) {
+    if (-not (Test-Path -LiteralPath $topics -PathType Leaf)) {
+        Stop-WithReason "RHAPSOD_PUBLISH_TOPICS is not a file: $topics"
+    }
+    Write-Host "publish-content: topics $topics -> $target/topics.md"
+    & scp $topics "$target/topics.md"
+    if (-not $?) { Stop-WithReason 'scp of the plan failed; the library was published without it' }
 }
 
 # The server holds the index in memory, so files on disk are not yet a

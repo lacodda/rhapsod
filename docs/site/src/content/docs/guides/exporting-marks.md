@@ -79,7 +79,7 @@ One JSON object with four keys.
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
@@ -169,6 +169,15 @@ One JSON object with four keys.
 | `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, so a request outliving its topic is still legible. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
+
+## Where the requests go
+
+The marks belong beside their pieces; a **request** does not - it names something that has not been written, so there is no file to sit next to. It belongs wherever the author keeps what to write next.
+
+The ritual the author uses appends them to that file rather than replacing it, and two properties are worth copying into any script that does the same:
+
+- **A request already written down is not written again.** The merge is run often and a request lives on the stand until it is withdrawn, so every run would otherwise add the same line.
+- **What is already in the file survives.** The author's own notes share that file; a script that rewrites it wholesale trades a small convenience for the thing it was meant to protect.
 
 ## Only what changed
 

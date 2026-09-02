@@ -80,7 +80,18 @@ Two rules, and they follow the way the plan is already used:
 - **`- [ ] Title` is a topic; `- [x] Title` is not.** A ticked topic has been written - it left the plan for the library, and offering it as something to request would be offering something that already exists.
 - **Sub-headings inside a shelf are flattened.** They organise the author's filing; a reader pointing at a topic does not need to know which drawer it came from.
 
-Put the file in the directory that gets published and it travels with everything else. There is nothing else to do: a reindex re-reads the plan along with the library, so adding topics and republishing is enough.
+If the plan already lives inside the directory being published, it travels with everything else and there is nothing more to do.
+
+More often it lives somewhere else entirely - an author's plan is not usually filed with the finished work. Point `RHAPSOD_PUBLISH_TOPICS` at it and the publishing script copies it in as `topics.md`:
+
+```sh
+export RHAPSOD_PUBLISH_TOPICS=../plan/topics.md
+./tools/publish-content.sh
+```
+
+It is copied **after** the library, which matters: rsync publishes with `--delete`, and a plan that arrived first would be removed as a stray file before the reindex ever saw it.
+
+A reindex re-reads the plan along with the library, so adding topics and republishing is enough.
 
 A stand with no `topics.md` simply offers nothing to ask for. That is not an error, and the rest of the reader works exactly as before.
 
@@ -131,7 +142,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.1","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).
