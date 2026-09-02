@@ -14,16 +14,27 @@
  */
 
 import { BOOKMARK_KINDS, type Bookmark, type BookmarkKind, type LibraryIndex } from '@/api'
+import { NoteIcon, RepeatIcon, ReturnIcon, StarIcon } from '@/Icons'
 import { minutes } from '@/Library'
 import { go } from '@/routing'
 import type { BookmarkStore } from '@/useBookmarks'
 
-/** What each kind is called and how it looks. */
-export const KINDS: Record<BookmarkKind, { label: string; glyph: string; dot: string; ring: string }> = {
-  loved: { label: 'Loved', glyph: '★', dot: 'bg-good', ring: 'text-good' },
-  return: { label: 'Come back', glyph: '↺', dot: 'bg-info', ring: 'text-info' },
-  song: { label: 'For a song', glyph: '♪', dot: 'bg-warn', ring: 'text-warn' },
-  reread: { label: 'Read again', glyph: '↻', dot: 'bg-dim', ring: 'text-dim' },
+/**
+ * What each kind is called and how it looks.
+ *
+ * The icon is a component rather than a character: a glyph like the musical
+ * note is drawn by whatever font on the device happens to carry it, at
+ * whatever size that font thinks is right - which on a phone was small enough
+ * to vanish beside its own label.
+ */
+export const KINDS: Record<
+  BookmarkKind,
+  { label: string; Icon: (props: { size?: number }) => React.ReactElement; dot: string; ring: string }
+> = {
+  loved: { label: 'Loved', Icon: StarIcon, dot: 'bg-good', ring: 'text-good' },
+  return: { label: 'Come back', Icon: ReturnIcon, dot: 'bg-info', ring: 'text-info' },
+  song: { label: 'For a song', Icon: NoteIcon, dot: 'bg-warn', ring: 'text-warn' },
+  reread: { label: 'Read again', Icon: RepeatIcon, dot: 'bg-dim', ring: 'text-dim' },
 }
 
 /** The dot shown beside a piece that carries a mark. */
@@ -43,7 +54,7 @@ export function BookmarkBar({ pieceId, bookmarks }: { pieceId: string; bookmarks
   return (
     <div className="flex flex-wrap items-center gap-2">
       {BOOKMARK_KINDS.map((kind) => {
-        const { label, glyph, ring } = KINDS[kind]
+        const { label, Icon, ring } = KINDS[kind]
         const chosen = current === kind
         return (
           <button
@@ -57,7 +68,7 @@ export function BookmarkBar({ pieceId, bookmarks }: { pieceId: string; bookmarks
               chosen ? `border-current ${ring}` : 'border-line text-dim hover:border-line-2 hover:text-text'
             }`}
           >
-            <span aria-hidden>{glyph}</span>
+            <Icon size={16} />
             {label}
           </button>
         )

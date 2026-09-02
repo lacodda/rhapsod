@@ -9,6 +9,7 @@
 
 import type { BookmarkKind, LibraryIndex, PieceSummary, Section } from '@/api'
 import { BookmarkDot } from '@/Bookmarks'
+import { ArrowRightIcon } from '@/Icons'
 import { go } from '@/routing'
 import type { ProgressStore } from '@/useProgress'
 
@@ -170,9 +171,7 @@ function Today({ due }: { due: number }) {
           {due} {due === 1 ? 'piece' : 'pieces'} to bring back
         </span>
       </span>
-      <span aria-hidden className="font-mono text-sm text-accent">
-        &rarr;
-      </span>
+      <ArrowRightIcon size={16} className="text-accent" />
     </a>
   )
 }

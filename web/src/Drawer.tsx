@@ -15,6 +15,7 @@
 import { useEffect, useRef } from 'react'
 
 import type { LibraryIndex } from '@/api'
+import { CloseIcon } from '@/Icons'
 import { go, type Route } from '@/routing'
 
 /** How wide the panel is: enough for a shelf title, never the whole screen. */
@@ -111,9 +112,9 @@ export function Drawer({
             type="button"
             onClick={onClose}
             aria-label="Close the menu"
-            className="rounded-md px-2 py-1 font-mono text-sm text-dim hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="rounded-md px-2 py-1.5 text-dim hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
-            ✕
+            <CloseIcon size={16} />
           </button>
         </div>
 

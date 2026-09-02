@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, fetchNext, fetchPiece, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
 import { BookmarkBar } from '@/Bookmarks'
+import { ArrowLeftIcon } from '@/Icons'
 import { Empty, minutes } from '@/Library'
 import { KeepBar, KeptLines, NoteEditor, useSelection } from '@/Marks'
 import { go } from '@/routing'
@@ -382,9 +383,10 @@ function Finish({
             event.preventDefault()
             go({ name: 'piece', id: previous.id })
           }}
-          className="self-start rounded-lg px-3 py-2 text-sm text-dim transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="flex items-center gap-2 self-start rounded-lg px-3 py-2 text-sm text-dim transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          ← {previous.title}
+          <ArrowLeftIcon size={16} />
+          {previous.title}
         </a>
       ) : null}
     </div>

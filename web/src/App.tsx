@@ -4,6 +4,7 @@ import { ApiError, BOOKMARK_KINDS, fetchLibrary, fetchSession, type BookmarkKind
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { BookmarksScreen } from '@/Bookmarks'
 import { Drawer } from '@/Drawer'
+import { MenuIcon } from '@/Icons'
 import { Mark } from '@/Mark'
 import { QuotesScreen } from '@/Quotes'
 import { RequestsScreen } from '@/Requests'
@@ -185,11 +186,9 @@ function Header({
             aria-label="Open the menu"
             className="rounded-md px-2 py-1.5 text-dim transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
-            {/* Three lines: the one glyph a phone reader does not have to be
+            {/* Three lines: the one icon a phone reader does not have to be
                 taught. */}
-            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            <MenuIcon size={18} />
           </button>
         ) : null}
         <a

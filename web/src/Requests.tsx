@@ -13,6 +13,7 @@
 import { useMemo, useState } from 'react'
 
 import type { Topic, TopicShelf } from '@/api'
+import { CheckIcon } from '@/Icons'
 import type { RequestStore } from '@/useRequests'
 
 export function RequestsScreen({ requests }: { requests: RequestStore }) {
@@ -194,10 +195,11 @@ function Row({
         {showShelf ? <span className="font-mono text-[0.625rem] text-faint">{topic.section}</span> : null}
       </span>
       <span
-        className={`shrink-0 font-mono text-xs ${wanted ? 'text-accent' : 'text-faint'}`}
+        className={`flex shrink-0 items-center gap-1 font-mono text-xs ${wanted ? 'text-accent' : 'text-faint'}`}
         aria-hidden
       >
-        {wanted ? '✓ asked' : 'ask'}
+        {wanted ? <CheckIcon size={13} /> : null}
+        {wanted ? 'asked' : 'ask'}
       </span>
     </button>
   )

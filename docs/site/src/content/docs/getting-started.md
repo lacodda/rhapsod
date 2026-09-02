@@ -41,7 +41,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.1","pieces":1,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.2","pieces":1,"indexed_seconds_ago":1450}
 ```
 
 ## The app
