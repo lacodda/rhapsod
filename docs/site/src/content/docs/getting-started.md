@@ -41,7 +41,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.1.0","pieces":1}
+{"status":"ok","version":"0.1.1","pieces":1}
 ```
 
 ## The app
@@ -65,7 +65,9 @@ pnpm dev
 ## Next
 
 - [The library](/rhapsod/concepts/the-library/) - how a directory of markdown becomes shelves and pieces.
+- [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/) - the three statuses, the position, the streak.
 - [API](/rhapsod/reference/api/) - every endpoint, with real responses.
 - [Publishing content](/rhapsod/guides/publishing-content/) - getting a library onto the stand.
 - [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/) - the stand.
+- [Locking a stand](/rhapsod/guides/locking-a-stand/) - putting a password on the reader.
 - [Configuration](/rhapsod/reference/configuration/) - every variable the server reads.

@@ -21,8 +21,8 @@ hero:
 
 import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Foundation stage">
-This is the v0.1 foundation: the server, the app shell and the release rails stand, the architecture is recorded, and the library is indexed and served over the API. The reading view, progress, notes and repetition are what the next releases build.
+<Aside type="caution" title="Early days">
+A directory of markdown is a library you can read, and the reader keeps your place: where you stopped, what you have finished, and what to read next. Notes, highlights, spaced repetition and offline reading are what the next releases build.
 </Aside>
 
 ## What rhapsod is
@@ -31,8 +31,8 @@ This is the v0.1 foundation: the server, the app shell and the release rails sta
 	<Card title="Files in, reading out" icon="document">
 		The library is a directory of markdown with frontmatter, published from wherever you write. The server indexes it and never edits it; what it remembers about your reading lives in one SQLite file.
 	</Card>
-	<Card title="Reads anywhere" icon="laptop">
-		The app caches the whole library and queues what you do offline. It syncs when the Pi is reachable, and no VPN is assumed.
+	<Card title="Keeps your place" icon="open-book">
+		Where you stopped is a paragraph, not a scroll position, so the same number is the same sentence on a phone and on a desktop - and it never moves backwards when a stale device syncs.
 	</Card>
 	<Card title="One container on a Pi" icon="rocket">
 		A single process serves the API and the app; state is one file in one volume, and a backup is a copy of it.
@@ -46,6 +46,8 @@ This is the v0.1 foundation: the server, the app shell and the release rails sta
 
 - [Getting started](/rhapsod/getting-started/) - run the server and the app locally.
 - [The library](/rhapsod/concepts/the-library/) - what a piece of content is, and what the frontmatter says.
+- [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/) - the three statuses, the position, the streak.
 - [API](/rhapsod/reference/api/) - every endpoint, with real responses.
 - [Publishing content](/rhapsod/guides/publishing-content/) - getting a library onto the stand.
 - [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/) - the stand, with Docker Compose.
+- [Locking a stand](/rhapsod/guides/locking-a-stand/) - putting a password on the reader, if you want one.

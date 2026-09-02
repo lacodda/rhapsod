@@ -18,6 +18,8 @@ Both scripts read the same four variables from the environment, and read a `.env
 
 These are **not** server configuration. The server never reads them; it only ever learns about a publish through `POST /api/reindex`. The variables the server itself reads are on the [Configuration](/rhapsod/reference/configuration/) page.
 
+Publishing works the same whether the stand is open or [locked](/rhapsod/guides/locking-a-stand/): `POST /api/reindex` and `GET /api/health` are in front of the password, because a publishing script on the same network is not a browser and a monitor is not a reader.
+
 `.env.example` carries all four, commented out.
 
 ## Publishing
@@ -103,7 +105,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.1.0","pieces":2}
+{"status":"ok","version":"0.1.1","pieces":2}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).

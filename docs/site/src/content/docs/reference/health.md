@@ -11,7 +11,7 @@ description: The contract of GET /api/health - status codes, body shape, and wha
 GET /api/health
 ```
 
-No authentication, no parameters.
+No parameters, and no session: this endpoint stays open even on a stand that has a password, because a monitor has to be able to ask whether the stand is alive. It says nothing about the content beyond how many pieces there are - see [Locking a stand](/rhapsod/guides/locking-a-stand/).
 
 ## Response
 
@@ -23,7 +23,7 @@ No authentication, no parameters.
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "pieces": 2
 }
 ```

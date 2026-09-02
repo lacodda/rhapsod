@@ -15,8 +15,28 @@ Three things, and only the first is part of this repository:
 
 ```sh
 RHAPSOD_CONTENT=/srv/rhapsod/content   # the published library
-RHAPSOD_PORT=8084                        # the stand's address
+RHAPSOD_PORT=8084                      # the stand's address
 ```
+
+That is enough to run. A stand set up this way is **open**: everyone who can reach it on the network is the reader, which is how one reader at home usually runs it.
+
+To lock it, add the hash of a password to the same file - single-quoted, because a PHC string is full of `$`:
+
+```sh
+RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$wVUyLxTmlnEWzGSHbJINbg$sdR7z5K3zoywehEIBHEqAXDsZILU908I9bQLGkCRYgg'
+```
+
+Generate one with `rhapsod hash`. It needs nothing else - no library, no database - so the image on the stand can do it:
+
+```sh
+docker compose -f docker-compose.prod.yml run --rm server rhapsod hash
+```
+
+That prompts for the password, so it stays out of the shell history.
+
+Compose expands `$VAR` in an unquoted value, and a PHC string is full of `$`. Unquoted, the hash reaches the container as `=19=19456,t=2,p=1` and the right password is rejected forever; single-quoted, it arrives whole.
+
+The variable is read once at startup, so adding it takes a `docker compose up -d`. See [Locking a stand](/rhapsod/guides/locking-a-stand/).
 
 ## Bringing it up
 
@@ -30,11 +50,11 @@ The first build on a Pi takes a while - a Rust release build and a Node build. L
 curl http://pi:8084/api/health
 ```
 
-The container's own healthcheck calls the same endpoint, so `docker compose ps` says whether the server has actually reached its database.
+The container's own healthcheck calls the same endpoint, so `docker compose ps` says whether the server has actually reached its database. `/api/health` stays open on a locked stand, precisely so a monitor can keep asking.
 
 ## Where the state is
 
-The database is one file in the `data` volume. A backup is a copy of it:
+The database is one file in the `data` volume: where you stopped in each piece, what you have finished, and the sessions of any browser signed in to a locked stand. A backup is a copy of it:
 
 ```sh
 docker compose -f docker-compose.prod.yml cp server:/data/rhapsod.db ./rhapsod-backup.db

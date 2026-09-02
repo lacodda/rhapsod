@@ -11,6 +11,7 @@ rhapsod is configured entirely through the environment. There is no configuratio
 | `RHAPSOD_DATABASE_URL` | no | `sqlite://data/rhapsod.db?mode=rwc` | The SQLite file holding everything the reader remembers. `mode=rwc` creates it; the server creates the directory. |
 | `RHAPSOD_ADDR` | no | `0.0.0.0:8084` | Socket address the HTTP server binds to. |
 | `RHAPSOD_WEB_DIR` | no | `web/dist` | Directory holding the built app, served for every path outside `/api`. |
+| `RHAPSOD_PASSWORD_HASH` | no | - | Argon2id hash of the reading password, from `rhapsod hash`. Unset leaves the stand open. |
 | `RUST_LOG` | no | `rhapsod=info,tower_http=info` | Log filter, in `tracing-subscriber` `EnvFilter` syntax. |
 
 A `.env` file in the working directory is read first, so all of these can live there during development. The file is never committed; `.env.example` shows the shape.
@@ -32,7 +33,21 @@ The server reads the environment once at startup and fails immediately if it can
 
 A blank value for an optional variable means the default: a compose file that leaves `RHAPSOD_WEB_DIR=` empty does not make the server serve its working directory.
 
+`RHAPSOD_PASSWORD_HASH` is the exception to failing at startup. It is not parsed until someone tries to sign in, because a hash the server cannot read is only discovered by using it; that attempt answers `500` with `{"error":"the stand's password is misconfigured"}` and logs the variable's name, rather than being read as a wrong password.
+
 Failing at startup is deliberate. A server that boots with a broken configuration and only discovers it on the first request has turned a deployment error into an outage.
+
+## The password
+
+`RHAPSOD_PASSWORD_HASH` decides whether the stand is open or locked. Unset - which is the default - means open: everyone who can reach the stand is the reader. A blank or whitespace-only value is unset, so `RHAPSOD_PASSWORD_HASH=` does not lock a stand with an empty password.
+
+The value is the whole PHC string that `rhapsod hash` prints, and it contains `$`, so it must be single-quoted in a `.env` file:
+
+```sh
+RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$wVUyLxTmlnEWzGSHbJINbg$sdR7z5K3zoywehEIBHEqAXDsZILU908I9bQLGkCRYgg'
+```
+
+The full walk-through is in [Locking a stand](/rhapsod/guides/locking-a-stand/).
 
 ## The app directory
 

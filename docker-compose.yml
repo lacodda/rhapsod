@@ -15,6 +15,10 @@ services:
       dockerfile: Dockerfile
     environment:
       RUST_LOG: ${RUST_LOG:-rhapsod=debug,tower_http=info}
+      # Empty unless set, which leaves the stand open. The whole PHC string
+      # goes in .env single-quoted: it is full of $, and compose expands $VAR
+      # in an unquoted value.
+      RHAPSOD_PASSWORD_HASH: ${RHAPSOD_PASSWORD_HASH:-}
     ports:
       - "${RHAPSOD_PORT:-8084}:8084"
     volumes:

@@ -8,7 +8,12 @@
 # Settings come from a .env file next to this one, which is never committed:
 #
 #   RHAPSOD_CONTENT=/srv/rhapsod/content   # where the library is published to
-#   RHAPSOD_PORT=8084                        # the stand's address
+#   RHAPSOD_PORT=8084                      # the stand's address
+#
+# Optionally, to lock the stand - single-quoted, because a PHC string is full
+# of $ and compose expands $VAR in an unquoted value:
+#
+#   RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=...'   # from `rhapsod hash`
 services:
   server:
     build:
@@ -17,6 +22,10 @@ services:
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-rhapsod=info,tower_http=info}
+      # Empty unless set, which leaves the stand open. The whole PHC string
+      # goes in .env single-quoted: it is full of $, and compose expands $VAR
+      # in an unquoted value.
+      RHAPSOD_PASSWORD_HASH: ${RHAPSOD_PASSWORD_HASH:-}
     ports:
       # 8084 on the host: the other services on this machine hold the ports
       # below it. The port is the stand's address, so it is not a default to

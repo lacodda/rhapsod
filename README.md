@@ -15,11 +15,13 @@ You write in markdown - novellas, essays, whatever a vault holds - and publish a
 
 ## A day with it
 
-Morning, on the train. The phone has no way to reach the Pi and does not need one: the whole library was cached the last time it did. You open the piece you stopped in last night and it opens where you stopped. A line is worth keeping; you mark it, and write two words in the margin. Both are saved on the phone and queued.
+Morning, on the train. You open the library and the first thing on it is the piece you stopped in last night - not a choice, the thing you were already in the middle of. It opens where you stopped, at the paragraph you were on rather than at some pixel that meant something on a different screen.
 
-Evening, at home. The phone finds the Pi, drains the queue, and the highlight and the note are in the one SQLite file on the stand that holds everything rhapsod remembers - which is also the file a backup is a copy of. Meanwhile a new piece was published to the library directory; the server indexed it, and it is on the shelf, unread, next in line.
+You finish it, and say so: finishing is a button, because scrolling to the bottom to see how long something is should not quietly mark it read. The shelf counter moves, and underneath the piece is what to read next - from another shelf, because reading straight down one turns thirty pieces about paradoxes into a textbook.
 
-A week later. The line you marked comes back as a card: do you still know it? You do, or you do not, and the schedule adjusts. The text it came from is one tap away.
+Evening, at home, on the desktop. The same place, the same marks: what the reader remembers lives in one SQLite file on the stand, which is also the file a backup is a copy of. You pick up a piece you left half-read on the phone, and the position does not jump backwards when the phone catches up - it only ever moves forward. Meanwhile a new piece was published to the library directory; the server indexed it, and it is on the shelf, unread, next in line.
+
+Later. Notes in the margin, the lines worth keeping coming back on a schedule, and the whole library cached for a train with no signal - that is what the releases after this one build.
 
 ## Running it on a Pi
 
@@ -33,8 +35,12 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.1.0"}
+{"status":"ok","version":"0.1.1","pieces":2}
 ```
+
+`pieces` answers the question a deploy actually raises: not whether the server is up, but whether it is serving the library you just published.
+
+A stand set up this way is open - everyone who can reach it is the reader. To put a password on it, add `RHAPSOD_PASSWORD_HASH` from `rhapsod hash` to that same `.env`, single-quoted because a PHC string is full of `$`; see [Locking a stand](https://lacodda.github.io/rhapsod/guides/locking-a-stand/).
 
 The library directory is mounted read-only, because the server never edits content ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)). Everything the reader remembers lives in the `data` volume as one file; back it up by copying it ([ADR 0001](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md)). The full walk-through is in [Running on a Raspberry Pi](https://lacodda.github.io/rhapsod/guides/running-on-a-pi/).
 
@@ -74,14 +80,20 @@ Everything comes from the environment; a `.env` file is read first, and `.env.ex
 | `RHAPSOD_DATABASE_URL` | no | `sqlite://data/rhapsod.db?mode=rwc` | The SQLite file holding everything the reader remembers. |
 | `RHAPSOD_ADDR` | no | `0.0.0.0:8084` | Socket address the HTTP server binds to. |
 | `RHAPSOD_WEB_DIR` | no | `web/dist` | Directory holding the built app, served for every path outside `/api`. |
-| `RHAPSOD_PASSWORD_HASH` | no | - | Argon2 hash of the reading password, from `rhapsod hash`. Unset leaves the stand open, which is how a home network usually runs it. |
+| `RHAPSOD_PASSWORD_HASH` | no | - | Argon2id hash of the reading password, from `rhapsod hash`. Unset leaves the stand open, which is how a home network usually runs it. Single-quote it: a PHC string contains `$`. |
 | `RUST_LOG` | no | `rhapsod=info,tower_http=info` | Log filter, in `tracing-subscriber` `EnvFilter` syntax. |
 
 ## Status
 
-v0.1, reading: a directory of markdown files becomes a library you can read on a phone and on a desktop. The server indexes the directory and answers it over the API; the app renders the shelves, a shelf and a piece, and moves between pieces with the arrow keys or the links at the foot of the text. The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
+**Reading, and remembering where you are.** A directory of markdown files becomes a library you can read on a phone and on a desktop: the server indexes the directory and answers it over the API, and the app renders the shelves, a shelf and a piece, moving between pieces with the arrow keys or the links at the foot of the text.
 
-What the reader remembers - where you stopped, your notes and highlights, the repetition schedule - is what v0.2 and the releases after it build. Watch this repository.
+The reader now keeps your place. A piece is **not opened**, **reading** or **read** - the first needs no storage, being simply the absence of a row. Your position is a paragraph index rather than a scroll offset, so the same number is the same sentence on a phone and on a desktop, and it only ever moves forward, so a stale device syncing cannot send you back up the page. The library screen leads with what you were in the middle of and counts what you have read: pieces, words, and a streak of consecutive days that re-reading an old favourite cannot repair. At the end of a piece it offers an unread one from another shelf.
+
+A stand can be locked. `rhapsod hash` makes the value for `RHAPSOD_PASSWORD_HASH`; without it the stand is open, which is how one reader on a home network usually runs it. Sessions are rows rather than signed tokens, so signing out actually ends one.
+
+The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
+
+Notes and highlights, spaced repetition over the lines you marked, and offline reading with a sync queue are what the releases after this one build. Watch this repository.
 
 ## Development
 
@@ -94,6 +106,8 @@ cargo run -- serve                       # the API on :8084; /api/health reports
 cd web && pnpm install && pnpm dev        # the app on :5173, proxying /api to the server
 cd docs/site && pnpm install && pnpm dev  # the documentation site
 ```
+
+`cargo run -- hash` prints a value for `RHAPSOD_PASSWORD_HASH`, prompting for the password so it stays out of the shell history.
 
 ## Documentation
 
