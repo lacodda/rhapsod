@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-09-02
+
+### Features
+- Bring a finished piece back before it fades
+
+
 ## [0.4.0] - 2026-09-02
 
 ### Features
