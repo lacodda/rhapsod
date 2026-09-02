@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-09-02
+
+### Features
+- Read anywhere, and deliver it when you are home
+
+
 ## [0.3.0] - 2026-09-02
 
 ### Bug Fixes
