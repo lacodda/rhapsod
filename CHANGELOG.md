@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.0] - 2026-09-02
+
+### Features
+- Ask for a novella that is not written yet
+
+
 ## [0.8.0] - 2026-09-02
 
 ### Features
