@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-09-02
+
+### Bug Fixes
+- Make the Windows publish script match the shell one
+
+### Features
+- Keep notes and quotes, and hand them back
+- Mark a line and write about a piece
+- Take the reader's marks back to the vault
+
 ## [0.2.0] - 2026-09-02
 
 ### Bug Fixes
