@@ -323,7 +323,7 @@ struct Progress {
 }
 
 async fn read_progress(_: Reader, State(state): State<AppState>) -> Response {
-    let pieces = match progress::all(&state.pool).await {
+    let pieces = match progress::all(&state.pool, None).await {
         Ok(pieces) => pieces,
         Err(error) => return failed(&error, "the reading state could not be read"),
     };
@@ -429,7 +429,7 @@ struct After {
 /// format is built for the opposite. Within that, reading order decides, so
 /// the answer is the same on every device and does not shuffle underfoot.
 async fn what_next(_: Reader, State(state): State<AppState>, axum::extract::Query(after): axum::extract::Query<After>) -> Response {
-    let touched = match progress::all(&state.pool).await {
+    let touched = match progress::all(&state.pool, None).await {
         Ok(states) => states,
         Err(error) => return failed(&error, "the reading state could not be read"),
     };
@@ -460,7 +460,7 @@ fn failed(error: &anyhow::Error, message: &'static str) -> Response {
 
 /// Every note the reader has written.
 async fn read_notes(_: Reader, State(state): State<AppState>) -> Response {
-    match marks::notes(&state.pool).await {
+    match marks::notes(&state.pool, None).await {
         Ok(notes) => Json(notes).into_response(),
         Err(error) => failed(&error, "the notes could not be read"),
     }
@@ -498,7 +498,7 @@ async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, 
 
 /// Every quote the reader has kept.
 async fn read_quotes(_: Reader, State(state): State<AppState>) -> Response {
-    match marks::quotes(&state.pool).await {
+    match marks::quotes(&state.pool, None).await {
         Ok(quotes) => Json(quotes).into_response(),
         Err(error) => failed(&error, "the quotes could not be read"),
     }
@@ -569,11 +569,25 @@ async fn drop_quote(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPa
     }
 }
 
+/// What the caller asks for: everything, or only what changed.
+#[derive(Deserialize)]
+struct Since {
+    /// An `exported_at` from a previous run. Rows that have not changed since
+    /// are left out, so the ritual that folds marks into the vault does not
+    /// rewrite three hundred files to carry two edits.
+    since: Option<String>,
+}
+
 /// Everything the reader has left behind, in one document.
 #[derive(Serialize)]
 struct Export {
     /// When the export was taken, so a vault knows what it is merging.
     exported_at: String,
+    /// The bound this document answers for, echoed back. `null` means the
+    /// export is everything; a value means it carries only what changed after
+    /// it, and a script can tell the two apart without remembering what it
+    /// asked for.
+    since: Option<String>,
     version: &'static str,
     reading: Vec<progress::State>,
     notes: Vec<marks::Note>,
@@ -628,20 +642,21 @@ async fn answer_review(_: Reader, State(state): State<AppState>, UrlPath((sectio
 /// One document rather than an endpoint per kind: this is read by a script
 /// that writes the result into markdown files, and a consistent snapshot in
 /// one request is what makes that safe to run at any moment.
-async fn export(_: Reader, State(state): State<AppState>) -> Response {
-    let reading = match progress::all(&state.pool).await {
+async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(range): axum::extract::Query<Since>) -> Response {
+    let since = range.since.as_deref();
+    let reading = match progress::all(&state.pool, since).await {
         Ok(reading) => reading,
         Err(error) => return failed(&error, "the reading state could not be read"),
     };
-    let notes = match marks::notes(&state.pool).await {
+    let notes = match marks::notes(&state.pool, since).await {
         Ok(notes) => notes,
         Err(error) => return failed(&error, "the notes could not be read"),
     };
-    let quotes = match marks::quotes(&state.pool).await {
+    let quotes = match marks::quotes(&state.pool, since).await {
         Ok(quotes) => quotes,
         Err(error) => return failed(&error, "the quotes could not be read"),
     };
-    let schedules = match reviews::all(&state.pool).await {
+    let schedules = match reviews::all(&state.pool, since).await {
         Ok(schedules) => schedules,
         Err(error) => return failed(&error, "the review schedules could not be read"),
     };
@@ -658,6 +673,7 @@ async fn export(_: Reader, State(state): State<AppState>) -> Response {
 
     Json(Export {
         exported_at,
+        since: range.since.clone(),
         version: env!("CARGO_PKG_VERSION"),
         reading,
         notes,

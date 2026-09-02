@@ -72,8 +72,8 @@ pub async fn follow(pool: &SqlitePool, piece_id: &str, read: bool) -> Result<()>
     }
 
     sqlx::query(
-        "INSERT INTO reviews (piece_id, done, due_on)
-         VALUES (?, 0, date('now', '+1 day'))
+        "INSERT INTO reviews (piece_id, done, due_on, changed_at)
+         VALUES (?, 0, date('now', '+1 day'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (piece_id) DO NOTHING",
     )
     .bind(piece_id)
@@ -112,8 +112,9 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
     if again {
         sqlx::query(
             "UPDATE reviews
-                SET due_on    = date('now', '+1 day'),
-                    last_seen = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                SET due_on     = date('now', '+1 day'),
+                    last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
               WHERE piece_id = ?",
         )
         .bind(piece_id)
@@ -133,9 +134,10 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
         Some(days) => {
             sqlx::query(
                 "UPDATE reviews
-                    SET done      = ?,
-                        due_on    = date('now', '+' || ? || ' days'),
-                        last_seen = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    SET done       = ?,
+                        due_on     = date('now', '+' || ? || ' days'),
+                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                   WHERE piece_id = ?",
             )
             .bind(next)
@@ -148,9 +150,10 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
         None => {
             sqlx::query(
                 "UPDATE reviews
-                    SET done      = ?,
-                        due_on    = NULL,
-                        last_seen = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    SET done       = ?,
+                        due_on     = NULL,
+                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                   WHERE piece_id = ?",
             )
             .bind(next)
@@ -205,11 +208,20 @@ pub async fn due(pool: &SqlitePool, library: &Library) -> Result<Vec<Due>> {
 /// # Errors
 ///
 /// Fails when the database cannot be read.
-pub async fn all(pool: &SqlitePool) -> Result<Vec<Review>> {
-    sqlx::query_as::<_, Review>("SELECT piece_id, done, due_on, last_seen FROM reviews ORDER BY piece_id")
-        .fetch_all(pool)
-        .await
-        .context("failed to read the schedules")
+pub async fn all(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Review>> {
+    // A schedule enrolled but never answered has no `last_seen`, so the filter
+    // reads `changed_at`: keying on the answer would hide every piece that was
+    // finished and not yet recalled.
+    sqlx::query_as::<_, Review>(
+        "SELECT piece_id, done, due_on, last_seen
+           FROM reviews
+          WHERE coalesce(changed_at, '') > coalesce(?, '')
+          ORDER BY piece_id",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("failed to read the schedules")
 }
 
 #[cfg(test)]
@@ -315,6 +327,37 @@ mod tests {
         follow(&pool, "a/b", true).await.unwrap();
         follow(&pool, "a/b", false).await.unwrap();
         assert!(row(&pool, "a/b").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_schedule_that_was_never_answered_still_reaches_an_export() {
+        // `last_seen` is null until the first answer, so filtering on it would
+        // hide every piece that was finished and not yet recalled - which is
+        // most of them, most of the time.
+        let pool = pool().await;
+        follow(&pool, "a/b", true).await.unwrap();
+
+        let carried = all(&pool, Some("2020-01-01T00:00:00.000Z")).await.unwrap();
+        assert_eq!(carried.len(), 1, "a schedule with no answer yet was left out of an incremental export");
+        assert!(carried[0].last_seen.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_schedule_is_left_out() {
+        let pool = pool().await;
+        follow(&pool, "a/b", true).await.unwrap();
+        sqlx::query("UPDATE reviews SET changed_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let bound = Some("2020-06-01T00:00:00.000Z");
+        assert!(all(&pool, bound).await.unwrap().is_empty());
+        assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the schedule");
+
+        // Answering moves it back into range.
+        answered(&pool, "a/b", false).await.unwrap();
+        assert_eq!(all(&pool, bound).await.unwrap().len(), 1, "an answered schedule did not reach the export");
     }
 
     #[tokio::test]

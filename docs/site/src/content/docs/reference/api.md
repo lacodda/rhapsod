@@ -31,7 +31,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.5.0","pieces":2}
+{"status":"ok","version":"0.6.0","pieces":2}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -741,21 +741,22 @@ curl http://127.0.0.1:8084/api/export
 
 ```json
 {
-  "exported_at": "2026-09-02T16:28:28.881Z",
-  "version": "0.5.0",
+  "exported_at": "2026-09-02T17:42:02.006Z",
+  "since": null,
+  "version": "0.6.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T16:28:08.266Z",
-      "read_at": "2026-09-02T16:28:08.266Z"
+      "updated_at": "2026-09-02T17:42:01.959Z",
+      "read_at": "2026-09-02T17:42:01.959Z"
     },
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "status": "reading",
       "paragraph": 7,
-      "updated_at": "2026-09-02T16:28:08.296Z",
+      "updated_at": "2026-09-02T17:42:01.993Z",
       "read_at": null
     }
   ],
@@ -763,12 +764,12 @@ curl http://127.0.0.1:8084/api/export
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T16:28:08.301Z"
+      "updated_at": "2026-09-02T17:42:01.999Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T16:28:08.298Z"
+      "updated_at": "2026-09-02T17:42:01.996Z"
     }
   ],
   "quotes": [
@@ -778,7 +779,7 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
       "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T16:28:08.305Z"
+      "created_at": "2026-09-02T17:42:02.004Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
@@ -786,15 +787,15 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T16:28:08.303Z"
+      "created_at": "2026-09-02T17:42:02.001Z"
     }
   ],
   "reviews": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "done": 1,
-      "due_on": "2026-09-09",
-      "last_seen": "2026-09-02T16:28:28.877Z"
+      "done": 0,
+      "due_on": "2026-09-03",
+      "last_seen": null
     }
   ]
 }
@@ -815,6 +816,45 @@ A reader who has done nothing gets the same shape with three empty arrays and a 
 The statistics are deliberately not in it. `read`, `words` and `streak` are derived from these rows and from the library, and a document carrying both the facts and a summary of them would have two answers to keep in agreement.
 
 Nothing here is the library's. The markdown files are never written ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)); this endpoint is how what a reader made of them gets back out. The scripts that call it are in [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
+
+### Only what changed
+
+`?since=` takes an `exported_at` from a previous run and leaves out everything that has not changed since. The ritual that folds marks into the vault does not rewrite three hundred files to carry two edits.
+
+```sh
+curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
+```
+
+```json
+{
+  "exported_at": "2026-09-02T17:42:02.010Z",
+  "since": "2026-09-02T17:42:02.006Z",
+  "version": "0.6.0",
+  "reading": [],
+  "notes": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "body": "Год без лета — и целая эпоха следом. Дописано позже.",
+      "updated_at": "2026-09-02T17:42:02.008Z"
+    }
+  ],
+  "quotes": [],
+  "reviews": []
+}
+```
+
+The bound is echoed back as `since`, so a script can tell an incremental document from a full one without remembering what it asked for. `null` there means the export is everything.
+
+What counts as changed differs by kind, and the differences are deliberate:
+
+| Kind | Changed when |
+| --- | --- |
+| `reading` | The position moved, or the piece was finished or unfinished. |
+| `notes` | The note was written, rewritten or cleared. |
+| `quotes` | The line was kept **or its comment was edited** - an edit long after the keeping still counts, or the vault would hold a stale comment forever while every export reported success. |
+| `reviews` | The schedule was created by finishing a piece, or moved by an answer. A schedule enrolled but never answered is included: keying on the answer would hide every piece that was finished and not yet recalled. |
+
+A deletion is the one thing an incremental export cannot report: a removed quote is simply absent, and absence is what an unchanged row looks like too. A merge script that has to notice removals asks for a full export, which is what omitting `since` gives it.
 
 ## Failures
 

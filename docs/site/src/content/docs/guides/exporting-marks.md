@@ -77,21 +77,22 @@ One JSON object with four keys.
 
 ```json
 {
-  "exported_at": "2026-09-02T16:28:28.881Z",
-  "version": "0.5.0",
+  "exported_at": "2026-09-02T17:42:02.006Z",
+  "since": null,
+  "version": "0.6.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "status": "read",
       "paragraph": 0,
-      "updated_at": "2026-09-02T16:28:08.266Z",
-      "read_at": "2026-09-02T16:28:08.266Z"
+      "updated_at": "2026-09-02T17:42:01.959Z",
+      "read_at": "2026-09-02T17:42:01.959Z"
     },
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "status": "reading",
       "paragraph": 7,
-      "updated_at": "2026-09-02T16:28:08.296Z",
+      "updated_at": "2026-09-02T17:42:01.993Z",
       "read_at": null
     }
   ],
@@ -99,12 +100,12 @@ One JSON object with four keys.
     {
       "piece_id": "02-istoriya/god-bez-leta",
       "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T16:28:08.301Z"
+      "updated_at": "2026-09-02T17:42:01.999Z"
     },
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
       "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T16:28:08.298Z"
+      "updated_at": "2026-09-02T17:42:01.996Z"
     }
   ],
   "quotes": [
@@ -114,7 +115,7 @@ One JSON object with four keys.
       "paragraph": 1,
       "text": "Она пишет ему из монастыря.",
       "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T16:28:08.305Z"
+      "created_at": "2026-09-02T17:42:02.004Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
@@ -122,15 +123,15 @@ One JSON object with four keys.
       "paragraph": 1,
       "text": "Следующее лето не пришло.",
       "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T16:28:08.303Z"
+      "created_at": "2026-09-02T17:42:02.001Z"
     }
   ],
   "reviews": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "done": 1,
-      "due_on": "2026-09-09",
-      "last_seen": "2026-09-02T16:28:28.877Z"
+      "done": 0,
+      "due_on": "2026-09-03",
+      "last_seen": null
     }
   ]
 }
@@ -146,6 +147,29 @@ One JSON object with four keys.
 | `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
+
+## Only what changed
+
+A second run does not need the whole document. `?since=` takes the `exported_at` of the previous one and returns only what has changed:
+
+```sh
+curl "http://127.0.0.1:8084/api/export?since=$(cat .last-export)"
+```
+
+The bound comes back as `since` in the answer, so a script can tell an incremental document from a full one. The rules for what counts as changed - and the one thing an incremental export cannot report, which is a deletion - are in [the API reference](/rhapsod/reference/api/#get-apiexport).
+
+Keep the stamp only after the merge has succeeded. A stamp saved before the files are written turns a crash halfway into silently skipped marks on the next run.
+
+## Where the marks land
+
+The export is JSON because it has to be exact. What a vault wants is markdown, and the shape that reaches it is a decision about someone's own notes rather than about this software, so it belongs to whoever runs the ritual.
+
+One arrangement that works, and the one the author uses: a **companion file** next to each piece - `Ship of Theseus - notes.md` beside `Ship of Theseus.md` - holding the kept lines, the note, whether the piece was read, and where it stands in its review schedule.
+
+Two properties are worth copying whatever shape you choose:
+
+- **The piece itself is never edited, not even its frontmatter.** The library is the author's; the reading is the reader's. Keeping them in separate files means a ritual that goes wrong can only damage its own output, and republishing a piece never collides with a merge.
+- **A piece that cannot be matched is reported, not skipped quietly.** Renaming a file in the vault changes the id the reader's rows are keyed to. A script that silently drops those marks loses them; one that names them lets you fix the rename.
 
 Two things to know before writing a script against it:
 

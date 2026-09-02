@@ -149,11 +149,19 @@ pub async fn set_read(pool: &SqlitePool, piece_id: &str, read: bool, marked_at: 
 /// # Errors
 ///
 /// Fails when the database cannot be read.
-pub async fn all(pool: &SqlitePool) -> Result<Vec<State>> {
-    sqlx::query_as::<_, State>("SELECT piece_id, status, paragraph, updated_at, read_at FROM reading_state")
-        .fetch_all(pool)
-        .await
-        .context("failed to read the reading state")
+pub async fn all(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<State>> {
+    // `since` of `None` is every row: the same query serves a full export and
+    // an incremental one, so there is no second code path to keep in step.
+    sqlx::query_as::<_, State>(
+        "SELECT piece_id, status, paragraph, updated_at, read_at
+           FROM reading_state
+          WHERE updated_at > coalesce(?, '')
+          ORDER BY updated_at, piece_id",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("failed to read the reading state")
 }
 
 /// The piece to continue: the most recently touched one still unfinished.
@@ -286,7 +294,7 @@ mod tests {
         // The third status is the absence of a row; nothing has to keep it in
         // sync with the other two.
         let pool = pool().await;
-        assert!(all(&pool).await.unwrap().is_empty());
+        assert!(all(&pool, None).await.unwrap().is_empty());
         assert!(continue_with(&pool).await.unwrap().is_none());
     }
 
@@ -295,7 +303,7 @@ mod tests {
         let pool = pool().await;
         opened(&pool, "02-istoriya/god-bez-leta", None).await.unwrap();
 
-        let states = all(&pool).await.unwrap();
+        let states = all(&pool, None).await.unwrap();
         assert_eq!(states.len(), 1);
         assert_eq!(states[0].status, "reading");
         assert_eq!(states[0].paragraph, 0);
@@ -307,7 +315,7 @@ mod tests {
         let pool = pool().await;
         set_read(&pool, "a/b", true, None).await.unwrap();
         opened(&pool, "a/b", None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].status, "read");
+        assert_eq!(all(&pool, None).await.unwrap()[0].status, "read");
     }
 
     #[tokio::test]
@@ -317,29 +325,29 @@ mod tests {
         let pool = pool().await;
         at_paragraph(&pool, "a/b", 12, None).await.unwrap();
         at_paragraph(&pool, "a/b", 3, None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].paragraph, 12);
+        assert_eq!(all(&pool, None).await.unwrap()[0].paragraph, 12);
 
         at_paragraph(&pool, "a/b", 20, None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].paragraph, 20);
+        assert_eq!(all(&pool, None).await.unwrap()[0].paragraph, 20);
     }
 
     #[tokio::test]
     async fn a_negative_position_is_the_top() {
         let pool = pool().await;
         at_paragraph(&pool, "a/b", -5, None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].paragraph, 0);
+        assert_eq!(all(&pool, None).await.unwrap()[0].paragraph, 0);
     }
 
     #[tokio::test]
     async fn finishing_and_unfinishing_are_both_possible() {
         let pool = pool().await;
         set_read(&pool, "a/b", true, None).await.unwrap();
-        let state = &all(&pool).await.unwrap()[0];
+        let state = &all(&pool, None).await.unwrap()[0];
         assert_eq!(state.status, "read");
         assert!(state.read_at.is_some());
 
         set_read(&pool, "a/b", false, None).await.unwrap();
-        let state = &all(&pool).await.unwrap()[0];
+        let state = &all(&pool, None).await.unwrap()[0];
         assert_eq!(state.status, "reading");
         assert!(state.read_at.is_none(), "an unfinished piece still carried a finishing date");
     }
@@ -355,7 +363,7 @@ mod tests {
             .await
             .unwrap();
         set_read(&pool, "a/b", true, None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].read_at.as_deref(), Some("2026-01-01T10:00:00.000Z"));
+        assert_eq!(all(&pool, None).await.unwrap()[0].read_at.as_deref(), Some("2026-01-01T10:00:00.000Z"));
     }
 
     #[tokio::test]
@@ -382,7 +390,7 @@ mod tests {
         set_read(&pool, "a/b", true, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
         set_read(&pool, "a/b", false, Some("2026-09-02T09:00:00.000Z")).await.unwrap();
 
-        let state = &all(&pool).await.unwrap()[0];
+        let state = &all(&pool, None).await.unwrap()[0];
         assert_eq!(state.status, "read", "a change made earlier undid a later one");
         assert!(state.read_at.is_some(), "the piece lost the day it was finished");
     }
@@ -396,7 +404,7 @@ mod tests {
         set_read(&pool, "a/b", true, Some("2026-09-02T09:00:00.000Z")).await.unwrap();
         set_read(&pool, "a/b", false, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
 
-        let state = &all(&pool).await.unwrap()[0];
+        let state = &all(&pool, None).await.unwrap()[0];
         assert_eq!(state.status, "reading", "a newer change was dropped as stale");
         assert!(state.read_at.is_none());
     }
@@ -408,7 +416,7 @@ mod tests {
         let pool = pool().await;
         set_read(&pool, "a/b", true, Some("2026-09-02T12:00:00.000Z")).await.unwrap();
         set_read(&pool, "a/b", false, None).await.unwrap();
-        assert_eq!(all(&pool).await.unwrap()[0].status, "read");
+        assert_eq!(all(&pool, None).await.unwrap()[0].status, "read");
     }
 
     #[tokio::test]
@@ -418,10 +426,10 @@ mod tests {
         let pool = pool().await;
         let at = Some("2026-09-02T12:00:00.000Z");
         set_read(&pool, "a/b", true, at).await.unwrap();
-        let first = all(&pool).await.unwrap()[0].clone();
+        let first = all(&pool, None).await.unwrap()[0].clone();
         set_read(&pool, "a/b", true, at).await.unwrap();
 
-        let again = all(&pool).await.unwrap();
+        let again = all(&pool, None).await.unwrap();
         assert_eq!(again.len(), 1);
         assert_eq!(again[0].read_at, first.read_at, "a redelivery moved the day it was finished");
     }

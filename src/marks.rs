@@ -77,13 +77,19 @@ pub async fn set_note(pool: &SqlitePool, piece_id: &str, body: &str, marked_at: 
 /// # Errors
 ///
 /// Fails when the database cannot be read.
-pub async fn notes(pool: &SqlitePool) -> Result<Vec<Note>> {
+pub async fn notes(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Note>> {
     // The tiebreak matters: two notes written inside the same millisecond
     // would otherwise come back in whatever order the page produced them.
-    sqlx::query_as::<_, Note>("SELECT piece_id, body, updated_at FROM notes ORDER BY updated_at DESC, piece_id")
-        .fetch_all(pool)
-        .await
-        .context("failed to read the notes")
+    sqlx::query_as::<_, Note>(
+        "SELECT piece_id, body, updated_at
+           FROM notes
+          WHERE updated_at > coalesce(?, '')
+          ORDER BY updated_at DESC, piece_id",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("failed to read the notes")
 }
 
 /// Keeps a line, returning the quote as stored.
@@ -105,7 +111,8 @@ pub async fn add_quote(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i
     // makes a redelivery indistinguishable from the first arrival, which is
     // what lets the queue retry without asking whether it has to.
     sqlx::query_as::<_, Quote>(
-        "INSERT INTO quotes (id, piece_id, paragraph, text, comment) VALUES (?, ?, ?, ?, ?)
+        "INSERT INTO quotes (id, piece_id, paragraph, text, comment, changed_at)
+         VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET id = excluded.id
          RETURNING id, piece_id, paragraph, text, comment, created_at",
     )
@@ -126,7 +133,10 @@ pub async fn add_quote(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i
 /// Fails when the database rejects the write.
 pub async fn comment_on(pool: &SqlitePool, id: &str, comment: Option<&str>) -> Result<bool> {
     let comment = comment.map(str::trim).filter(|comment| !comment.is_empty());
-    let changed = sqlx::query("UPDATE quotes SET comment = ? WHERE id = ?")
+    //  moves with the comment: an incremental export finds a
+    // quote by it, and a comment edited without moving it would never reach
+    // the vault - while every export kept reporting success.
+    let changed = sqlx::query("UPDATE quotes SET comment = ?, changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?")
         .bind(comment)
         .bind(id)
         .execute(pool)
@@ -154,14 +164,25 @@ pub async fn remove_quote(pool: &SqlitePool, id: &str) -> Result<bool> {
 /// # Errors
 ///
 /// Fails when the database cannot be read.
-pub async fn quotes(pool: &SqlitePool) -> Result<Vec<Quote>> {
+pub async fn quotes(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Quote>> {
+    // Filtered on `changed_at`, not `created_at`: a comment edited long after
+    // the line was kept has to reach the vault, and keying on when the quote
+    // was made would leave that edit behind while every export reported
+    // success.
+    //
     // The tiebreak is the id, which says nothing about order but is stable:
     // two quotes kept inside the same millisecond have to come back in some
     // fixed order, and "whatever the page produced" is not one.
-    sqlx::query_as::<_, Quote>("SELECT id, piece_id, paragraph, text, comment, created_at FROM quotes ORDER BY created_at DESC, id DESC")
-        .fetch_all(pool)
-        .await
-        .context("failed to read the quotes")
+    sqlx::query_as::<_, Quote>(
+        "SELECT id, piece_id, paragraph, text, comment, created_at
+           FROM quotes
+          WHERE coalesce(changed_at, created_at) > coalesce(?, '')
+          ORDER BY created_at DESC, id DESC",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("failed to read the quotes")
 }
 
 #[cfg(test)]
@@ -178,10 +199,10 @@ mod tests {
     async fn a_note_is_written_and_rewritten() {
         let pool = pool().await;
         set_note(&pool, "a/b", "first thought", None).await.unwrap();
-        assert_eq!(notes(&pool).await.unwrap()[0].body, "first thought");
+        assert_eq!(notes(&pool, None).await.unwrap()[0].body, "first thought");
 
         set_note(&pool, "a/b", "second thought", None).await.unwrap();
-        let notes = notes(&pool).await.unwrap();
+        let notes = notes(&pool, None).await.unwrap();
         assert_eq!(notes.len(), 1, "rewriting a note made a second one");
         assert_eq!(notes[0].body, "second thought");
     }
@@ -193,7 +214,7 @@ mod tests {
         let pool = pool().await;
         set_note(&pool, "a/b", "something", None).await.unwrap();
         set_note(&pool, "a/b", "   ", None).await.unwrap();
-        assert!(notes(&pool).await.unwrap().is_empty());
+        assert!(notes(&pool, None).await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -227,7 +248,7 @@ mod tests {
         let first = add_quote(&pool, "q-4", "a/b", 0, "one line", None).await.unwrap();
         let second = add_quote(&pool, "q-5", "a/b", 0, "one line", Some("again")).await.unwrap();
         assert_ne!(first.id, second.id);
-        assert_eq!(quotes(&pool).await.unwrap().len(), 2);
+        assert_eq!(quotes(&pool, None).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -236,10 +257,10 @@ mod tests {
         let quote = add_quote(&pool, "q-6", "a/b", 0, "text", None).await.unwrap();
 
         assert!(comment_on(&pool, &quote.id, Some("a thought")).await.unwrap());
-        assert_eq!(quotes(&pool).await.unwrap()[0].comment.as_deref(), Some("a thought"));
+        assert_eq!(quotes(&pool, None).await.unwrap()[0].comment.as_deref(), Some("a thought"));
 
         assert!(comment_on(&pool, &quote.id, None).await.unwrap());
-        assert!(quotes(&pool).await.unwrap()[0].comment.is_none());
+        assert!(quotes(&pool, None).await.unwrap()[0].comment.is_none());
     }
 
     #[tokio::test]
@@ -257,11 +278,11 @@ mod tests {
         let pool = pool().await;
         set_note(&pool, "a/b", "written at home", Some("2026-09-02T12:00:00.000Z")).await.unwrap();
         set_note(&pool, "a/b", "written on the train", Some("2026-09-02T09:00:00.000Z")).await.unwrap();
-        assert_eq!(notes(&pool).await.unwrap()[0].body, "written at home");
+        assert_eq!(notes(&pool, None).await.unwrap()[0].body, "written at home");
 
         // And the other direction: a genuinely newer note still lands.
         set_note(&pool, "a/b", "written later", Some("2026-09-02T18:00:00.000Z")).await.unwrap();
-        assert_eq!(notes(&pool).await.unwrap()[0].body, "written later");
+        assert_eq!(notes(&pool, None).await.unwrap()[0].body, "written later");
     }
 
     #[tokio::test]
@@ -271,10 +292,10 @@ mod tests {
         let pool = pool().await;
         set_note(&pool, "a/b", "rewritten at home", Some("2026-09-02T12:00:00.000Z")).await.unwrap();
         set_note(&pool, "a/b", "", Some("2026-09-02T09:00:00.000Z")).await.unwrap();
-        assert_eq!(notes(&pool).await.unwrap().len(), 1, "a stale clearing removed a newer note");
+        assert_eq!(notes(&pool, None).await.unwrap().len(), 1, "a stale clearing removed a newer note");
 
         set_note(&pool, "a/b", "", Some("2026-09-02T18:00:00.000Z")).await.unwrap();
-        assert!(notes(&pool).await.unwrap().is_empty(), "a newer clearing did not remove the note");
+        assert!(notes(&pool, None).await.unwrap().is_empty(), "a newer clearing did not remove the note");
     }
 
     #[tokio::test]
@@ -287,7 +308,7 @@ mod tests {
         let again = add_quote(&pool, "device-1", "a/b", 0, "one line", None).await.unwrap();
 
         assert_eq!(first.id, again.id, "a redelivered quote was kept as a second one");
-        assert_eq!(quotes(&pool).await.unwrap().len(), 1);
+        assert_eq!(quotes(&pool, None).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -297,13 +318,66 @@ mod tests {
         let pool = pool().await;
         add_quote(&pool, "device-1", "a/b", 0, "one line", None).await.unwrap();
         add_quote(&pool, "device-2", "a/b", 0, "one line", None).await.unwrap();
-        assert_eq!(quotes(&pool).await.unwrap().len(), 2);
+        assert_eq!(quotes(&pool, None).await.unwrap().len(), 2);
 
         // And a quote kept with no id at all is nobody's retry: the unique
         // index ignores nulls, which is what lets the two coexist.
         add_quote(&pool, "q-7", "a/b", 0, "one line", None).await.unwrap();
         add_quote(&pool, "q-8", "a/b", 0, "one line", None).await.unwrap();
-        assert_eq!(quotes(&pool).await.unwrap().len(), 4);
+        assert_eq!(quotes(&pool, None).await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn an_edited_comment_makes_the_quote_change_again() {
+        // The defect this column exists for: a comment edited long after the
+        // line was kept would be invisible to an incremental export, and the
+        // vault would keep a stale comment while every export reported
+        // success. Keyed on when the quote was made, this test fails.
+        let pool = pool().await;
+        let quote = add_quote(&pool, "q-edit", "a/b", 0, "a line", None).await.unwrap();
+
+        // Age the row: nothing has changed since the bound below.
+        sqlx::query("UPDATE quotes SET created_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(quotes(&pool, Some("2020-06-01T00:00:00.000Z")).await.unwrap().is_empty());
+
+        // Editing the comment brings it back into range.
+        comment_on(&pool, &quote.id, Some("a thought")).await.unwrap();
+        let changed = quotes(&pool, Some("2020-06-01T00:00:00.000Z")).await.unwrap();
+        assert_eq!(changed.len(), 1, "an edited comment did not reach an incremental export");
+        assert_eq!(changed[0].comment.as_deref(), Some("a thought"));
+    }
+
+    #[tokio::test]
+    async fn an_incremental_export_leaves_out_what_has_not_changed() {
+        let pool = pool().await;
+        set_note(&pool, "a/b", "written before", None).await.unwrap();
+        add_quote(&pool, "q-old", "a/b", 0, "kept before", None).await.unwrap();
+        sqlx::query("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE quotes SET created_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let bound = Some("2020-06-01T00:00:00.000Z");
+        assert!(notes(&pool, bound).await.unwrap().is_empty());
+        assert!(quotes(&pool, bound).await.unwrap().is_empty());
+
+        // And a full export still carries them: the bound is what filters,
+        // not the query.
+        assert_eq!(notes(&pool, None).await.unwrap().len(), 1);
+        assert_eq!(quotes(&pool, None).await.unwrap().len(), 1);
+
+        // Something written now is newer than the bound and comes back.
+        set_note(&pool, "a/c", "written after", None).await.unwrap();
+        let fresh = notes(&pool, bound).await.unwrap();
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].piece_id, "a/c");
     }
 
     #[tokio::test]
@@ -311,6 +385,6 @@ mod tests {
         let pool = pool().await;
         let quote = add_quote(&pool, "q-9", "a/b", 0, "text", None).await.unwrap();
         assert!(remove_quote(&pool, &quote.id).await.unwrap());
-        assert!(quotes(&pool).await.unwrap().is_empty());
+        assert!(quotes(&pool, None).await.unwrap().is_empty());
     }
 }
