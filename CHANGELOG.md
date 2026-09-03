@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.3] - 2026-09-03
+
+### Bug Fixes
+- Keep the reader's own notes off the shelf
+
+
 ## [0.9.2] - 2026-09-02
 
 ### Bug Fixes
