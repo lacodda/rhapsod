@@ -136,10 +136,13 @@ impl Library {
 
             for file in files {
                 match read_piece(&file, &id) {
-                    Ok(piece) => {
+                    Ok(Some(piece)) => {
                         count += 1;
                         pieces.insert(piece.id.clone(), piece);
                     }
+                    // Not a novella: a companion file of the reader's own
+                    // notes, or anything else that shares the directory.
+                    Ok(None) => tracing::debug!(path = %file.display(), "not a novella; left out of the library"),
                     Err(error) => tracing::warn!(%error, path = %file.display(), "skipping a file that could not be read"),
                 }
             }
@@ -225,11 +228,32 @@ fn split_section_name(name: &str) -> (Option<u32>, String) {
     }
 }
 
-/// Reads one file into a piece.
-fn read_piece(path: &Path, section: &str) -> Result<Piece> {
+/// Reads one file into a piece, or `None` when the file is not one.
+///
+/// A published directory holds more than the library. The ritual that returns
+/// the reader's marks to the vault writes a companion file beside each piece -
+/// the notes and kept lines belonging to it - and those travel to the stand
+/// with everything else. Indexed as pieces, they appeared on the shelf as
+/// one-minute novellas with no text, which is what this rules out.
+///
+/// The test is the `type` in the frontmatter, not the file's name: a name is a
+/// convention that shifts, and matching on one would only work until somebody
+/// called a companion something else. Anything that does not say it is a
+/// novella is left alone - the library is the author's, and a file that has
+/// not claimed to belong in it does not.
+fn read_piece(path: &Path, section: &str) -> Result<Option<Piece>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     let (frontmatter, body) = split_frontmatter(&text);
     let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or_default();
+
+    // No `type` at all is a novella: the field arrived after the first pieces
+    // were written, and a library that dropped everything older than the
+    // convention would be a worse answer than a library that keeps it.
+    if let Some(kind) = frontmatter.get("type")
+        && kind.trim() != "novella"
+    {
+        return Ok(None);
+    }
 
     let title = frontmatter
         .get("topic")
@@ -243,7 +267,7 @@ fn read_piece(path: &Path, section: &str) -> Result<Piece> {
 
     let blocks = split_body(body);
 
-    Ok(Piece {
+    Ok(Some(Piece {
         id: format!("{section}/{}", slug(stem)),
         section: section.to_string(),
         title,
@@ -253,7 +277,7 @@ fn read_piece(path: &Path, section: &str) -> Result<Piece> {
         neighbours: blocks.neighbours,
         one_liner: blocks.one_liner,
         song: blocks.song,
-    })
+    }))
 }
 
 /// Splits a file into its frontmatter fields and the rest.
@@ -470,6 +494,8 @@ mod tests {
         )
         .unwrap();
 
+        // No `type` at all: the field arrived after the first pieces were
+        // written, and those are still novellas.
         let second = dir.path().join("02 — История");
         std::fs::create_dir_all(&second).unwrap();
         std::fs::write(
@@ -477,7 +503,48 @@ mod tests {
             "---\ntopic: Год без лета\nwords: 953\n---\n\n# Год без лета\n\nИюнь 1816 года.\n",
         )
         .unwrap();
+
+        // The companion file the vault ritual writes beside a piece. It lives
+        // in the same directory and is published with everything else.
+        std::fs::write(
+            second.join("Год без лета — заметки.md"),
+            "---\ntype: reading-notes\nproject: rhapsod\nnovella: Год без лета\npiece_id: 02-istoriya/god-bez-leta\n---\n\n# Год без лета — заметки\n\n**Прочитано:** 02.09.2026\n",
+        )
+        .unwrap();
         dir
+    }
+
+    #[test]
+    fn a_companion_file_is_not_a_novella() {
+        // The ritual that returns the reader's marks writes these beside each
+        // piece, and publishing carries them to the stand. Indexed as pieces,
+        // they appeared on the shelf as one-minute novellas with no text -
+        // which is what the owner saw, and what tests did not.
+        let dir = library();
+        let lib = Library::load(dir.path()).expect("the library should load");
+
+        let summaries = lib.summaries();
+        let titles: Vec<&str> = summaries.iter().map(|piece| piece.title.as_str()).collect();
+        assert!(
+            !titles.iter().any(|title| title.contains("заметки")),
+            "a companion file was indexed as a novella: {titles:?}"
+        );
+        assert_eq!(lib.len(), 2, "the library should hold the two novellas and nothing else");
+
+        // The shelf counter has to agree: a count that included companions
+        // would say three pieces on a shelf holding one.
+        let shelf = lib.sections().iter().find(|section| section.id == "02-istoriya").expect("the shelf");
+        assert_eq!(shelf.pieces, 1, "the shelf counted something that is not a piece");
+    }
+
+    #[test]
+    fn a_piece_with_no_type_is_still_a_novella() {
+        // The field arrived after the first pieces were written; dropping
+        // everything older than the convention would be a worse answer than
+        // keeping it.
+        let dir = library();
+        let lib = Library::load(dir.path()).expect("the library should load");
+        assert!(lib.piece("02-istoriya/god-bez-leta").is_some(), "a piece without a type was dropped");
     }
 
     #[test]
