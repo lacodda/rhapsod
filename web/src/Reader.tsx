@@ -20,14 +20,59 @@ import type { BookmarkStore } from '@/useBookmarks'
 import type { ProgressStore } from '@/useProgress'
 
 /**
- * Renders the light markdown the format uses inside a line - `**bold**` - and
- * marks any kept lines found in it.
+ * A wiki link as the writing format spells it: `[[path/to/piece|caption]]`,
+ * or `[[caption]]` when the path is the caption. The path is vault-qualified
+ * so the same text works inside the vault, which is why the reader has to
+ * translate it rather than follow it.
+ */
+export const WIKI_LINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu
+
+/**
+ * The id a vault path points at, or null when it names something outside the
+ * library - a topic from the plan that has not been written yet.
+ *
+ * The path is matched by its tail rather than parsed: the vault prefix is the
+ * author's own layout and is none of the reader's business, while the last two
+ * segments are the shelf and the piece, which is exactly what an id is made
+ * of.
+ */
+export function linkTarget(path: string, index: LibraryIndex | undefined): string | null {
+  if (!index) return null
+  const segments = path.split('/').filter(Boolean)
+  const stem = segments.at(-1)
+  if (!stem) return null
+  const section = segments.at(-2)
+  const candidates = index.pieces.filter((piece) => piece.title === stem)
+  const first = candidates[0]
+  if (!first) return null
+  // A title can repeat across shelves; the shelf in the path decides. The
+  // shelf directory is written `NN — Name`, and the index knows it by name.
+  const shelf = section ? section.split(' — ').slice(1).join(' — ') : null
+  const onShelf = shelf
+    ? candidates.find((piece) =>
+        index.sections.some((known) => known.id === piece.section && known.title === shelf),
+      )
+    : undefined
+  return (onShelf ?? first).id
+}
+
+/**
+ * Renders the light markdown the format uses inside a line - `**bold**` and
+ * `[[wiki links]]` - and marks any kept lines found in it.
  *
  * The kept lines are matched by their text: an edit in the vault at worst
  * loses a highlight, where an offset would silently move it onto the wrong
  * sentence.
  */
-function Rich({ text, marked }: { text: string; marked?: string[] }) {
+function Rich({
+  text,
+  marked,
+  library,
+}: {
+  text: string
+  marked?: string[]
+  library?: LibraryIndex
+}) {
   const parts = text.split(/\*\*(.+?)\*\*/gu)
   return (
     <>
@@ -38,11 +83,65 @@ function Rich({ text, marked }: { text: string; marked?: string[] }) {
             {part}
           </strong>
         ) : (
-          <Marked key={index} text={part} marked={marked} />
+          <Linked key={index} text={part} marked={marked} library={library} />
         ),
       )}
     </>
   )
+}
+
+/**
+ * One run of text with its wiki links turned into what a reader can use: a
+ * link when the piece is on the shelf, and the caption alone when it is not.
+ *
+ * Showing the raw brackets was the old behaviour and the reason this exists:
+ * a path meant for the vault has no business being read as prose.
+ */
+function Linked({
+  text,
+  marked,
+  library,
+}: {
+  text: string
+  marked?: string[]
+  library?: LibraryIndex
+}) {
+  const out: React.ReactNode[] = []
+  let at = 0
+
+  for (const match of text.matchAll(WIKI_LINK)) {
+    const start = match.index ?? 0
+    if (start > at) {
+      out.push(<Marked key={`t${at}`} text={text.slice(at, start)} marked={marked} />)
+    }
+    const path = match[1]
+    if (!path) continue
+    const label = (match[2] ?? path.split('/').at(-1) ?? path).trim()
+    const target = linkTarget(path.trim(), library)
+    out.push(
+      target ? (
+        <button
+          key={`l${start}`}
+          type="button"
+          onClick={() => go({ name: 'piece', id: target })}
+          className="text-accent underline decoration-accent/40 underline-offset-2"
+        >
+          {label}
+        </button>
+      ) : (
+        // Not written yet: the caption is all the reader needs, and a dead
+        // link would be worse than none.
+        <Marked key={`l${start}`} text={label} marked={marked} />
+      ),
+    )
+    at = start + match[0].length
+  }
+
+  if (at === 0) return <Marked text={text} marked={marked} />
+  if (at < text.length) {
+    out.push(<Marked key={`t${at}`} text={text.slice(at)} marked={marked} />)
+  }
+  return <>{out}</>
 }
 
 /** One run of plain text, with the kept lines inside it picked out. */
@@ -68,6 +167,24 @@ function Marked({ text, marked }: { text: string; marked?: string[] }) {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3 border-t border-line pt-6">
+      <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+/**
+ * A block in a frame of its own, for text that is not a continuation of what
+ * precedes it.
+ *
+ * The reference needs this and the song seed does not: a rule above a heading
+ * reads as "next section of the same thing", which is true of the seed after
+ * the one-liner and false of a dry factual card after the seed. On the stand
+ * the two ran together and the reference read as more song notes.
+ */
+function Framed({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-line bg-raise p-5">
       <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">{title}</h2>
       {children}
     </section>
@@ -256,7 +373,7 @@ export function ReaderScreen({
             }}
             className="text-pretty text-[1.0625rem] leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
           >
-            <Rich text={paragraph} marked={highlights.get(index)} />
+            <Rich text={paragraph} marked={highlights.get(index)} library={library} />
           </p>
         ))}
         {selection ? (
@@ -275,7 +392,7 @@ export function ReaderScreen({
           <ul className="flex flex-col gap-2">
             {piece.neighbours.map((neighbour, index) => (
               <li key={index} className="text-[0.9375rem] leading-relaxed text-dim">
-                <Rich text={neighbour} />
+                <Rich text={neighbour} library={library} />
               </li>
             ))}
           </ul>
@@ -300,6 +417,18 @@ export function ReaderScreen({
             ))}
           </ul>
         </Block>
+      ) : null}
+
+      {piece.reference.length > 0 ? (
+        <Framed title="What this was">
+          <ul className="flex flex-col gap-2">
+            {piece.reference.map((line, index) => (
+              <li key={index} className="text-[0.9375rem] leading-relaxed text-dim">
+                <Rich text={line} />
+              </li>
+            ))}
+          </ul>
+        </Framed>
       ) : null}
 
       {kept.length > 0 ? (

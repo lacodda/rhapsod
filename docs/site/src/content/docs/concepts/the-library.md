@@ -94,6 +94,7 @@ Three headings are known by name and lifted out of the prose, so the reading app
 | `## Соседи` | `neighbours` | Related pieces, as free text. It may name a piece that does not exist yet. |
 | `## Одной строкой` | `one_liner` | The line meant to be remembered - what a repetition card shows. The bold markers, the quotation marks and the trailing full stop are normalised away. |
 | `## Для песни` | `song` | The song seed: the author's own workbench, kept whole and shown apart from the read. |
+| `## Справка` | `reference` | The reference block: what the piece is about, stated plainly - what the thing is, its field, its dating, whether it is documented or a legend, where it is now. Shown in a frame of its own, because it deliberately drops the voice of the story. |
 
 Any other heading stays in the prose. A piece that invents its own section should keep it rather than lose it.
 

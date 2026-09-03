@@ -1,6 +1,6 @@
 {
   "name": "rhapsod-web",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "A self-hosted reader for a markdown library: progress, notes and spaced repetition",
   "license": "MIT",
   "private": true,

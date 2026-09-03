@@ -36,6 +36,8 @@ export interface Piece extends PieceSummary {
   paragraphs: string[]
   neighbours: string[]
   song: string[]
+  /** The reference block: what the piece is about, stated plainly. */
+  reference: string[]
 }
 
 /** The index: the shelves and everything on them. */

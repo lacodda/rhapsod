@@ -16,13 +16,19 @@ use serde::Serialize;
 /// section, named after itself and sorted last.
 const SECTION_SEPARATOR: &str = " — ";
 
-/// The three trailing blocks a piece ends with. They are lifted out of the body
+/// The four trailing blocks a piece ends with. They are lifted out of the body
 /// so the reading app can set them apart from the prose: the neighbours are
-/// links, the one-liner is what a repetition card shows, and the song seed is
-/// the author's own workbench and not part of the read.
+/// links, the one-liner is what a repetition card shows, the song seed is the
+/// author's own workbench and not part of the read, and the reference is the
+/// dry answer to "what was that, exactly" a reader wants once the story ends.
+///
+/// A heading that is not on this list stays in the prose, which is what makes
+/// adding one to the format a change here and not a silent regression: an
+/// unknown heading used to be swallowed by whichever block came before it.
 const NEIGHBOURS_HEADING: &str = "Соседи";
 const ONE_LINER_HEADING: &str = "Одной строкой";
 const SONG_HEADING: &str = "Для песни";
+const REFERENCE_HEADING: &str = "Справка";
 
 /// One piece of the library, as the API returns it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -47,6 +53,10 @@ pub struct Piece {
     pub one_liner: Option<String>,
     /// The song seed, kept whole and shown apart from the prose.
     pub song: Vec<String>,
+    /// The reference block: what the piece is about, stated plainly. Shown in
+    /// a frame of its own, because it deliberately breaks the voice of the
+    /// story and reads as a card rather than as a last paragraph.
+    pub reference: Vec<String>,
 }
 
 /// A piece without its text: what a list of pieces needs and no more.
@@ -277,6 +287,7 @@ fn read_piece(path: &Path, section: &str) -> Result<Option<Piece>> {
         neighbours: blocks.neighbours,
         one_liner: blocks.one_liner,
         song: blocks.song,
+        reference: blocks.reference,
     }))
 }
 
@@ -316,9 +327,10 @@ struct Blocks {
     neighbours: Vec<String>,
     one_liner: Option<String>,
     song: Vec<String>,
+    reference: Vec<String>,
 }
 
-/// Splits the body into prose paragraphs and the three trailing blocks.
+/// Splits the body into prose paragraphs and the four trailing blocks.
 ///
 /// Everything before the first of the trailing headings is prose; the headings
 /// themselves are known by name, because the format names them and a piece that
@@ -328,6 +340,7 @@ fn split_body(body: &str) -> Blocks {
     let mut neighbours = Vec::new();
     let mut one_liner = None;
     let mut song = Vec::new();
+    let mut reference = Vec::new();
     let mut current: Option<&str> = None;
 
     for block in body.split("\n\n") {
@@ -346,11 +359,12 @@ fn split_body(body: &str) -> Blocks {
 
         if let Some(heading) = block.strip_prefix("## ") {
             let heading = heading.trim();
-            if matches!(heading, NEIGHBOURS_HEADING | ONE_LINER_HEADING | SONG_HEADING) {
+            if matches!(heading, NEIGHBOURS_HEADING | ONE_LINER_HEADING | SONG_HEADING | REFERENCE_HEADING) {
                 current = Some(match heading {
                     NEIGHBOURS_HEADING => NEIGHBOURS_HEADING,
                     ONE_LINER_HEADING => ONE_LINER_HEADING,
-                    _ => SONG_HEADING,
+                    SONG_HEADING => SONG_HEADING,
+                    _ => REFERENCE_HEADING,
                 });
                 continue;
             }
@@ -360,6 +374,7 @@ fn split_body(body: &str) -> Blocks {
             Some(NEIGHBOURS_HEADING) => neighbours.extend(list_items(block)),
             Some(ONE_LINER_HEADING) => one_liner = Some(strip_emphasis(block)),
             Some(SONG_HEADING) => song.extend(list_items(block)),
+            Some(REFERENCE_HEADING) => reference.extend(list_items(block)),
             // The title heading is the file's own name, already carried in
             // `title`; repeating it above the text would be an empty line of
             // display in every piece.
@@ -373,6 +388,7 @@ fn split_body(body: &str) -> Blocks {
         neighbours,
         one_liner,
         song,
+        reference,
     }
 }
 
@@ -490,7 +506,7 @@ mod tests {
         std::fs::create_dir_all(&section).unwrap();
         std::fs::write(
             section.join("Абеляр и Элоиза.md"),
-            "---\ntype: novella\nsection: 19 — Любовь и пары\ntopic: Абеляр и Элоиза\nwritten: 2026-09-01\nwords: 1012\nsource: \"\"\nsongs: []\n---\n\n# Абеляр и Элоиза\n\nПариж, около 1132 года.\n\nВторой абзац.\n\n## Соседи\n\n- Орфей и Эвридика — другая пара.\n- Данте и Беатриче — любовь в тексте.\n\n## Одной строкой\n\n**«Ради него, а не ради Бога».**\n\n## Для песни\n\n- **Ситуация:** она осталась.\n- **Образ:** покрывало у алтаря.\n",
+            "---\ntype: novella\nsection: 19 — Любовь и пары\ntopic: Абеляр и Элоиза\nwritten: 2026-09-01\nwords: 1012\nsource: \"\"\nsongs: []\n---\n\n# Абеляр и Элоиза\n\nПариж, около 1132 года.\n\nВторой абзац.\n\n## Соседи\n\n- Орфей и Эвридика — другая пара.\n- Данте и Беатриче — любовь в тексте.\n\n## Одной строкой\n\n**«Ради него, а не ради Бога».**\n\n## Для песни\n\n- **Ситуация:** она осталась.\n- **Образ:** покрывало у алтаря.\n\n## Справка\n\n- **Что это:** исторические лица и корпус писем.\n- **Область:** средневековая философия.\n- **Статус:** подлинность переписки спорна.\n",
         )
         .unwrap();
 
@@ -573,6 +589,26 @@ mod tests {
         assert_eq!(piece.written.as_deref(), Some("2026-09-01"));
         assert_eq!(piece.words, 1012, "the declared word count is used as written");
         assert_eq!(piece.paragraphs, ["Париж, около 1132 года.", "Второй абзац."]);
+    }
+
+    #[test]
+    fn the_reference_block_is_its_own_block() {
+        // The format grew a tenth move on 2026-09-03, and an unknown heading
+        // does not fail loudly: its lines simply continue whichever block came
+        // before it. On the stand that showed as a reference glued to the end
+        // of the song seed, which is the opposite kind of text - the seed is
+        // the author's workbench, the reference is for the reader.
+        let dir = library();
+        let lib = Library::load(dir.path()).expect("the library should load");
+        let piece = lib.piece("19-lyubov-i-pary/abelyar-i-eloiza").unwrap();
+
+        assert_eq!(piece.reference.len(), 3, "every line of the block is kept");
+        assert!(piece.reference[0].starts_with("**Что это:**"));
+        assert_eq!(piece.song.len(), 2, "the reference must not be swallowed by the song seed above it");
+        assert!(
+            piece.paragraphs.iter().all(|paragraph| !paragraph.contains("Справка")),
+            "the reference leaked into the prose"
+        );
     }
 
     #[test]

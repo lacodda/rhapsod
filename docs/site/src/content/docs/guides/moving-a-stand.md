@@ -81,7 +81,7 @@ curl http://newmachine:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.3","pieces":31,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.4","pieces":31,"indexed_seconds_ago":1450}
 ```
 
 A `pieces` of `0` means the content directory is empty or misconfigured - the library did not come across, and publishing again fixes it.

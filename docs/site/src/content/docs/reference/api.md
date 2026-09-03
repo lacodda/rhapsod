@@ -33,7 +33,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.3","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.4","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -154,7 +154,8 @@ curl http://127.0.0.1:8084/api/pieces/19-lyubov-i-pary/abelyar-i-eloiza
   "paragraphs": ["Париж, около 1132 года.", "Она пишет ему из монастыря."],
   "neighbours": ["Орфей и Эвридика — другая пара.", "Данте и Беатриче — любовь в тексте."],
   "one_liner": "Ради него, а не ради Бога.",
-  "song": ["**Ситуация:** она осталась.", "**Образ:** покрывало у алтаря."]
+  "song": ["**Ситуация:** она осталась.", "**Образ:** покрывало у алтаря."],
+  "reference": ["**Что это:** исторические лица и корпус писем.", "**Область:** средневековая философия."]
 }
 ```
 
@@ -164,6 +165,7 @@ curl http://127.0.0.1:8084/api/pieces/19-lyubov-i-pary/abelyar-i-eloiza
 | `neighbours` | Related pieces, as the author wrote them: free text, which may name a piece that does not exist yet. |
 | `one_liner` | The line meant to be remembered, normalised to end in a full stop. This is what a repetition card shows. `null` when the piece has none. |
 | `song` | The song seed - the author's own workbench, kept whole and shown apart from the prose. |
+| `reference` | The reference block: what the piece is about, stated plainly - area, dating, whether the thing is documented or a legend, where it is now. Empty for a piece written before the format grew this block. |
 
 The id is two path segments rather than one escaped string: it is a shelf and a piece on it, and a URL that shows that is one a person can edit by hand.
 
@@ -916,7 +918,7 @@ curl http://127.0.0.1:8084/api/export
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.9.3",
+  "version": "0.9.4",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
@@ -1022,7 +1024,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "reading": [],
   "notes": [
     {
