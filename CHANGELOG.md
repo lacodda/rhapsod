@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.5] - 2026-09-03
+
+### Bug Fixes
+- Read .env as UTF-8 in the publishing scripts
+
+
 ## [0.9.4] - 2026-09-03
 
 ### Bug Fixes
