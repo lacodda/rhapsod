@@ -35,7 +35,13 @@ function Stop-WithReason($reason) {
 # stand an assignment on the command line rather than an edit.
 $envFile = Join-Path (Split-Path -Parent $PSScriptRoot) '.env'
 if (Test-Path $envFile) {
-    foreach ($line in Get-Content $envFile) {
+    # Read as UTF-8 rather than by the console's codepage. Windows PowerShell
+    # 5.1 decodes a file without a BOM using the system's ANSI codepage, so a
+    # non-ASCII path in this file comes back as mojibake and the script refuses
+    # to publish a directory that is plainly there. The library lives in a
+    # directory named in the author's own language, which is exactly the case
+    # that breaks.
+    foreach ($line in Get-Content $envFile -Encoding UTF8) {
         if ($line -notmatch '^\s*RHAPSOD_PUBLISH_[A-Z_]+\s*=') { continue }
         $pair = $line.Split('=', 2)
         $name = $pair[0].Trim()

@@ -9,6 +9,8 @@ The library is written somewhere else - a vault, an editor, wherever writing hap
 
 Both scripts read the same four variables from the environment, and read a `.env` in the repository root if there is one. Values already set in the environment win, so a one-off publish to a different stand is a prefix on the command line rather than an edit.
 
+The file is read as UTF-8. Write it as UTF-8 too: Windows PowerShell 5.1 decodes a file without a byte order mark using the system codepage, so a library whose directory is named in a non-Latin script would otherwise arrive as mojibake and the script would refuse to publish a directory that is plainly there.
+
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `RHAPSOD_PUBLISH_SRC` | yes | - | The local library directory to publish. |
@@ -142,7 +144,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.4","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.9.5","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).
