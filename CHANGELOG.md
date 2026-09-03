@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.4] - 2026-09-03
+
+### Bug Fixes
+- Show the reference block in a frame of its own
+
+### Dependencies
+- Update the toolchain and dependencies
+
+
 ## [0.9.3] - 2026-09-03
 
 ### Bug Fixes
