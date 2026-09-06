@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.0] - 2026-09-06
+
+### Features
+- Say how a piece landed and where it lost the reader
+
+
 ## [0.9.5] - 2026-09-03
 
 ### Bug Fixes
