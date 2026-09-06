@@ -37,7 +37,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.5","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.10.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server is up, but whether it is serving the library you just published.
@@ -95,11 +95,19 @@ A stand can be locked. `rhapsod hash` makes the value for `RHAPSOD_PASSWORD_HASH
 
 **And now it keeps what you make of it.** Drag across a sentence and a bar appears over it - nothing asks you to enter a mode first - and the line is kept, with a comment if you have one. Every piece takes a note in your own words, saved a moment after you stop typing rather than on every keystroke. A kept line is anchored by its **words**, not by an offset into the file: a piece edited in the vault would shift every offset silently, and a highlight that lands on the wrong sentence is worse than one that no longer matches. An emptied note is deleted rather than stored empty, so a note marker never appears on a piece with nothing written about it; and the same line can be kept twice, because two readings can mark the same sentence and the second is not a mistake.
 
-None of it touches the library. The markdown is still read and never written, and `GET /api/export` hands the whole of it back - reading state, notes and quotes in one snapshot - for `tools/export-marks.sh` and `tools/export-marks.ps1` to write to a file and a script of yours to fold into the vault. One document rather than one request per kind, because a script writing into a vault needs all three from the same moment.
+None of it touches the library. The markdown is still read and never written, and `GET /api/export` hands the whole of it back - reading state, notes, quotes, schedules, bookmarks, requests, reactions and typos in one snapshot - for `tools/export-marks.sh` and `tools/export-marks.ps1` to write to a file and a script of yours to fold into the vault. One document rather than one request per kind, because a script writing into a vault needs every kind from the same moment.
 
 **And now it goes where you go.** The app installs to a home screen and carries the whole library with it - every piece, not only the ones you happened to open - so a train with no signal is a place to read rather than a spinner. Everything you do there is written on the device and shown as done at once: a position, a finished piece, a note, a kept line. When the stand is in reach again the changes are delivered in the order you made them, and the header says how many are still waiting. Where two devices disagree, the change made later wins - by the clock of the device that made it, not by which one reached the Pi first.
 
 **And now it brings the library back.** A piece you finish returns three times - a day later, then a week, then a month - as a card carrying its title and the line it wants remembered, never its text. Two answers, neither of them a grade: **I remember** retires the return, **open it** takes you to the piece and keeps its place in the schedule, because rereading something is not the same as having recalled it. Nothing expires: a week away leaves you the backlog, not an empty screen. When nothing is due, the screen says nothing at all.
+
+**And now the library is reachable from inside a piece.** A drawer opens from the edge - by the button or by a swipe - and closes on the same paragraph you left, so looking up what else is on a shelf no longer costs your place. A piece takes one **bookmark** of four kinds (loved, come back, for a song, read again), shown as a dot on every shelf and filterable from the menu.
+
+**And now the reader has a voice.** The author's plan of what could be written is published beside the library, and the reader points at a topic: *this one next*. Asking twice is asking once - a count would turn one reader's list into a poll with one voter - and a request keeps the topic's words as well as its id, because a written topic leaves the plan and an id nobody can read is no use to the author either.
+
+**And now it says how a piece landed.** Two reactions at the foot of a piece: **good** and **struck me**. Not degrees of one scale - the first says the piece works, the second says it did something to you, and that is the thing an author writes for and cannot see from a word count. There is no negative one: a piece that failed already says so twice, by sitting unfinished and by having no reaction at all. Select a misspelt word and the same bar that keeps a line will report it; the report carries **the words**, not just their position, because paragraphs shift whenever a piece is edited and a number would point at something else by the time it is read. Nothing is corrected here - the stand never writes to the library, and the fix is made in the vault.
+
+**And the author can see the reading.** One screen, computed when asked for rather than stored: what is read, started and waiting, how the pieces landed, and - the point of it - **where they were put down**, each with how far in. A piece given up on two paragraphs in and one given up on at the last are the same row in a list and completely different problems. A piece counts as put down only a day after you were last in it; without that gap the screen would open with whatever you are reading right now.
 
 The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
 

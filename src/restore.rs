@@ -15,6 +15,7 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::bookmarks;
+use crate::feedback;
 use crate::marks;
 use crate::progress;
 use crate::requests;
@@ -42,6 +43,10 @@ pub struct Export {
     pub bookmarks: Vec<bookmarks::Bookmark>,
     #[serde(default)]
     pub requests: Vec<requests::Request>,
+    #[serde(default)]
+    pub reactions: Vec<feedback::Reaction>,
+    #[serde(default)]
+    pub typos: Vec<feedback::Typo>,
 }
 
 /// What a restore did, for the caller to print.
@@ -53,6 +58,8 @@ pub struct Restored {
     pub reviews: usize,
     pub bookmarks: usize,
     pub requests: usize,
+    pub reactions: usize,
+    pub typos: usize,
 }
 
 /// Writes an export into a database.
@@ -84,6 +91,8 @@ pub async fn restore(pool: &SqlitePool, export: &Export) -> Result<Restored> {
         reviews: reviews(&mut tx, export).await?,
         bookmarks: bookmarks(&mut tx, export).await?,
         requests: requests(&mut tx, export).await?,
+        reactions: reactions(&mut tx, export).await?,
+        typos: typos(&mut tx, export).await?,
     };
 
     tx.commit().await.context("failed to finish the restore")?;
@@ -220,6 +229,46 @@ async fn requests(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
     Ok(count)
 }
 
+async fn reactions(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
+    let mut count = 0;
+    for reaction in &export.reactions {
+        let done = sqlx::query(
+            "INSERT INTO reactions (piece_id, kind, felt_at, changed_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (piece_id) DO NOTHING",
+        )
+        .bind(&reaction.piece_id)
+        .bind(&reaction.kind)
+        .bind(&reaction.felt_at)
+        .bind(&reaction.felt_at)
+        .execute(&mut **tx)
+        .await
+        .with_context(|| format!("failed to restore the reaction to {}", reaction.piece_id))?;
+        count += landed(&done);
+    }
+    Ok(count)
+}
+
+async fn typos(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
+    let mut count = 0;
+    for typo in &export.typos {
+        let done = sqlx::query(
+            "INSERT INTO typos (id, piece_id, quoted, paragraph, spotted_at, changed_at) VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(&typo.id)
+        .bind(&typo.piece_id)
+        .bind(&typo.quoted)
+        .bind(typo.paragraph)
+        .bind(&typo.spotted_at)
+        .bind(&typo.spotted_at)
+        .execute(&mut **tx)
+        .await
+        .with_context(|| format!("failed to restore the typo {}", typo.id))?;
+        count += landed(&done);
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +319,18 @@ mod tests {
                 section: "01 — Shelf".into(),
                 asked_at: "2026-08-01T14:00:00.000Z".into(),
             }],
+            reactions: vec![feedback::Reaction {
+                piece_id: "a/b".into(),
+                kind: "struck".into(),
+                felt_at: "2026-08-01T15:00:00.000Z".into(),
+            }],
+            typos: vec![feedback::Typo {
+                id: "typo-1".into(),
+                piece_id: "a/b".into(),
+                quoted: "teh word".into(),
+                paragraph: 5,
+                spotted_at: "2026-08-01T16:00:00.000Z".into(),
+            }],
         }
     }
 
@@ -285,7 +346,9 @@ mod tests {
                 quotes: 1,
                 reviews: 1,
                 bookmarks: 1,
-                requests: 1
+                requests: 1,
+                reactions: 1,
+                typos: 1
             }
         );
 
@@ -356,7 +419,9 @@ mod tests {
                 quotes: 0,
                 reviews: 0,
                 bookmarks: 0,
-                requests: 0
+                requests: 0,
+                reactions: 0,
+                typos: 0
             }
         );
         assert_eq!(marks::quotes(&pool, None).await.unwrap().len(), 1);
@@ -373,10 +438,12 @@ mod tests {
             reviews: vec![],
             bookmarks: vec![],
             requests: vec![],
+            reactions: vec![],
+            typos: vec![],
         };
         let counted = restore(&pool, &empty).await.unwrap();
         assert_eq!(
-            counted.reading + counted.notes + counted.quotes + counted.reviews + counted.bookmarks + counted.requests,
+            counted.reading + counted.notes + counted.quotes + counted.reviews + counted.bookmarks + counted.requests + counted.reactions + counted.typos,
             0
         );
     }

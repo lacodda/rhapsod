@@ -6,6 +6,7 @@
  * they chose. Nothing here asks them to enter a mode first.
  */
 
+import { TypoIcon } from '@/Icons'
 import { useEffect, useState } from 'react'
 
 import type { Quote } from '@/api'
@@ -73,10 +74,26 @@ export function useSelection(enabled: boolean): [Selection | null, () => void] {
 }
 
 /** The bar that appears over a selection. */
-export function KeepBar({ selection, onKeep }: { selection: Selection; onKeep: (text: string, paragraph: number) => void }) {
+/**
+ * What a selection can become.
+ *
+ * Two things, because the reader selects words for two reasons: to keep a line
+ * worth keeping, and to say a word is misspelt. Both are one tap on the
+ * selection already made - a typo that needed a form would be a typo left
+ * unreported.
+ */
+export function KeepBar({
+  selection,
+  onKeep,
+  onTypo,
+}: {
+  selection: Selection
+  onKeep: (text: string, paragraph: number) => void
+  onTypo: (text: string, paragraph: number) => void
+}) {
   return (
     <div
-      className="absolute z-10 -translate-x-1/2 -translate-y-full pb-2"
+      className="absolute z-10 flex -translate-x-1/2 -translate-y-full gap-1 pb-2"
       style={{ top: selection.top, left: selection.left }}
       // The bar must not steal the selection out from under itself.
       onMouseDown={(event) => {
@@ -91,6 +108,17 @@ export function KeepBar({ selection, onKeep }: { selection: Selection; onKeep: (
         className="rounded-lg bg-text px-3 py-1.5 text-sm font-medium text-bg shadow-lg"
       >
         Keep this line
+      </button>
+      <button
+        type="button"
+        title="Report a misspelling"
+        onClick={() => {
+          onTypo(selection.text, selection.paragraph)
+        }}
+        className="flex items-center rounded-lg bg-text px-2.5 py-1.5 text-bg shadow-lg"
+      >
+        <TypoIcon size={16} />
+        <span className="sr-only">Report a misspelling</span>
       </button>
     </div>
   )

@@ -8,7 +8,7 @@ use axum::{
     extract::{Path as UrlPath, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -18,9 +18,11 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::{self, Reader};
 use crate::bookmarks;
+use crate::feedback;
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
 use crate::progress;
+use crate::report;
 use crate::requests;
 use crate::reviews;
 use crate::topics::{self, Plan};
@@ -96,6 +98,11 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/requests/{shelf}/{topic}", post(ask_for).delete(withdraw_request))
         .route("/bookmarks", get(read_bookmarks))
         .route("/bookmarks/{section}/{piece}", post(set_bookmark).delete(clear_bookmark))
+        .route("/reactions", get(read_reactions))
+        .route("/reactions/{section}/{piece}", post(set_reaction).delete(clear_reaction))
+        .route("/typos", get(read_typos).post(report_typo))
+        .route("/typos/{id}", delete(withdraw_typo))
+        .route("/report", get(read_report))
         .route("/reviews", get(read_due))
         .route("/reviews/{section}/{piece}", post(answer_review))
         .route("/export", get(export))
@@ -658,6 +665,8 @@ struct Export {
     reviews: Vec<reviews::Review>,
     bookmarks: Vec<bookmarks::Bookmark>,
     requests: Vec<requests::Request>,
+    reactions: Vec<feedback::Reaction>,
+    typos: Vec<feedback::Typo>,
 }
 
 /// What could be written: the author's plan, as shelves of topics.
@@ -774,6 +783,129 @@ async fn clear_bookmark(_: Reader, State(state): State<AppState>, UrlPath((secti
     }
 }
 
+/// Every reaction the reader left, newest first.
+async fn read_reactions(_: Reader, State(state): State<AppState>) -> Response {
+    match feedback::reactions(&state.pool, None).await {
+        Ok(felt) => Json(felt).into_response(),
+        Err(error) => failed(&error, "the reactions could not be read"),
+    }
+}
+
+/// What the app sends when a piece is reacted to.
+#[derive(Deserialize)]
+struct NewReaction {
+    /// One of the two kinds; anything else is refused.
+    kind: String,
+    /// When the device recorded this, so a reaction drained from an offline
+    /// queue does not overwrite a newer one (ADR 0003).
+    felt_at: Option<String>,
+}
+
+/// Records how a piece landed, or changes the reaction it carries.
+async fn set_reaction(
+    _: Reader,
+    State(state): State<AppState>,
+    UrlPath((section, piece)): UrlPath<(String, String)>,
+    Json(body): Json<NewReaction>,
+) -> Response {
+    let id = format!("{section}/{piece}");
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    match feedback::react(&state.pool, &id, &body.kind, body.felt_at.as_deref()).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // An unknown kind is the app sending something no screen can draw and
+        // no report can count, not a server failure.
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error.to_string() }))).into_response(),
+    }
+}
+
+/// Takes a reaction back.
+async fn clear_reaction(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>) -> Response {
+    let id = format!("{section}/{piece}");
+    match feedback::unreact(&state.pool, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such reaction"),
+        Err(error) => failed(&error, "the reaction could not be removed"),
+    }
+}
+
+/// Every typo reported and not yet withdrawn, newest first.
+async fn read_typos(_: Reader, State(state): State<AppState>) -> Response {
+    match feedback::typos(&state.pool, None).await {
+        Ok(misspelt) => Json(misspelt).into_response(),
+        Err(error) => failed(&error, "the typos could not be read"),
+    }
+}
+
+/// What the app sends when a misspelling is spotted.
+#[derive(Deserialize)]
+struct NewTypo {
+    piece_id: String,
+    paragraph: i64,
+    /// The words as the reader selected them. Without these the report names
+    /// a position in a piece that may since have been edited.
+    quoted: String,
+    /// The identity the device minted, so a report queued away from home is
+    /// the same report when it arrives and a retried delivery lands once
+    /// (ADR 0003).
+    client_id: String,
+}
+
+/// Reports a misspelling.
+async fn report_typo(_: Reader, State(state): State<AppState>, Json(spotted): Json<NewTypo>) -> Response {
+    {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        if library.piece(&spotted.piece_id).is_none() {
+            return not_found("no such piece");
+        }
+    }
+
+    match feedback::report_typo(&state.pool, &spotted.client_id, &spotted.piece_id, spotted.paragraph, &spotted.quoted).await {
+        Ok(reported) => (StatusCode::CREATED, Json(reported)).into_response(),
+        // A report with no words is the app sending a mis-tap: the author
+        // would get a position and nothing to search for.
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({ "error": error.to_string() }))).into_response(),
+    }
+}
+
+/// Withdraws a typo report.
+async fn withdraw_typo(_: Reader, State(state): State<AppState>, UrlPath(id): UrlPath<String>) -> Response {
+    match feedback::drop_typo(&state.pool, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such typo"),
+        Err(error) => failed(&error, "the typo report could not be withdrawn"),
+    }
+}
+
+/// What the reading looked like: how the pieces landed and where they lost the
+/// reader.
+///
+/// Computed on the way out rather than kept: every number here is read from
+/// rows that were being written anyway, and a stored statistic is one that can
+/// come to disagree with what it counts.
+async fn read_report(_: Reader, State(state): State<AppState>) -> Response {
+    let library = {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        library.clone()
+    };
+
+    match report::read(&state.pool, &library).await {
+        Ok(seen) => Json(seen).into_response(),
+        Err(error) => failed(&error, "the report could not be read"),
+    }
+}
+
 /// What is worth recalling today.
 ///
 /// The card is the piece title and the line it wants remembered; the text is
@@ -847,6 +979,14 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         Ok(asked) => asked,
         Err(error) => return failed(&error, "the requests could not be read"),
     };
+    let felt = match feedback::reactions(&state.pool, since).await {
+        Ok(felt) => felt,
+        Err(error) => return failed(&error, "the reactions could not be read"),
+    };
+    let misspelt = match feedback::typos(&state.pool, since).await {
+        Ok(misspelt) => misspelt,
+        Err(error) => return failed(&error, "the typos could not be read"),
+    };
 
     // Not defaulted away: a vault-merge script keys "as of" on this field, and
     // an empty string would pass every check it makes while meaning nothing.
@@ -868,6 +1008,8 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         reviews: schedules,
         bookmarks: marked,
         requests: asked,
+        reactions: felt,
+        typos: misspelt,
     })
     .into_response()
 }
@@ -1544,6 +1686,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_piece_is_reacted_to_and_the_reaction_reaches_the_export() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, _) = post(app.clone(), "/api/reactions/02-istoriya/god-bez-leta", r#"{"kind":"struck"}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (_, felt) = get_json(app.clone(), "/api/reactions").await;
+        assert_eq!(felt[0]["kind"], "struck");
+
+        // The author reads this from the vault, so it has to be in the export.
+        let (_, body) = get_json(app, "/api/export").await;
+        assert_eq!(body["reactions"][0]["piece_id"], "02-istoriya/god-bez-leta");
+    }
+
+    #[tokio::test]
+    async fn a_reaction_to_a_piece_that_is_not_there_is_refused() {
+        // A reaction the library cannot place would sit in the export looking
+        // exactly like one the author could act on.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, body) = post(app, "/api/reactions/02-istoriya/nothing-like-this", r#"{"kind":"good"}"#).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such piece");
+    }
+
+    #[tokio::test]
+    async fn a_kind_no_screen_can_draw_is_a_client_error() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, _) = post(app, "/api/reactions/02-istoriya/god-bez-leta", r#"{"kind":"meh"}"#).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "an unknown kind read as a server failure");
+    }
+
+    #[tokio::test]
+    async fn a_typo_is_reported_with_its_words_and_reaches_the_export() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, reported) = post(
+            app.clone(),
+            "/api/typos",
+            r#"{"client_id":"spotted-1","piece_id":"02-istoriya/god-bez-leta","paragraph":2,"quoted":"вулкан Томбора"}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert_eq!(reported["quoted"], "вулкан Томбора");
+
+        // The words are the whole report: a paragraph number alone points at
+        // text that may have moved by the time the author reads it.
+        let (_, body) = get_json(app.clone(), "/api/export").await;
+        assert_eq!(body["typos"][0]["quoted"], "вулкан Томбора");
+
+        let response = app.oneshot(Request::delete("/api/typos/spotted-1").body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn a_typo_with_no_words_is_a_client_error() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        let (status, _) = post(
+            app,
+            "/api/typos",
+            r#"{"client_id":"spotted-1","piece_id":"02-istoriya/god-bez-leta","paragraph":2,"quoted":"  "}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_report_counts_the_library_and_names_titles() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+        post(app.clone(), "/api/reactions/02-istoriya/god-bez-leta", r#"{"kind":"good"}"#).await;
+
+        let (status, body) = get_json(app, "/api/report").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["read"], 1);
+        assert_eq!(body["good"], 1);
+        // Nothing has been put down for a day, so the list the report exists
+        // for is empty rather than absent.
+        assert!(body["abandoned"].is_array(), "the report had no list of what was put down");
+    }
+
+    #[tokio::test]
     async fn a_locked_stand_keeps_the_marks_to_itself() {
         // Notes and quotes are the reader's own words about what they read;
         // if the text is behind the password, these are too.
@@ -1552,7 +1785,9 @@ mod tests {
         let hash = crate::auth::hash("a good passphrase").unwrap();
         let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
 
-        for path in ["/api/notes", "/api/quotes", "/api/export"] {
+        // The report is the most telling of these: it names titles and says
+        // which ones lost the reader.
+        for path in ["/api/notes", "/api/quotes", "/api/export", "/api/reactions", "/api/typos", "/api/report"] {
             let (status, _) = get_json(app.clone(), path).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
         }

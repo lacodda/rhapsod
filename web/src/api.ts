@@ -122,6 +122,51 @@ export interface Request {
   asked_at: string
 }
 
+/** The kinds a reaction can be. The server refuses anything else. */
+export const REACTION_KINDS = ['good', 'struck'] as const
+
+export type ReactionKind = (typeof REACTION_KINDS)[number]
+
+/** How a piece landed. */
+export interface Reaction {
+  piece_id: string
+  kind: ReactionKind
+  felt_at: string
+}
+
+/** A misspelling the reader spotted. */
+export interface Typo {
+  id: string
+  piece_id: string
+  /** The words as selected: what the author searches the file for. */
+  quoted: string
+  paragraph: number
+  spotted_at: string
+}
+
+/** A piece the reader started and put down. */
+export interface Abandoned {
+  piece_id: string
+  title: string
+  paragraph: number
+  paragraphs: number
+  /** How far in, 0 to 1. Computed on the server so the screen and the vault
+   * report cannot disagree about what "half way" means. */
+  through: number
+  updated_at: string
+}
+
+/** What the reading looked like. */
+export interface Report {
+  read: number
+  unfinished: number
+  untouched: number
+  good: number
+  struck: number
+  typos: number
+  abandoned: Abandoned[]
+}
+
 /** The kinds a bookmark can be. The server refuses anything else. */
 export const BOOKMARK_KINDS = ['loved', 'return', 'song', 'reread'] as const
 
@@ -329,6 +374,37 @@ export const commentOnQuote = (id: string, comment: string | null): Promise<void
   queue({ path: `/quotes/${id}`, method: 'POST', body: { comment } })
 
 export const dropQuote = (id: string): Promise<void> => queue({ path: `/quotes/${id}`, method: 'DELETE', body: {} })
+
+export const fetchReactions = (): Promise<Reaction[]> => get<Reaction[]>('/reactions')
+
+export const setReaction = (pieceId: string, kind: ReactionKind): Promise<void> =>
+  queue({ path: `/reactions/${pieceId}`, method: 'POST', body: { kind, felt_at: now() } })
+
+export const clearReaction = (pieceId: string): Promise<void> =>
+  queue({ path: `/reactions/${pieceId}`, method: 'DELETE', body: {} })
+
+export const fetchTypos = (): Promise<Typo[]> => get<Typo[]>('/typos')
+
+export const fetchReport = (): Promise<Report> => get<Report>('/report')
+
+/**
+ * Reports a misspelling.
+ *
+ * Like a kept line, the id is minted here: a typo spotted on a train is the
+ * reader's to withdraw long before the stand hears about it, and a retried
+ * delivery has to land once rather than twice.
+ */
+export function reportTypo(spotted: { piece_id: string; paragraph: number; quoted: string }): Typo {
+  const reported: Typo = {
+    ...spotted,
+    id: mintId(),
+    spotted_at: now(),
+  }
+  void queue({ path: '/typos', method: 'POST', body: { ...spotted, client_id: reported.id } })
+  return reported
+}
+
+export const withdrawTypo = (id: string): Promise<void> => queue({ path: `/typos/${id}`, method: 'DELETE', body: {} })
 
 export const signIn = (password: string): Promise<Session | null> => send<Session>('/session', 'POST', { password })
 

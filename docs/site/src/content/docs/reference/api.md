@@ -16,8 +16,11 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
 | `GET /api/topics`, `GET /api/requests`, `POST`/`DELETE /api/requests/...` | Needs a session. |
 | `GET /api/bookmarks`, `POST`/`DELETE /api/bookmarks/...` | Needs a session. |
+| `GET /api/reactions`, `POST`/`DELETE /api/reactions/...` | Needs a session. |
+| `GET /api/typos`, `POST /api/typos`, `DELETE /api/typos/{id}` | Needs a session. |
+| `GET /api/report` | Needs a session. It names titles and says which ones lost the reader. |
 | `GET /api/reviews`, `POST /api/reviews/...` | Needs a session. |
-| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules, the bookmarks and the requests at once. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules, the bookmarks, the requests, the reactions and the typos at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -33,7 +36,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.9.5","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.10.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -839,6 +842,145 @@ Takes the mark off. Answers `204`, or `404` when there was nothing to take off -
 curl -i -X DELETE http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta
 ```
 
+## `GET /api/reactions`
+
+How the pieces landed, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/reactions
+```
+
+```json
+[
+  {
+    "piece_id": "02-istoriya/god-bez-leta",
+    "kind": "struck",
+    "felt_at": "2026-09-06T23:14:54.922Z"
+  }
+]
+```
+
+There are two kinds and they are fixed: `good` and `struck`. They are not degrees of one scale - `good` says the piece works, `struck` says it did something to the reader, and that second one is what an author writes for and cannot see from a word count.
+
+There is no negative kind. A piece that did not land already says so twice over: it sits unfinished in the reading state, and it has no reaction at all.
+
+## `POST /api/reactions/{section}/{piece}`
+
+Records how a piece landed, or changes the reaction it carries. One reaction per piece: reacting again means the newer one.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/reactions/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"struck"}'
+```
+
+```http
+HTTP/1.1 204 No Content
+```
+
+`felt_at` is optional and carries the device clock, so a reaction drained from an offline queue does not overwrite a newer one.
+
+A kind outside the two is refused:
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/reactions/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"meh"}'
+```
+
+```json
+{"error":"no such reaction kind: meh"}
+```
+
+`400`. A reaction to a piece that is not in the library is `404`, the same as everywhere else.
+
+## `DELETE /api/reactions/{section}/{piece}`
+
+Takes the reaction back. Answers `204`, or `404` when there was nothing to take back.
+
+## `GET /api/typos`
+
+Every misspelling the reader reported and has not withdrawn, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/typos
+```
+
+```json
+[
+  {
+    "id": "9a3f-typo",
+    "piece_id": "02-istoriya/god-bez-leta",
+    "quoted": "вулкан Томбора",
+    "paragraph": 1,
+    "spotted_at": "2026-09-06T23:15:00.878Z"
+  }
+]
+```
+
+**`quoted` is the report; `paragraph` is a hint.** A position alone would send the author hunting: paragraphs shift whenever a piece is edited, and by the time a report is read the number may point at different words. The words themselves are findable by search in the file no matter how the piece moved since.
+
+The server never edits the library ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)). A typo is reported, not corrected: the author fixes it in the vault, where the text lives.
+
+## `POST /api/typos`
+
+Reports a misspelling.
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/json'   -d '{"client_id":"9a3f-typo","piece_id":"02-istoriya/god-bez-leta","paragraph":1,"quoted":"вулкан Томбора"}'
+```
+
+```json
+{
+  "id": "9a3f-typo",
+  "piece_id": "02-istoriya/god-bez-leta",
+  "quoted": "вулкан Томбора",
+  "paragraph": 1,
+  "spotted_at": "2026-09-06T23:15:00.878Z"
+}
+```
+
+`201`. Like a kept line, the id is minted by the device ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)): a report written away from home is the reader's to withdraw long before the stand hears about it, and a delivery retried after a dropped connection lands once. Posting the same `client_id` twice returns the stored report rather than making a second.
+
+A report with no words is `400`: the author would get a position and nothing to search for.
+
+## `DELETE /api/typos/{id}`
+
+Withdraws a report. Answers `204`, or `404` when there was nothing to withdraw.
+
+## `GET /api/report`
+
+What the reading looked like: how the pieces landed, and where they lost the reader.
+
+```sh
+curl http://127.0.0.1:8084/api/report
+```
+
+```json
+{
+  "read": 0,
+  "unfinished": 1,
+  "untouched": 0,
+  "good": 0,
+  "struck": 1,
+  "typos": 1,
+  "abandoned": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "title": "Год без лета",
+      "paragraph": 1,
+      "paragraphs": 3,
+      "through": 0.3333333333333333,
+      "updated_at": "2026-09-03T20:11:00.000Z"
+    }
+  ]
+}
+```
+
+**Nothing here is collected.** Every number is read out of the reading state, the reactions and the library, all of which were being written anyway. It is computed on the way out rather than kept, because a stored statistic is one that can come to disagree with the thing it counts.
+
+`through` is the point of the list. A piece given up on two paragraphs in and one given up on at the last are the same row of text and completely different problems, and only the fraction tells them apart. The list is ordered furthest-from-the-end first: the piece that lost the reader earliest is the one whose opening is worth rereading.
+
+**A piece counts as abandoned only a day after the reader was last in it.** Without that gap the report would open with whatever is being read right now, which is not a piece that failed - it is a piece in progress.
+
+A piece that has left the library leaves the report with it: the author cannot act on a title that no longer exists, though the reading state keeps the row.
+
 ## `GET /api/reviews`
 
 What is worth recalling today. Answers a list of cards, newest schedules last.
@@ -918,7 +1060,7 @@ curl http://127.0.0.1:8084/api/export
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.9.5",
+  "version": "0.10.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
@@ -992,6 +1134,22 @@ curl http://127.0.0.1:8084/api/export
       "section": "01 — Парадоксы и эффекты",
       "asked_at": "2026-09-02T22:20:55.585Z"
     }
+  ],
+  "reactions": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "kind": "struck",
+      "felt_at": "2026-09-06T23:14:54.922Z"
+    }
+  ],
+  "typos": [
+    {
+      "id": "9a3f-typo",
+      "piece_id": "02-istoriya/god-bez-leta",
+      "quoted": "вулкан Томбора",
+      "paragraph": 1,
+      "spotted_at": "2026-09-06T23:15:00.878Z"
+    }
   ]
 }
 ```
@@ -1003,10 +1161,14 @@ curl http://127.0.0.1:8084/api/export
 | `reading` | The rows `GET /api/progress` returns as `pieces`, without the derived statistics. |
 | `notes` | What `GET /api/notes` returns. |
 | `quotes` | What `GET /api/quotes` returns. |
+| `reactions` | What `GET /api/reactions` returns. |
+| `typos` | What `GET /api/typos` returns. |
 
 A reader who has done nothing gets the same shape with three empty arrays and a real `exported_at`.
 
 **One document rather than an endpoint per kind.** This is read by a script that writes the result back into markdown in a vault, and that script needs the three kinds to be from the same moment: a quote whose piece was finished between two requests would be filed under a reading state that no longer matched it. A snapshot taken in one request is what makes it safe to run at any time, including while somebody is reading.
+
+The report is deliberately not in it either, for the same reason as the statistics below: it is derived from these rows and from the library, and a document carrying both the facts and a summary of them would have two answers to keep in agreement.
 
 The statistics are deliberately not in it. `read`, `words` and `streak` are derived from these rows and from the library, and a document carrying both the facts and a summary of them would have two answers to keep in agreement.
 
@@ -1024,7 +1186,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.9.5",
+  "version": "0.10.0",
   "reading": [],
   "notes": [
     {

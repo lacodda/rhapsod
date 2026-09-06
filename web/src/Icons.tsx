@@ -127,3 +127,38 @@ export function ArrowLeftIcon({ size = 16, className }: IconProps) {
     </svg>
   )
 }
+
+/** It works: a thumb up. */
+export function ThumbIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...frame(size, className)}>
+      <path d="M7 10.5v9H4.5a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z" />
+      <path d="M7 10.5l4.2-6.6a1.6 1.6 0 0 1 2.9 1.1L13.4 9h4.9a1.8 1.8 0 0 1 1.8 2.2l-1.3 6a1.8 1.8 0 0 1-1.8 1.3H7" />
+    </svg>
+  )
+}
+
+/**
+ * It landed: a spark.
+ *
+ * Not a heart and not a second thumb. The two reactions are not degrees of one
+ * scale - "it works" and "it did something to me" are different statements -
+ * and two shapes of the same family would draw them as one.
+ */
+export function SparkIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...frame(size, className)}>
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" />
+    </svg>
+  )
+}
+
+/** A misspelling: a pen over a line. */
+export function TypoIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...frame(size, className)}>
+      <path d="M4 20h16" />
+      <path d="M6.5 16.5l8.8-8.8a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8l-8.8 8.8H6.5z" />
+    </svg>
+  )
+}

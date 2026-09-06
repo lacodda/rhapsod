@@ -153,6 +153,22 @@ One JSON object with four keys.
       "section": "01 — Парадоксы и эффекты",
       "asked_at": "2026-09-02T22:20:55.585Z"
     }
+  ],
+  "reactions": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "kind": "struck",
+      "felt_at": "2026-09-06T23:14:54.922Z"
+    }
+  ],
+  "typos": [
+    {
+      "id": "9a3f-typo",
+      "piece_id": "02-istoriya/god-bez-leta",
+      "quoted": "вулкан Томбора",
+      "paragraph": 1,
+      "spotted_at": "2026-09-06T23:15:00.878Z"
+    }
   ]
 }
 ```
@@ -167,6 +183,8 @@ One JSON object with four keys.
 | `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. |
 | `bookmarks` | One row per marked piece, newest first. `kind` is one of `loved`, `return`, `song`, `reread`; a piece carries at most one. |
 | `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, so a request outliving its topic is still legible. |
+| `reactions` | One row per piece reacted to, newest first. `kind` is `good` or `struck`; a piece carries at most one. |
+| `typos` | One row per misspelling reported and not withdrawn. `quoted` is the words as selected - the thing to search the file for; `paragraph` is where they were when spotted, and may have moved since. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 
@@ -178,6 +196,12 @@ The ritual the author uses appends them to that file rather than replacing it, a
 
 - **A request already written down is not written again.** The merge is run often and a request lives on the stand until it is withdrawn, so every run would otherwise add the same line.
 - **What is already in the file survives.** The author's own notes share that file; a script that rewrites it wholesale trades a small convenience for the thing it was meant to protect.
+
+## Where the typos go
+
+A typo is the one thing in the export that asks for a change to a piece rather than a note beside it. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what a merge should search the file for, and `paragraph` is only a hint for the eye.
+
+The stand never edits the library, so the fix is the author's to make in the vault. Whatever a ritual does with a report - lists them for review, or opens each file in turn - it should leave the report on the stand until the fix is made, because withdrawing it is how the reader says it is dealt with.
 
 ## Only what changed
 

@@ -142,6 +142,7 @@ export function Drawer({
               onClick={() => { goTo({ name: 'ask' }) }}
             />
           ) : null}
+          <Entry label="The reading" active={route.name === 'report'} onClick={() => { goTo({ name: 'report' }) }} />
         </nav>
 
         <div className="flex flex-col gap-1 px-2 py-3">

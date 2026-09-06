@@ -174,6 +174,28 @@ The plan is a **pool, not a queue**: any topic can be taken at any time, and a t
 
 A request for something the plan does not offer is refused rather than stored. It would sit in the export looking exactly like one the author could act on.
 
+## Telling the author, smaller than a note
+
+A note is a paragraph you sit down to write, and most of what is worth saying never reaches that size. Two gestures do.
+
+**How it landed.** Two kinds, at the end of a piece: *good* and *struck me*. They are not degrees of one scale. The first says the piece works; the second says it did something to you, which is the thing an author writes for and the one thing a word count cannot show. One per piece, and tapping the kind already there takes it off.
+
+There is no negative kind, and that is deliberate. A piece that did not land already says so twice over: it sits unfinished in the reading state, and it has no reaction at all. A third button for disappointment would collect the same fact a third time.
+
+**A misspelling.** Select the words, tap the second button on the same bar that keeps a line. The report carries **the words**, not just where they were: paragraphs shift whenever a piece is edited, and by the time the author reads the report the position may point at something else. The words are findable by search however the piece has moved.
+
+The stand never edits the library, so nothing is corrected here. The report travels back to the vault, and the author fixes the text where it lives.
+
+## What the reading looked like
+
+The author and the reader are the same person here, which is why this screen says what it is for. It is not an audience metric and there is no one to compare against.
+
+It answers one question a word count cannot: **where a piece loses the person reading it**. A piece given up on two paragraphs in and one given up on at the last are the same row in a list and completely different problems - so the list shows how far in, and opens with the piece that lost the reader earliest.
+
+A piece counts as put down only **a day** after you were last in it. Without that gap the screen would open with whatever you are reading right now, which is not a piece that failed.
+
+Nothing on it is collected. Every number is read from the reading state, the reactions and the library, all of which were being written anyway; it is computed when asked for rather than stored, because a statistic kept beside the thing it counts is one that can come to disagree with it.
+
 ## Made here, delivered later
 
 Every change described above is written on the device first and shown as done at once - then delivered to the stand whenever it can be reached ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). Nothing waits for the network, because the network is usually a Pi at home and the reading usually happens somewhere else.
@@ -202,7 +224,7 @@ The one thing worth knowing about it: those changes live in the browser's storag
 
 ## Taking it back out
 
-Everything above - the reading state, the notes, the quotes - comes back as one JSON document from `GET /api/export`.
+Everything above - the reading state, the notes, the quotes, the reactions and the typos - comes back as one JSON document from `GET /api/export`.
 
 One document rather than one endpoint per kind, because of what reads it: a script that writes your marks into the vault the library was published from. That script needs the three kinds to be from the same moment. Fetched separately, a piece finished between two requests would be filed under a reading state that no longer described it, and the vault would record something that was never true at any instant. A snapshot taken in one request is what makes the script safe to run at any time, including while somebody is reading on a phone in the next room.
 

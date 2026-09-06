@@ -9,14 +9,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { ApiError, fetchNext, fetchPiece, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
+import { ApiError, fetchNext, fetchPiece, reportTypo, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
 import { BookmarkBar } from '@/Bookmarks'
+import { ReactionBar } from '@/Feedback'
 import { ArrowLeftIcon } from '@/Icons'
 import { Empty, minutes } from '@/Library'
 import { KeepBar, KeptLines, NoteEditor, useSelection } from '@/Marks'
 import { go } from '@/routing'
 import type { MarksStore } from '@/useMarks'
 import type { BookmarkStore } from '@/useBookmarks'
+import type { ReactionStore } from '@/useReactions'
 import type { ProgressStore } from '@/useProgress'
 
 /**
@@ -204,12 +206,14 @@ export function ReaderScreen({
   progress,
   marks,
   bookmarks,
+  reactions,
 }: {
   library: LibraryIndex
   id: string
   progress: ProgressStore
   marks: MarksStore
   bookmarks: BookmarkStore
+  reactions: ReactionStore
 }) {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -383,6 +387,10 @@ export function ReaderScreen({
               marks.keep({ piece_id: id, paragraph: at, text, comment: null })
               clearSelection()
             }}
+            onTypo={(text, at) => {
+              reportTypo({ piece_id: id, paragraph: at, quoted: text })
+              clearSelection()
+            }}
           />
         ) : null}
       </div>
@@ -436,6 +444,10 @@ export function ReaderScreen({
           <KeptLines quotes={kept} marks={marks} />
         </Block>
       ) : null}
+
+      <Block title="How it landed">
+        <ReactionBar pieceId={id} reactions={reactions} />
+      </Block>
 
       <Block title="Keep this one">
         <BookmarkBar pieceId={id} bookmarks={bookmarks} />

@@ -4,6 +4,7 @@ import { ApiError, BOOKMARK_KINDS, fetchLibrary, fetchSession, type BookmarkKind
 import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { BookmarksScreen } from '@/Bookmarks'
 import { Drawer } from '@/Drawer'
+import { ReportScreen } from '@/Feedback'
 import { MenuIcon } from '@/Icons'
 import { Mark } from '@/Mark'
 import { QuotesScreen } from '@/Quotes'
@@ -18,6 +19,7 @@ import { useProgress } from '@/useProgress'
 import { useRequests } from '@/useRequests'
 import { useReviews } from '@/useReviews'
 import { useBookmarks } from '@/useBookmarks'
+import { useReactions } from '@/useReactions'
 import { useEdgeSwipe } from '@/useEdgeSwipe'
 import { useSync } from '@/useSync'
 import type { SyncState } from '@/sync'
@@ -40,6 +42,7 @@ export function App() {
   const marks = useMarks(mayRead)
   const reviews = useReviews(mayRead)
   const bookmarks = useBookmarks(mayRead)
+  const reactions = useReactions(mayRead)
   const requests = useRequests(mayRead)
   const sync = useSync()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -134,13 +137,23 @@ export function App() {
             detail="Publish a directory of markdown files to the stand, and they appear here."
           />
         ) : route.name === 'piece' ? (
-          <ReaderScreen key={route.id} library={library} id={route.id} progress={progress} marks={marks} bookmarks={bookmarks} />
+          <ReaderScreen
+            key={route.id}
+            library={library}
+            id={route.id}
+            progress={progress}
+            marks={marks}
+            bookmarks={bookmarks}
+            reactions={reactions}
+          />
         ) : route.name === 'quotes' ? (
           <QuotesScreen library={library} marks={marks} />
         ) : route.name === 'today' ? (
           <ReviewsScreen reviews={reviews} />
         ) : route.name === 'ask' ? (
           <RequestsScreen requests={requests} />
+        ) : route.name === 'report' ? (
+          <ReportScreen />
         ) : route.name === 'bookmarks' ? (
           <BookmarksScreen
             library={library}
