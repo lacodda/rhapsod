@@ -23,7 +23,7 @@ Evening, at home, on the desktop. The same place, the same marks: what the reade
 
 A line stops you, and you keep it: drag across the sentence, tap once, and it is yours - with a thought beside it if you have one. At the foot of the piece you write what it left you with. None of that goes into the markdown; it lives beside it, and one command brings all of it back to the vault when you want it there.
 
-Later. The lines worth keeping coming back on a schedule, and the whole library cached for a train with no signal - that is what the releases after this one build.
+Later. The lines worth keeping come back on a schedule - a day, a week, a month - and the whole library rides along on the phone for a train with no signal. The journal says which days you were in it.
 
 ## Running it on a Pi
 
@@ -37,7 +37,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.10.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.11.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server is up, but whether it is serving the library you just published.

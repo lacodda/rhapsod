@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.11.0] - 2026-09-07
+
+### Features
+- Keep a journal of the reading and say what the stand holds
+
+
 ## [0.10.0] - 2026-09-06
 
 ### Features
