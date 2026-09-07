@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.12.0] - 2026-09-07
+
+### Bug Fixes
+- Count the reading against the library, not the table
+
+### Documentation
+- Point the landing pages at the export and moving guides
+
+### Features
+- Fetch the library again on demand
+
+### Testing
+- Prove the incremental export and the locked stand for every kind
+
+
 ## [0.11.0] - 2026-09-07
 
 ### Features

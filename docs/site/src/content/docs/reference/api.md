@@ -37,7 +37,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.11.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.12.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -1115,7 +1115,7 @@ curl http://127.0.0.1:8084/api/export
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.11.0",
+  "version": "0.12.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
@@ -1248,7 +1248,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "reading": [],
   "notes": [
     {
