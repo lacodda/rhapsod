@@ -7,18 +7,61 @@
  * screen says what is true and offers nothing to press.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { fetchHealth, type Health, type LibraryIndex } from '@/api'
-import { held, type Held } from '@/offline'
+import { fetchHealth, fetchLibrary, type Health, type LibraryIndex } from '@/api'
+import { held, refreshLibrary, type Held } from '@/offline'
 import { ago, size } from '@/units'
 import type { SyncState } from '@/sync'
+
+/** How long a refresh is watched for before the screen stops waiting. */
+const REFRESH_WATCH_MS = 45_000
+const REFRESH_POLL_MS = 1_500
 
 export function StandScreen({ library, sync }: { library: LibraryIndex; sync: SyncState }) {
   // `undefined` is "not asked yet"; `null` is "asked, and the stand is away".
   const [health, setHealth] = useState<Health | null | undefined>(undefined)
   const [holding, setHolding] = useState<Held | null | undefined>(undefined)
   const [usage, setUsage] = useState<number | null>(null)
+  /** How many pieces the index has - the freshly fetched one after a refresh. */
+  const [total, setTotal] = useState(library.pieces.length)
+  const [refresh, setRefresh] = useState<'idle' | 'running' | 'no-worker' | 'unreachable'>('idle')
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  const refreshCache = async (): Promise<void> => {
+    setRefresh('running')
+    let index: LibraryIndex
+    try {
+      index = await fetchLibrary()
+    } catch {
+      if (mounted.current) setRefresh('unreachable')
+      return
+    }
+    if (!refreshLibrary(index)) {
+      if (mounted.current) setRefresh('no-worker')
+      return
+    }
+    setTotal(index.pieces.length)
+    // The worker fetches one piece at a time and says nothing when it is
+    // done; the count is watched instead, and the watch ends when every
+    // piece is held or the time is up.
+    const until = Date.now() + REFRESH_WATCH_MS
+    while (mounted.current && Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS))
+      const kept = await held()
+      if (!mounted.current) return
+      setHolding(kept)
+      if (kept && kept.index && kept.pieces >= index.pieces.length) break
+    }
+    if (mounted.current) setRefresh('idle')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -80,7 +123,7 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
         ) : (
           <Fact
             label="library"
-            value={`${holding.pieces} of ${library.pieces.length} pieces held${holding.index ? '' : ', without the index'}`}
+            value={`${holding.pieces} of ${total} pieces held${holding.index ? '' : ', without the index'}`}
           />
         )}
         {usage !== null ? <Fact label="storage" value={size(usage)} /> : null}
@@ -93,6 +136,31 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
           }
         />
       </Facts>
+
+      {/* The one thing to press. Not a setting: a reader who knows a piece
+          was edited in the vault asks for the copy on this device to be
+          replaced, and the count above shows it happening. */}
+      {holding !== null ? (
+        <div className="flex flex-col gap-2 px-3">
+          <button
+            type="button"
+            onClick={() => {
+              void refreshCache()
+            }}
+            disabled={refresh === 'running'}
+            className="self-start rounded-lg border border-line px-3 py-1.5 text-sm text-text transition-colors hover:border-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:text-dim"
+          >
+            {refresh === 'running' ? 'Fetching the library again…' : 'Fetch the library again'}
+          </button>
+          <p className="text-xs leading-relaxed text-dim">
+            {refresh === 'unreachable'
+              ? 'The stand is out of reach; the copy on this device is unchanged.'
+              : refresh === 'no-worker'
+                ? 'This browser has no offline cache to refresh.'
+                : 'Every piece is fetched again and anything no longer in the library is dropped, so an edit published to the vault reaches this device now rather than the next time the piece is opened at home.'}
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

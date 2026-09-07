@@ -210,7 +210,9 @@ Nothing in the journal is a goal. There is no target, no streak beyond the one t
 
 ### The stand, from where you are standing
 
-One more screen, with nothing to press on it: which version this is and which the stand runs, how long ago the library was last published, how many pieces this device is holding for the train, how much of the browser's storage the whole of it takes, and whether anything you did is still waiting to be delivered. Three things a reader away from home cannot otherwise find out.
+One more screen, with one thing to press on it: which version this is and which the stand runs, how long ago the library was last published, how many pieces this device is holding for the train, how much of the browser's storage the whole of it takes, and whether anything you did is still waiting to be delivered. Three things a reader away from home cannot otherwise find out.
+
+The one button fetches the library again. The ordinary fill skips what the device already holds - right for a background job, wrong for a reader who knows a piece was edited in the vault, whose copy would otherwise stay as it was until the piece happened to be opened at home. A refresh fetches every piece anew and drops anything no longer in the library, and the count on the screen shows it happening.
 
 ## Made here, delivered later
 

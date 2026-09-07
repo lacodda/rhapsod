@@ -70,10 +70,29 @@ export async function held(): Promise<Held | null> {
  * waits for it.
  */
 export function cacheLibrary(library: LibraryIndex): void {
+  post('cache-library', library)
+}
+
+/**
+ * Asks the worker to fetch the whole library again and drop what is no
+ * longer in it.
+ *
+ * The ordinary fill skips what is already held, which is right for a
+ * background job and wrong for a reader who knows a piece was edited in the
+ * vault: the copy on the device would stay as it was until the piece
+ * happened to be opened at home. Returns false when there is no worker to
+ * ask, so the screen can say so rather than wait for nothing.
+ */
+export function refreshLibrary(library: LibraryIndex): boolean {
+  return post('refresh-library', library)
+}
+
+function post(type: 'cache-library' | 'refresh-library', library: LibraryIndex): boolean {
   const worker = navigator.serviceWorker?.controller
-  if (!worker) return
+  if (!worker) return false
   worker.postMessage({
-    type: 'cache-library',
+    type,
     paths: ['/api/library', ...library.pieces.map((piece) => `/api/pieces/${piece.id}`)],
   })
+  return true
 }

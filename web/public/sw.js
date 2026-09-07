@@ -108,14 +108,14 @@ self.addEventListener('fetch', (event) => {
  * available offline rather than only the pieces that happened to be opened -
  * which is the promise ADR 0003 makes and the reason this file exists.
  */
-async function cacheLibrary(paths) {
+async function cacheLibrary(paths, { refresh = false } = {}) {
   const cache = await caches.open(LIBRARY)
   // One at a time rather than all at once: a few hundred requests in parallel
   // would fight the reader's own for the connection, and this is background
   // work with no deadline.
   for (const path of paths) {
     try {
-      if (await cache.match(path)) continue
+      if (!refresh && (await cache.match(path))) continue
       const response = await fetch(path)
       if (response.ok) await cache.put(path, response)
     } catch {
@@ -124,10 +124,23 @@ async function cacheLibrary(paths) {
       return
     }
   }
+  if (!refresh) return
+  // A refresh makes the cache equal to the index: a piece that left the
+  // library leaves the device too, rather than staying readable offline
+  // under a shelf that no longer lists it.
+  for (const request of await cache.keys()) {
+    if (!paths.includes(new URL(request.url).pathname)) await cache.delete(request)
+  }
 }
 
 self.addEventListener('message', (event) => {
-  if (event.data?.type === 'cache-library' && Array.isArray(event.data.paths)) {
+  if (!Array.isArray(event.data?.paths)) return
+  if (event.data.type === 'cache-library') {
     event.waitUntil(cacheLibrary(event.data.paths))
+  } else if (event.data.type === 'refresh-library') {
+    // Asked for by the reader, from the stand screen: every piece is
+    // fetched again whether or not a copy is held, so an edit published to
+    // the vault reaches a device that has not opened the piece since.
+    event.waitUntil(cacheLibrary(event.data.paths, { refresh: true }))
   }
 })
