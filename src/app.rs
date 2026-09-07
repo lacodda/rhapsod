@@ -1877,28 +1877,86 @@ mod tests {
         assert!(body["abandoned"].is_array(), "the report had no list of what was put down");
     }
 
+    /// Sends a `DELETE` with a JSON body and returns the status.
+    ///
+    /// Mirrors `post` above: most of these endpoints ignore the body, but the
+    /// gate has to refuse before that is ever noticed.
+    async fn delete_json(app: Router, uri: &str, body: &str) -> (StatusCode, serde_json::Value) {
+        let response = app
+            .oneshot(
+                Request::delete(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null))
+    }
+
     #[tokio::test]
     async fn a_locked_stand_keeps_the_marks_to_itself() {
         // Notes and quotes are the reader's own words about what they read;
-        // if the text is behind the password, these are too.
+        // if the text is behind the password, these are too. This list
+        // mirrors every `.route(` in `router_with` whose handler takes a
+        // `Reader`: a route missing here would be a gap the gate does not
+        // actually cover.
         let (web, content) = (web_root(), content_root());
         let library = Library::load(content.path()).unwrap();
         let hash = crate::auth::hash("a good passphrase").unwrap();
         let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
 
-        // The report is the most telling of these: it names titles and says
-        // which ones lost the reader.
+        // Every GET behind the gate.
         for path in [
+            "/api/library",
+            "/api/sections",
+            "/api/sections/02-istoriya",
+            "/api/pieces/02-istoriya/god-bez-leta",
+            "/api/progress",
+            "/api/next?after=x",
             "/api/notes",
             "/api/quotes",
-            "/api/export",
+            "/api/topics",
+            "/api/requests",
+            "/api/bookmarks",
             "/api/reactions",
             "/api/typos",
             "/api/report",
             "/api/journal",
+            "/api/reviews",
+            "/api/export",
         ] {
             let (status, _) = get_json(app.clone(), path).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
+        }
+
+        // Every write behind the gate, each with an empty JSON body: the gate
+        // runs before the body is ever looked at, so `{}` must still get 401
+        // rather than a 400 or 422 about a missing field.
+        for (method, path) in [
+            ("POST", "/api/progress/02-istoriya/god-bez-leta"),
+            ("POST", "/api/notes/02-istoriya/god-bez-leta"),
+            ("POST", "/api/quotes"),
+            ("POST", "/api/quotes/some-id"),
+            ("DELETE", "/api/quotes/some-id"),
+            ("POST", "/api/requests/01-shelf/topic"),
+            ("DELETE", "/api/requests/01-shelf/topic"),
+            ("POST", "/api/bookmarks/02-istoriya/god-bez-leta"),
+            ("DELETE", "/api/bookmarks/02-istoriya/god-bez-leta"),
+            ("POST", "/api/reactions/02-istoriya/god-bez-leta"),
+            ("DELETE", "/api/reactions/02-istoriya/god-bez-leta"),
+            ("POST", "/api/typos"),
+            ("DELETE", "/api/typos/some-id"),
+            ("POST", "/api/reviews/02-istoriya/god-bez-leta"),
+        ] {
+            let (status, _) = match method {
+                "POST" => post(app.clone(), path, "{}").await,
+                "DELETE" => delete_json(app.clone(), path, "{}").await,
+                _ => unreachable!(),
+            };
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path} was writable without signing in");
         }
     }
 

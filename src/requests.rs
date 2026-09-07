@@ -168,13 +168,41 @@ mod tests {
     async fn an_incremental_export_leaves_out_what_has_not_changed() {
         let pool = pool().await;
         ask(&pool, &topic(), None).await.unwrap();
-        sqlx::query("UPDATE requests SET asked_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+        sqlx::query("UPDATE requests SET asked_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z' WHERE topic_id = ?")
+            .bind(&topic().id)
             .execute(&pool)
             .await
             .unwrap();
 
-        let bound = Some("2020-06-01T00:00:00.000Z");
-        assert!(all(&pool, bound).await.unwrap().is_empty());
+        let bound = Some("2025-01-01T00:00:00.000Z");
+        assert!(all(&pool, bound).await.unwrap().is_empty(), "an aged request was reported as changed");
         assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the request");
+
+        // A request asked after the bound is returned.
+        let mut other = topic();
+        other.id = "01-paradoksy/paradoks-korablya-teseya".into();
+        other.title = "Парадокс корабля Тесея".into();
+        ask(&pool, &other, None).await.unwrap();
+
+        let fresh = all(&pool, bound).await.unwrap();
+        assert_eq!(fresh.len(), 1, "a request asked after the bound did not reach an incremental export");
+        assert_eq!(fresh[0].topic_id, other.id);
+
+        // Asking twice is asking once (per the doc comment on `ask`): a
+        // re-ask of the aged topic with the same words is not a change, so it
+        // must not bring the aged row back into an incremental export.
+        ask(&pool, &topic(), None).await.unwrap();
+        let after_reask = all(&pool, bound).await.unwrap();
+        assert_eq!(
+            after_reask.len(),
+            1,
+            "a re-ask with no new information was treated as a change to the aged request"
+        );
+        assert_eq!(after_reask[0].topic_id, other.id, "the re-asked topic reappeared in the incremental export");
+
+        assert!(
+            all(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after every change still returned rows"
+        );
     }
 }

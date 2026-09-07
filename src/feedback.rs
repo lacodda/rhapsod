@@ -294,4 +294,72 @@ mod tests {
         assert_eq!(reactions(&pool, None).await.unwrap().len(), 1, "a full export lost the reaction");
         assert_eq!(typos(&pool, None).await.unwrap().len(), 1, "a full export lost the typo");
     }
+
+    #[tokio::test]
+    async fn a_reaction_changed_after_the_bound_reaches_an_incremental_export() {
+        // The same piece across the boundary: reacted to, aged, then changed
+        // to the other kind through the module's own function with a device
+        // clock newer than the aged stamp - `changed_at` here is the write's
+        // own timestamp, not a `strftime('now')` on the update side, so a
+        // change with no clock at all (`None`) cannot beat an aged row, just
+        // as `felt_at`'s own queue-ordering tests already show.
+        let pool = pool().await;
+        react(&pool, "01-paradoksy/kot", "good", Some("2020-01-01T00:00:00.000Z")).await.unwrap();
+        sqlx::query("UPDATE reactions SET felt_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let bound = Some("2025-01-01T00:00:00.000Z");
+        assert!(reactions(&pool, bound).await.unwrap().is_empty(), "an aged reaction was reported as changed");
+
+        react(&pool, "01-paradoksy/kot", "struck", Some("2026-01-01T00:00:00.000Z")).await.unwrap();
+
+        let changed = reactions(&pool, bound).await.unwrap();
+        assert_eq!(changed.len(), 1, "a reaction changed after the bound did not reach an incremental export");
+        assert_eq!(changed[0].piece_id, "01-paradoksy/kot");
+        assert_eq!(changed[0].kind, "struck", "the incremental export did not carry the new kind");
+
+        assert!(
+            reactions(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after the change still returned the row"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_typo_report_changed_after_the_bound_reaches_an_incremental_export() {
+        // `report_typo` has no module-level way to edit an existing report -
+        // unlike a quote's comment, a typo report is only made, redelivered,
+        // or withdrawn - so the row that crosses the boundary here is the
+        // fresh report, and the aged one is the control: it must stay out.
+        let pool = pool().await;
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        sqlx::query("UPDATE typos SET spotted_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let bound = Some("2025-01-01T00:00:00.000Z");
+        assert!(typos(&pool, bound).await.unwrap().is_empty(), "an aged typo was reported as changed");
+
+        // A fresh report, spotted after the bound, is returned.
+        report_typo(&pool, "t-2", "01-paradoksy/kot", 6, "втарой прадокс").await.unwrap();
+
+        let fresh = typos(&pool, bound).await.unwrap();
+        assert_eq!(fresh.len(), 1, "a typo reported after the bound did not reach an incremental export");
+        assert_eq!(fresh[0].id, "t-2");
+
+        // Redelivering the aged report - the only write `report_typo` still
+        // allows against an existing row - is a no-op that does not touch
+        // `changed_at`, so it must not bring the aged row back either.
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        let after_redelivery = typos(&pool, bound).await.unwrap();
+        assert_eq!(after_redelivery.len(), 1, "redelivering an aged report was treated as a change");
+        assert_eq!(after_redelivery[0].id, "t-2");
+
+        assert!(
+            typos(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after every report still returned rows"
+        );
+    }
 }

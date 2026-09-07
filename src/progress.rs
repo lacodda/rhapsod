@@ -450,6 +450,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_incremental_export_leaves_out_what_has_not_changed() {
+        // The same row across the boundary: aged, then moved again through
+        // the module's own function, which stamps "now". An incremental
+        // export has to see the new paragraph, not skip the row because it
+        // already knew about it.
+        let pool = pool().await;
+        at_paragraph(&pool, "a/b", 3, None).await.unwrap();
+        sqlx::query("UPDATE reading_state SET updated_at = '2020-01-01T00:00:00.000Z' WHERE piece_id = 'a/b'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(
+            all(&pool, Some("2025-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "an aged row was reported as changed"
+        );
+
+        at_paragraph(&pool, "a/b", 9, None).await.unwrap();
+
+        let changed = all(&pool, Some("2025-01-01T00:00:00.000Z")).await.unwrap();
+        assert_eq!(changed.len(), 1, "a piece moved after the bound did not reach an incremental export");
+        assert_eq!(changed[0].piece_id, "a/b");
+        assert_eq!(changed[0].paragraph, 9, "the incremental export did not carry the new paragraph");
+
+        assert!(
+            all(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after the change still returned the row"
+        );
+    }
+
+    #[tokio::test]
     async fn finishing_and_unfinishing_are_both_possible() {
         let pool = pool().await;
         set_read(&pool, "a/b", true, None).await.unwrap();

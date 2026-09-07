@@ -352,32 +352,35 @@ mod tests {
 
     #[tokio::test]
     async fn an_incremental_export_leaves_out_what_has_not_changed() {
+        // The same note across the boundary: aged, then rewritten through the
+        // module's own function, which stamps "now". An incremental export
+        // has to see the new body, not skip the row because it already knew
+        // about it.
         let pool = pool().await;
         set_note(&pool, "a/b", "written before", None).await.unwrap();
-        add_quote(&pool, "q-old", "a/b", 0, "kept before", None).await.unwrap();
-        sqlx::query("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE quotes SET created_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+        sqlx::query("UPDATE notes SET updated_at = '2020-01-01T00:00:00.000Z' WHERE piece_id = 'a/b'")
             .execute(&pool)
             .await
             .unwrap();
 
-        let bound = Some("2020-06-01T00:00:00.000Z");
-        assert!(notes(&pool, bound).await.unwrap().is_empty());
-        assert!(quotes(&pool, bound).await.unwrap().is_empty());
+        let bound = Some("2025-01-01T00:00:00.000Z");
+        assert!(notes(&pool, bound).await.unwrap().is_empty(), "an aged note was reported as changed");
 
-        // And a full export still carries them: the bound is what filters,
-        // not the query.
+        set_note(&pool, "a/b", "rewritten now", None).await.unwrap();
+
+        let changed = notes(&pool, bound).await.unwrap();
+        assert_eq!(changed.len(), 1, "a note rewritten after the bound did not reach an incremental export");
+        assert_eq!(changed[0].piece_id, "a/b");
+        assert_eq!(changed[0].body, "rewritten now", "the incremental export did not carry the new body");
+
+        assert!(
+            notes(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after the change still returned the row"
+        );
+
+        // A full export still carries it: the bound is what filters, not the
+        // query.
         assert_eq!(notes(&pool, None).await.unwrap().len(), 1);
-        assert_eq!(quotes(&pool, None).await.unwrap().len(), 1);
-
-        // Something written now is newer than the bound and comes back.
-        set_note(&pool, "a/c", "written after", None).await.unwrap();
-        let fresh = notes(&pool, bound).await.unwrap();
-        assert_eq!(fresh.len(), 1);
-        assert_eq!(fresh[0].piece_id, "a/c");
     }
 
     #[tokio::test]

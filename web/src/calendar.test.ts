@@ -49,10 +49,12 @@ describe('localDay', () => {
 
 describe('clockOffset', () => {
   it('is minutes east of UTC, the sign a zone is written with', () => {
-    // Whatever zone the test runs in, the two must be opposite: the browser
-    // reports minutes behind UTC, and the server wants minutes ahead.
-    const now = new Date()
-    expect(clockOffset(now)).toBe(-now.getTimezoneOffset())
+    // A fixed fake rather than the real clock: `getTimezoneOffset` reports
+    // minutes *behind* UTC, so a zone 3 hours ahead (180 minutes behind) has
+    // to come back as -180, and a zone 10 hours behind (-600 minutes behind,
+    // the Americas) has to come back as 600 - the opposite sign either way.
+    expect(clockOffset({ getTimezoneOffset: () => 180 } as Date)).toBe(-180)
+    expect(clockOffset({ getTimezoneOffset: () => -600 } as Date)).toBe(600)
   })
 })
 

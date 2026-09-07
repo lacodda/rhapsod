@@ -177,20 +177,35 @@ mod tests {
 
     #[tokio::test]
     async fn an_incremental_export_leaves_out_what_has_not_changed() {
+        // The same bookmark across the boundary: aged, then changed again
+        // through the module's own function with a device clock newer than
+        // the aged stamp - `changed_at` is the write's own timestamp here,
+        // not a `strftime('now')` on the update side, so a change with no
+        // clock at all (`None`) could never beat an aged row.
         let pool = pool().await;
-        mark(&pool, "a/b", "loved", None).await.unwrap();
-        sqlx::query("UPDATE bookmarks SET marked_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
+        mark(&pool, "a/b", "loved", Some("2020-01-01T00:00:00.000Z")).await.unwrap();
+        sqlx::query("UPDATE bookmarks SET marked_at = '2020-01-01T00:00:00.000Z' WHERE piece_id = 'a/b'")
             .execute(&pool)
             .await
             .unwrap();
 
-        let bound = Some("2020-06-01T00:00:00.000Z");
-        assert!(all(&pool, bound).await.unwrap().is_empty());
-        assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the bookmark");
+        let bound = Some("2025-01-01T00:00:00.000Z");
+        assert!(all(&pool, bound).await.unwrap().is_empty(), "an aged bookmark was reported as changed");
 
-        mark(&pool, "a/c", "song", None).await.unwrap();
-        let fresh = all(&pool, bound).await.unwrap();
-        assert_eq!(fresh.len(), 1);
-        assert_eq!(fresh[0].piece_id, "a/c");
+        mark(&pool, "a/b", "reread", Some("2026-01-01T00:00:00.000Z")).await.unwrap();
+
+        let changed = all(&pool, bound).await.unwrap();
+        assert_eq!(changed.len(), 1, "a bookmark changed after the bound did not reach an incremental export");
+        assert_eq!(changed[0].piece_id, "a/b");
+        assert_eq!(changed[0].kind, "reread", "the incremental export did not carry the new kind");
+
+        assert!(
+            all(&pool, Some("2999-01-01T00:00:00.000Z")).await.unwrap().is_empty(),
+            "a bound after the change still returned the row"
+        );
+
+        // A full export still carries it: the bound is what filters, not the
+        // query.
+        assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the bookmark");
     }
 }

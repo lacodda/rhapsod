@@ -44,8 +44,8 @@ describe('WIKI_LINK', () => {
   it('reads the form the writing format uses', () => {
     // `[[vault path|caption]]`: the path is qualified so the same text works
     // inside the vault, and the caption is what a reader should see.
-    const [match] = [...'[[Studio/Новеллы/02 — История/Год без лета|Год без лета]]'.matchAll(WIKI_LINK)]
-    expect(match?.[1]).toBe('Studio/Новеллы/02 — История/Год без лета')
+    const [match] = [...'[[Library/Pieces/02 — История/Год без лета|Год без лета]]'.matchAll(WIKI_LINK)]
+    expect(match?.[1]).toBe('Library/Pieces/02 — История/Год без лета')
     expect(match?.[2]).toBe('Год без лета')
   })
 
@@ -65,13 +65,13 @@ describe('linkTarget', () => {
   it('resolves a vault path to a piece in the library', () => {
     // The vault prefix is the author's own layout: the reader matches the
     // tail, which is the shelf and the piece.
-    expect(linkTarget('Studio/Новеллы/02 — История/Год без лета', library)).toBe('02-istoriya/god-bez-leta')
+    expect(linkTarget('Library/Pieces/02 — История/Год без лета', library)).toBe('02-istoriya/god-bez-leta')
   })
 
   it('uses the shelf in the path when a title repeats', () => {
     // Two pieces are called "Тесла"; the directory decides which one is meant,
     // and picking the first match would send the reader to the wrong shelf.
-    expect(linkTarget('Studio/Новеллы/06 — Известные личности/Тесла', library)).toBe(
+    expect(linkTarget('Library/Pieces/06 — Известные личности/Тесла', library)).toBe(
       '06-izvestnye-lichnosti/tesla',
     )
   })
@@ -79,10 +79,10 @@ describe('linkTarget', () => {
   it('returns null for a topic that has not been written yet', () => {
     // Neighbours may name a topic from the plan. That is not a broken link,
     // it is a piece that does not exist, and the caption alone is the answer.
-    expect(linkTarget('Studio/Новеллы/05 — Философия/Китайская комната', library)).toBeNull()
+    expect(linkTarget('Library/Pieces/05 — Философия/Китайская комната', library)).toBeNull()
   })
 
   it('returns null when the library has not loaded', () => {
-    expect(linkTarget('Studio/Новеллы/02 — История/Год без лета', undefined)).toBeNull()
+    expect(linkTarget('Library/Pieces/02 — История/Год без лета', undefined)).toBeNull()
   })
 })

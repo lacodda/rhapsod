@@ -276,3 +276,89 @@ fn the_service_worker_takes_the_version_it_is_built_with() {
         "the build no longer stamps a version into dist/sw.js"
     );
 }
+
+/// Every route the router mounts has a section in the API reference.
+///
+/// The rule is "a feature without a doc does not exist", and the way it gets
+/// broken is not by leaving a whole endpoint out but by adding a second
+/// method to an existing path - a `DELETE` beside a `POST` - and documenting
+/// only the first. The router is the source of truth for what exists; the
+/// reference has to match it method by method.
+#[test]
+fn every_endpoint_is_documented() {
+    let router = read("src/app.rs");
+    let reference = read("docs/site/src/content/docs/reference/api.md");
+
+    let mut missing = Vec::new();
+    for line in router.lines() {
+        let Some(rest) = line.trim().strip_prefix(".route(\"") else { continue };
+        let Some((path, methods)) = rest.split_once("\", ") else { continue };
+        for method in ["get", "post", "put", "patch", "delete"] {
+            if !methods.contains(&format!("{method}(")) {
+                continue;
+            }
+            let heading = format!("## `{} /api{path}`", method.to_uppercase());
+            if !reference.contains(&heading) {
+                missing.push(heading);
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "routes mounted in src/app.rs with no section in reference/api.md:\n  {}",
+        missing.join("\n  ")
+    );
+}
+
+/// Nothing about where the author lives is in the repository.
+///
+/// The stand is a Pi on a home network and the library is a folder in a
+/// private vault; the repository is public. The address of the one and the
+/// layout of the other belong in a local `.env` and nowhere else - and the
+/// way they get in is not through the code but through a fixture, a
+/// transcript or a comment that was written with the real thing in front of
+/// it. Only this file is skipped, because it names the patterns.
+#[test]
+fn nothing_private_is_in_the_repository() {
+    const PRIVATE: &[&str] = &["192.168.", "C:\\Users", "/Users/", "/home/", "Studio/", "obsidian", "Новелл"];
+    const SKIPPED_DIRS: &[&str] = &[".git", "target", "node_modules", "dist", "data", "content", "backups"];
+
+    let root = repo_root();
+    let own = root.join("tests/release_consistency.rs");
+    let mut found = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("the repository should be readable").flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if path.is_dir() {
+                if !SKIPPED_DIRS.contains(&name.as_str()) {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if path == own {
+                continue;
+            }
+            // `.env` is where the private values are meant to live, and git
+            // ignores it; `.env.example` is checked like any other file.
+            if name == ".env" || (name.starts_with(".env.") && name != ".env.example") {
+                continue;
+            }
+            // Binary files are skipped by not being text.
+            let Ok(text) = fs::read_to_string(&path) else { continue };
+            for (number, line) in text.lines().enumerate() {
+                if let Some(pattern) = PRIVATE.iter().find(|pattern| line.contains(*pattern)) {
+                    found.push(format!("{}:{}: `{pattern}`", path.strip_prefix(&root).unwrap_or(&path).display(), number + 1));
+                }
+            }
+        }
+    }
+
+    assert!(
+        found.is_empty(),
+        "something about the author's own machine or vault is in the repository:\n  {}",
+        found.join("\n  ")
+    );
+}
