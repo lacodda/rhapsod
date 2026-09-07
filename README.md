@@ -109,9 +109,11 @@ None of it touches the library. The markdown is still read and never written, an
 
 **And the author can see the reading.** One screen, computed when asked for rather than stored: what is read, started and waiting, how the pieces landed, and - the point of it - **where they were put down**, each with how far in. A piece given up on two paragraphs in and one given up on at the last are the same row in a list and completely different problems. A piece counts as put down only a day after you were last in it; without that gap the screen would open with whatever you are reading right now.
 
+**And now it keeps a journal.** The library screen counts what you have read; the journal says when. Months, each with what was finished, how many words that was, and how many pieces were carried through the review schedule - and below them the openings: which piece was in your hands on which day, with the hour, and a count when you came back to it. A return to something you finished in spring is an opening too, which is the thing one row per piece could never say. Days and months follow **your device's clock**, not the stand's, so a piece finished at eleven at night is not filed under tomorrow. Nothing on it is a goal. A second screen, with nothing to press, says what the stand is running, how much of the library this device holds for the train, and whether anything you did is still waiting to be delivered.
+
 The architecture is recorded in three decisions - [the stack](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0001-stack.md), [content as files](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md) and [offline first](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md).
 
-Ordering novellas you have not written yet, and a way from a novella to a song, are what the releases after this one build. Watch this repository.
+What the releases after this one build is the last stretch before 1.0: a pass over the tests, the docs and the repository's privacy, and then the proof that the circle from vault to phone and back holds up for a week of real reading. Watch this repository.
 
 ## Development
 

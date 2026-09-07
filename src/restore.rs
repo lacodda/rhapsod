@@ -47,6 +47,10 @@ pub struct Export {
     pub reactions: Vec<feedback::Reaction>,
     #[serde(default)]
     pub typos: Vec<feedback::Typo>,
+    /// Absent from exports taken before the log existed, which restore fine:
+    /// the migration seeds the log from the reading state's first openings.
+    #[serde(default)]
+    pub openings: Vec<progress::Opening>,
 }
 
 /// What a restore did, for the caller to print.
@@ -60,6 +64,7 @@ pub struct Restored {
     pub requests: usize,
     pub reactions: usize,
     pub typos: usize,
+    pub openings: usize,
 }
 
 /// Writes an export into a database.
@@ -93,6 +98,7 @@ pub async fn restore(pool: &SqlitePool, export: &Export) -> Result<Restored> {
         requests: requests(&mut tx, export).await?,
         reactions: reactions(&mut tx, export).await?,
         typos: typos(&mut tx, export).await?,
+        openings: openings(&mut tx, export).await?,
     };
 
     tx.commit().await.context("failed to finish the restore")?;
@@ -269,6 +275,23 @@ async fn typos(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
     Ok(count)
 }
 
+async fn openings(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
+    let mut count = 0;
+    for opening in &export.openings {
+        // The key is the piece and the moment, so the seed the migration
+        // wrote from the reading state and the same opening from the export
+        // land as one row.
+        let done = sqlx::query("INSERT INTO openings (piece_id, opened_at) VALUES (?, ?) ON CONFLICT DO NOTHING")
+            .bind(&opening.piece_id)
+            .bind(&opening.opened_at)
+            .execute(&mut **tx)
+            .await
+            .with_context(|| format!("failed to restore the opening of {} at {}", opening.piece_id, opening.opened_at))?;
+        count += landed(&done);
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,6 +354,16 @@ mod tests {
                 paragraph: 5,
                 spotted_at: "2026-08-01T16:00:00.000Z".into(),
             }],
+            openings: vec![
+                progress::Opening {
+                    piece_id: "a/b".into(),
+                    opened_at: "2026-08-01T09:00:00.000Z".into(),
+                },
+                progress::Opening {
+                    piece_id: "a/b".into(),
+                    opened_at: "2026-08-02T09:00:00.000Z".into(),
+                },
+            ],
         }
     }
 
@@ -348,13 +381,19 @@ mod tests {
                 bookmarks: 1,
                 requests: 1,
                 reactions: 1,
-                typos: 1
+                typos: 1,
+                openings: 2
             }
         );
 
         let states = progress::all(&pool, None).await.unwrap();
         assert_eq!(states[0].status, "read");
         assert_eq!(states[0].paragraph, 7);
+        // The log travels too: a stand rebuilt without it would show a
+        // journal that starts on the day of the restore.
+        let opened = progress::openings(&pool, None).await.unwrap();
+        assert_eq!(opened.len(), 2, "the restore lost the openings");
+        assert_eq!(opened[0].opened_at, "2026-08-01T09:00:00.000Z", "a restored opening was re-dated");
         assert_eq!(marks::notes(&pool, None).await.unwrap()[0].body, "what it left me with");
         assert_eq!(marks::quotes(&pool, None).await.unwrap()[0].text, "the line");
         assert_eq!(reviews::all(&pool, None).await.unwrap()[0].done, 2);
@@ -421,7 +460,8 @@ mod tests {
                 bookmarks: 0,
                 requests: 0,
                 reactions: 0,
-                typos: 0
+                typos: 0,
+                openings: 0
             }
         );
         assert_eq!(marks::quotes(&pool, None).await.unwrap().len(), 1);
@@ -440,10 +480,19 @@ mod tests {
             requests: vec![],
             reactions: vec![],
             typos: vec![],
+            openings: vec![],
         };
         let counted = restore(&pool, &empty).await.unwrap();
         assert_eq!(
-            counted.reading + counted.notes + counted.quotes + counted.reviews + counted.bookmarks + counted.requests + counted.reactions + counted.typos,
+            counted.reading
+                + counted.notes
+                + counted.quotes
+                + counted.reviews
+                + counted.bookmarks
+                + counted.requests
+                + counted.reactions
+                + counted.typos
+                + counted.openings,
             0
         );
     }

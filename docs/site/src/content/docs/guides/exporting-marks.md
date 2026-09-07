@@ -185,6 +185,7 @@ One JSON object with four keys.
 | `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, so a request outliving its topic is still legible. |
 | `reactions` | One row per piece reacted to, newest first. `kind` is `good` or `struck`; a piece carries at most one. |
 | `typos` | One row per misspelling reported and not withdrawn. `quoted` is the words as selected - the thing to search the file for; `paragraph` is where they were when spotted, and may have moved since. |
+| `openings` | One row per opening of a piece, oldest first - the log the journal is built from. Nothing in the vault wants these beside a piece; they are here so that a stand rebuilt from an export keeps its journal. |
 
 The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 

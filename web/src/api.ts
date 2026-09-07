@@ -195,11 +195,45 @@ export interface Session {
   reader: boolean
 }
 
+/** One month of reading, as the journal counts it. */
+export interface Month {
+  /** `YYYY-MM`, by the clock of the device that asked. */
+  month: string
+  read: number
+  words: number
+  /** Pieces whose review schedule ended in the month. */
+  recalled: number
+}
+
+/** One piece on one day, in the journal. */
+export interface Opened {
+  /** `YYYY-MM-DD`, by the clock of the device that asked. */
+  day: string
+  piece_id: string
+  title: string
+  /** The first opening that day, in UTC. */
+  opened_at: string
+  /** How many times that day. */
+  times: number
+}
+
+/** What the reading adds up to over time. */
+export interface Journal {
+  /** Newest first. */
+  months: Month[]
+  scheduled: number
+  recalled: number
+  /** Newest first. */
+  history: Opened[]
+}
+
 /** What the server says about itself. */
 export interface Health {
   status: string
   version: string
   pieces: number
+  /** How long since the library was last indexed - since publishing last reached the stand. */
+  indexed_seconds_ago: number
 }
 
 /**
@@ -386,6 +420,15 @@ export const clearReaction = (pieceId: string): Promise<void> =>
 export const fetchTypos = (): Promise<Typo[]> => get<Typo[]>('/typos')
 
 export const fetchReport = (): Promise<Report> => get<Report>('/report')
+
+/**
+ * The journal, with days and months by this device's clock.
+ *
+ * `offset` is minutes east of UTC. The stand stamps everything in UTC, and a
+ * piece finished at eleven at night would otherwise be journalled under
+ * tomorrow.
+ */
+export const fetchJournal = (offset: number): Promise<Journal> => get<Journal>(`/journal?offset=${offset}`)
 
 /**
  * Reports a misspelling.

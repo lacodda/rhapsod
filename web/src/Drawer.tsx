@@ -142,10 +142,10 @@ export function Drawer({
               onClick={() => { goTo({ name: 'ask' }) }}
             />
           ) : null}
-          <Entry label="The reading" active={route.name === 'report'} onClick={() => { goTo({ name: 'report' }) }} />
+          <Entry label="Journal" active={route.name === 'journal'} onClick={() => { goTo({ name: 'journal' }) }} />
         </nav>
 
-        <div className="flex flex-col gap-1 px-2 py-3">
+        <div className="flex flex-col gap-1 border-b border-line px-2 py-3">
           <span className="px-3 pb-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-dim">Shelves</span>
           {library.sections.map((shelf) => (
             <Entry
@@ -157,6 +157,13 @@ export function Drawer({
             />
           ))}
         </div>
+
+        {/* Below the shelves: the two screens about the library rather than
+            in it - the author's view of the reading, and the stand itself. */}
+        <nav className="flex flex-col gap-1 px-2 py-3">
+          <Entry label="The reading" active={route.name === 'report'} onClick={() => { goTo({ name: 'report' }) }} />
+          <Entry label="The stand" active={route.name === 'stand'} onClick={() => { goTo({ name: 'stand' }) }} />
+        </nav>
       </div>
     </>
   )

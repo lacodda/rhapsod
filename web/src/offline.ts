@@ -30,6 +30,38 @@ export function registerWorker(): void {
   })
 }
 
+/** The name the worker gives the library cache; see `public/sw.js`. */
+const LIBRARY_CACHE = 'rhapsod-library'
+
+/** What the device is holding of the library. */
+export interface Held {
+  /** Whether the index itself is cached - without it the app cannot start offline. */
+  index: boolean
+  /** Pieces whose text is cached. */
+  pieces: number
+}
+
+/**
+ * Counts what the worker has cached, or `null` where there is no cache.
+ *
+ * Read from the cache rather than asked of the worker: the worker may not be
+ * controlling this page yet, and the cache is what actually answers a request
+ * on a train.
+ */
+export async function held(): Promise<Held | null> {
+  if (typeof caches === 'undefined') return null
+  try {
+    const cache = await caches.open(LIBRARY_CACHE)
+    const paths = (await cache.keys()).map((request) => new URL(request.url).pathname)
+    return {
+      index: paths.includes('/api/library'),
+      pieces: paths.filter((path) => path.startsWith('/api/pieces/')).length,
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Asks the worker to hold the whole library.
  *

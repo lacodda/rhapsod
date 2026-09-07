@@ -19,8 +19,9 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/reactions`, `POST`/`DELETE /api/reactions/...` | Needs a session. |
 | `GET /api/typos`, `POST /api/typos`, `DELETE /api/typos/{id}` | Needs a session. |
 | `GET /api/report` | Needs a session. It names titles and says which ones lost the reader. |
+| `GET /api/journal` | Needs a session. It names titles and says which days the reader was in the library. |
 | `GET /api/reviews`, `POST /api/reviews/...` | Needs a session. |
-| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules, the bookmarks, the requests, the reactions and the typos at once. |
+| `GET /api/export` | Needs a session. It is the reading state, the notes, the quotes, the schedules, the bookmarks, the requests, the reactions, the typos and the openings at once. |
 | `POST /api/reindex` | Open. It is called by a publishing script on the same network, not by a browser. |
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
@@ -364,6 +365,8 @@ curl -X POST http://127.0.0.1:8084/api/progress/19-lyubov-i-pary/abelyar-i-eloiz
   -H 'content-type: application/json' -d '{}'
 ```
 
+Every opening is also written to a log of its own, including a return to a piece already read, which is what [the journal](#get-apijournal) is built from. The log takes the device's `marked_at` as the moment when the report carries one, so a piece opened on a train is journalled under the hour it was opened rather than the hour the phone got home; the same report delivered twice lands once.
+
 | Field | Meaning |
 | --- | --- |
 | `paragraph` | Index of the paragraph last seen. |
@@ -392,7 +395,7 @@ curl http://127.0.0.1:8084/api/progress
 
 Still 7; only `updated_at` moved. A phone syncing a position from before the desktop moved on must not send the reader back up the page. Re-reading from the top is done by finishing and reopening, not by scrolling up. A negative index is read as the top.
 
-Opening a finished piece does not unfinish it, and finishing one twice does not move `read_at`.
+Opening a finished piece does not unfinish it, and finishing one twice does not move `read_at`. The day a piece was finished is the device's day: `read_at` takes `marked_at` when the report carries one, so a piece finished on a train on Friday night and delivered on Saturday morning was read on Friday, for the streak and for the journal alike.
 
 A report about a piece that is not in the library is refused:
 
@@ -981,6 +984,58 @@ curl http://127.0.0.1:8084/api/report
 
 A piece that has left the library leaves the report with it: the author cannot act on a title that no longer exists, though the reading state keeps the row.
 
+## `GET /api/journal`
+
+What the reading adds up to over time, for the reader: the months, the review schedule, and which piece was in hand on which day.
+
+```sh
+curl 'http://127.0.0.1:8084/api/journal?offset=-180'
+```
+
+```json
+{
+  "months": [
+    {
+      "month": "2026-09",
+      "read": 2,
+      "words": 2286,
+      "recalled": 0
+    }
+  ],
+  "scheduled": 2,
+  "recalled": 0,
+  "history": [
+    {
+      "day": "2026-09-07",
+      "piece_id": "01-paradoksy-i-effekty/buridanov-osel",
+      "title": "Буриданов осёл",
+      "opened_at": "2026-09-07T17:49:57.000Z",
+      "times": 1
+    },
+    {
+      "day": "2026-09-02",
+      "piece_id": "01-paradoksy-i-effekty/korabl-teseya",
+      "title": "Корабль Тесея",
+      "opened_at": "2026-09-02T09:00:00.000Z",
+      "times": 2
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `months` | Newest first; a month with nothing in it is not listed. `read` is pieces finished in the month, by the day each was first finished; `words` is their length as the library has it now; `recalled` is pieces whose review schedule ended in the month - read, then recalled a day, a week and a month later. |
+| `scheduled` | Pieces still in the review schedule. |
+| `recalled` | Pieces carried through the whole schedule, ever. |
+| `history` | One line per piece per day, newest first, at most 200 lines. `opened_at` is the first opening that day, in UTC; `times` is how many times that day. |
+
+**`offset` is the device's clock, in minutes east of UTC** - `-180` for a reader three hours west, `600` for one ten hours east. The stand stamps everything in UTC, and a piece finished at eleven at night would otherwise be journalled under tomorrow, and the last day of a month under the next one. Days and months follow the offset; the stamps themselves are not shifted. Omitted, it is `0`, which is what a script asking from nowhere in particular should get. A value past fourteen hours either way is `400`.
+
+Like the report, **nothing here is stored**: the months are read from the reading state and the schedules, the history from the log of openings that `POST /api/progress` writes, and the words from the library. A piece that has left the library still counts as read in its month - it was - but weighs no words and leaves the history, because a line with an id in place of a title says nothing.
+
+Openings of one piece on one day are one line. A reader who put the phone down three times over breakfast opened the piece once as far as a journal is concerned; `times` keeps the count.
+
 ## `GET /api/reviews`
 
 What is worth recalling today. Answers a list of cards, newest schedules last.
@@ -1150,6 +1205,12 @@ curl http://127.0.0.1:8084/api/export
       "paragraph": 1,
       "spotted_at": "2026-09-06T23:15:00.878Z"
     }
+  ],
+  "openings": [
+    {
+      "piece_id": "02-istoriya/god-bez-leta",
+      "opened_at": "2026-09-02T22:20:55.301Z"
+    }
   ]
 }
 ```
@@ -1163,8 +1224,9 @@ curl http://127.0.0.1:8084/api/export
 | `quotes` | What `GET /api/quotes` returns. |
 | `reactions` | What `GET /api/reactions` returns. |
 | `typos` | What `GET /api/typos` returns. |
+| `openings` | Every opening on record, oldest first: the rows [the journal](#get-apijournal) collapses to a line per piece per day. The rows themselves, because a restore has to put back what was there and not a summary of it. |
 
-A reader who has done nothing gets the same shape with three empty arrays and a real `exported_at`.
+A reader who has done nothing gets the same shape with empty arrays and a real `exported_at`.
 
 **One document rather than an endpoint per kind.** This is read by a script that writes the result back into markdown in a vault, and that script needs the three kinds to be from the same moment: a quote whose piece was finished between two requests would be filed under a reading state that no longer matched it. A snapshot taken in one request is what makes it safe to run at any time, including while somebody is reading.
 
@@ -1210,6 +1272,7 @@ What counts as changed differs by kind, and the differences are deliberate:
 | `notes` | The note was written, rewritten or cleared. |
 | `quotes` | The line was kept **or its comment was edited** - an edit long after the keeping still counts, or the vault would hold a stale comment forever while every export reported success. |
 | `reviews` | The schedule was created by finishing a piece, or moved by an answer. A schedule enrolled but never answered is included: keying on the answer would hide every piece that was finished and not yet recalled. |
+| `openings` | The opening happened after the bound. An opening is never edited, so the moment itself is the change. |
 
 A deletion is the one thing an incremental export cannot report: a removed quote is simply absent, and absence is what an unchanged row looks like too. A merge script that has to notice removals asks for a full export, which is what omitting `since` gives it.
 

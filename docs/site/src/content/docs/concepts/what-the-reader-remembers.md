@@ -51,7 +51,7 @@ Three numbers, shown on the library screen once there is something to show.
 
 ### The streak rule
 
-A streak counts the day each piece was **first** finished, and that day is written once.
+A streak counts the day each piece was **first** finished, and that day is written once. It is the device's day, when the device says: a piece finished on a train on Friday night and delivered on Saturday morning was read on Friday.
 
 Re-reading an old favourite does not move it. If it did, a reader could repair a broken streak by opening something they finished last spring and tapping the button, and a number that can be repaired that way is not measuring anything.
 
@@ -196,6 +196,22 @@ A piece counts as put down only **a day** after you were last in it. Without tha
 
 Nothing on it is collected. Every number is read from the reading state, the reactions and the library, all of which were being written anyway; it is computed when asked for rather than stored, because a statistic kept beside the thing it counts is one that can come to disagree with it.
 
+## The journal
+
+The library screen counts what has been read. The journal says **when**.
+
+Two views of the same rows. The **months**, each with what was finished in it, how long that was, and how many pieces were carried through the review schedule - read, then recalled a day, a week and a month later. And the **openings**: which piece was in your hands on which day, with the hour, and a count when you came back to it more than once that day.
+
+The openings are the one thing here that is kept rather than derived. The reading state has a single row per piece and overwrites it as you move, which answers "where am I" and not "what did I read on Tuesday"; so every opening is written to a log of its own, once, and never changed. A return to a piece you finished months ago is an opening too - that is the thing a single row per piece could not say. Openings of one piece on one day collapse to one line on the screen: putting the phone down three times over breakfast is one reading.
+
+Days and months are **by the clock of the device that asks**, not the stand's. The stand writes everything in UTC, and a piece finished at eleven at night would otherwise be journalled under tomorrow. The app sends how far its clock is from UTC and the grouping follows it.
+
+Nothing in the journal is a goal. There is no target, no streak beyond the one the library screen already shows, and nothing that turns red. The numbers say what happened; what that means is yours to decide.
+
+### The stand, from where you are standing
+
+One more screen, with nothing to press on it: which version this is and which the stand runs, how long ago the library was last published, how many pieces this device is holding for the train, how much of the browser's storage the whole of it takes, and whether anything you did is still waiting to be delivered. Three things a reader away from home cannot otherwise find out.
+
 ## Made here, delivered later
 
 Every change described above is written on the device first and shown as done at once - then delivered to the stand whenever it can be reached ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)). Nothing waits for the network, because the network is usually a Pi at home and the reading usually happens somewhere else.
@@ -224,7 +240,7 @@ The one thing worth knowing about it: those changes live in the browser's storag
 
 ## Taking it back out
 
-Everything above - the reading state, the notes, the quotes, the reactions and the typos - comes back as one JSON document from `GET /api/export`.
+Everything above - the reading state, the notes, the quotes, the reactions, the typos and the openings - comes back as one JSON document from `GET /api/export`.
 
 One document rather than one endpoint per kind, because of what reads it: a script that writes your marks into the vault the library was published from. That script needs the three kinds to be from the same moment. Fetched separately, a piece finished between two requests would be filed under a reading state that no longer described it, and the vault would record something that was never true at any instant. A snapshot taken in one request is what makes the script safe to run at any time, including while somebody is reading on a phone in the next room.
 

@@ -96,10 +96,13 @@ export function useProgress(enabled: boolean): ProgressStore {
   }, [])
 
   const opened = useCallback((id: string): void => {
+    // Every opening is reported, including a return to a finished piece: the
+    // server keeps a log of them for the journal, and a return is the thing
+    // the journal exists to show. The server does not unfinish the piece.
+    report(id, {})
     setProgress((held) => {
-      // Opening a finished piece does not unfinish it, here or on the server.
+      // Nor does the local copy.
       if (held?.pieces.find((state) => state.piece_id === id)?.status === 'read') return held
-      report(id, {})
       return applied(held, id, { status: 'reading' })
     })
   }, [])

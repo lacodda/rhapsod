@@ -43,6 +43,9 @@ describe('href', () => {
       { name: 'library' },
       { name: 'section', section: '02-istoriya' },
       { name: 'piece', id: '02-istoriya/god-bez-leta' },
+      { name: 'journal' },
+      { name: 'stand' },
+      { name: 'report' },
     ] as const) {
       expect(parse(href(route))).toEqual(route)
     }

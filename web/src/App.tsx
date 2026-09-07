@@ -5,6 +5,8 @@ import { Empty, LibraryScreen, SectionScreen } from '@/Library'
 import { BookmarksScreen } from '@/Bookmarks'
 import { Drawer } from '@/Drawer'
 import { ReportScreen } from '@/Feedback'
+import { JournalScreen } from '@/Journal'
+import { StandScreen } from '@/Stand'
 import { MenuIcon } from '@/Icons'
 import { Mark } from '@/Mark'
 import { QuotesScreen } from '@/Quotes'
@@ -154,6 +156,10 @@ export function App() {
           <RequestsScreen requests={requests} />
         ) : route.name === 'report' ? (
           <ReportScreen />
+        ) : route.name === 'journal' ? (
+          <JournalScreen />
+        ) : route.name === 'stand' ? (
+          <StandScreen library={library} sync={sync} />
         ) : route.name === 'bookmarks' ? (
           <BookmarksScreen
             library={library}

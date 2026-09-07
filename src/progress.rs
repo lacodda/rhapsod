@@ -35,10 +35,23 @@ pub struct Stats {
     pub streak: i64,
 }
 
-/// Marks a piece as being read, without moving a finished one back.
+/// One time a piece was opened.
+///
+/// A row that is written once and never changed: the reading state says where
+/// the reader is, this says when they were there.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::FromRow)]
+pub struct Opening {
+    pub piece_id: String,
+    pub opened_at: String,
+}
+
+/// Marks a piece as being read, without moving a finished one back, and logs
+/// the opening.
 ///
 /// Opening a piece that is already read must not undo that: a reader who
-/// returns to a favourite has not unfinished it.
+/// returns to a favourite has not unfinished it. The return is still an
+/// opening, and the journal wants it: "read it in May, came back to it twice
+/// since" is the thing a single row per piece cannot say.
 ///
 /// # Errors
 ///
@@ -55,6 +68,20 @@ pub async fn opened(pool: &SqlitePool, piece_id: &str, marked_at: Option<&str>) 
     .execute(pool)
     .await
     .context("failed to record that the piece was opened")?;
+
+    // The device's clock when the report carries one: an opening queued on a
+    // train is delivered hours later, and the journal should say when the
+    // piece was read, not when the stand heard. A second delivery of the same
+    // report lands on the same key and is ignored.
+    sqlx::query(
+        "INSERT OR IGNORE INTO openings (piece_id, opened_at)
+         VALUES (?, coalesce(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))",
+    )
+    .bind(piece_id)
+    .bind(marked_at)
+    .execute(pool)
+    .await
+    .context("failed to log the opening")?;
     Ok(())
 }
 
@@ -103,9 +130,13 @@ pub async fn set_read(pool: &SqlitePool, piece_id: &str, read: bool, marked_at: 
     // which sorts before every real stamp - correct for the rows written
     // before the queue existed.
     if read {
+        // The day a piece was finished is the device's day when the report
+        // carries one: a piece finished on a train on Friday night and
+        // delivered on Saturday morning was read on Friday, and the streak
+        // and the journal should say so.
         sqlx::query(
             "INSERT INTO reading_state (piece_id, status, read_at, marked_at)
-             VALUES (?, 'read', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), ?)
+             VALUES (?, 'read', coalesce(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?)
              ON CONFLICT (piece_id) DO UPDATE
                 SET status     = 'read',
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
@@ -113,10 +144,11 @@ pub async fn set_read(pool: &SqlitePool, piece_id: &str, read: bool, marked_at: 
                     -- The day a piece was finished is set once. Re-reading it
                     -- does not move the day it was first read, which is what
                     -- a streak counts.
-                    read_at    = coalesce(read_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                    read_at    = coalesce(read_at, excluded.read_at)
               WHERE coalesce(excluded.marked_at, '') >= coalesce(reading_state.marked_at, '')",
         )
         .bind(piece_id)
+        .bind(marked_at)
         .bind(marked_at)
         .execute(pool)
         .await
@@ -162,6 +194,27 @@ pub async fn all(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<State>> {
     .fetch_all(pool)
     .await
     .context("failed to read the reading state")
+}
+
+/// Every opening on record, oldest first.
+///
+/// Openings are never edited, so the moment itself is the change stamp and
+/// `since` cuts on it directly.
+///
+/// # Errors
+///
+/// Fails when the database cannot be read.
+pub async fn openings(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Opening>> {
+    sqlx::query_as::<_, Opening>(
+        "SELECT piece_id, opened_at
+           FROM openings
+          WHERE opened_at > coalesce(?, '')
+          ORDER BY opened_at, piece_id",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("failed to read the openings")
 }
 
 /// The piece to continue: the most recently touched one still unfinished.
@@ -316,6 +369,64 @@ mod tests {
         set_read(&pool, "a/b", true, None).await.unwrap();
         opened(&pool, "a/b", None).await.unwrap();
         assert_eq!(all(&pool, None).await.unwrap()[0].status, "read");
+    }
+
+    #[tokio::test]
+    async fn a_piece_is_finished_on_the_day_the_device_says() {
+        // Finished on a train on Friday night, delivered on Saturday morning:
+        // the streak and the journal both want Friday.
+        let pool = pool().await;
+        set_read(&pool, "a/b", true, Some("2026-05-01T23:40:00.000Z")).await.unwrap();
+        assert_eq!(all(&pool, None).await.unwrap()[0].read_at.as_deref(), Some("2026-05-01T23:40:00.000Z"));
+
+        // Finishing it again later does not move the day it was first read.
+        set_read(&pool, "a/b", true, Some("2026-06-01T10:00:00.000Z")).await.unwrap();
+        assert_eq!(all(&pool, None).await.unwrap()[0].read_at.as_deref(), Some("2026-05-01T23:40:00.000Z"));
+    }
+
+    #[tokio::test]
+    async fn every_opening_is_logged_even_of_a_finished_piece() {
+        // The reading state has one row per piece; the log is what says the
+        // reader came back. A return to a read piece is still an opening.
+        let pool = pool().await;
+        opened(&pool, "a/b", Some("2026-05-01T10:00:00.000Z")).await.unwrap();
+        set_read(&pool, "a/b", true, Some("2026-05-01T10:30:00.000Z")).await.unwrap();
+        opened(&pool, "a/b", Some("2026-06-01T10:00:00.000Z")).await.unwrap();
+
+        let log = openings(&pool, None).await.unwrap();
+        assert_eq!(log.len(), 2, "a return to a finished piece was not logged");
+        assert_eq!(log[0].opened_at, "2026-05-01T10:00:00.000Z", "the log did not keep the device's clock");
+        assert_eq!(log[1].opened_at, "2026-06-01T10:00:00.000Z");
+        assert_eq!(all(&pool, None).await.unwrap()[0].status, "read", "the return unfinished the piece");
+    }
+
+    #[tokio::test]
+    async fn an_opening_delivered_twice_is_logged_once() {
+        // A queue drained twice after a dropped connection sends the same
+        // report again; the log must not turn one opening into two.
+        let pool = pool().await;
+        opened(&pool, "a/b", Some("2026-05-01T10:00:00.000Z")).await.unwrap();
+        opened(&pool, "a/b", Some("2026-05-01T10:00:00.000Z")).await.unwrap();
+        assert_eq!(openings(&pool, None).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_opening_without_a_device_clock_takes_the_stands() {
+        let pool = pool().await;
+        opened(&pool, "a/b", None).await.unwrap();
+        let log = openings(&pool, None).await.unwrap();
+        assert_eq!(log.len(), 1);
+        assert!(log[0].opened_at.ends_with('Z') && log[0].opened_at.len() >= 20, "{:?}", log[0].opened_at);
+    }
+
+    #[tokio::test]
+    async fn openings_since_a_moment_leave_out_the_older_ones() {
+        let pool = pool().await;
+        opened(&pool, "a/b", Some("2026-05-01T10:00:00.000Z")).await.unwrap();
+        opened(&pool, "a/c", Some("2026-06-01T10:00:00.000Z")).await.unwrap();
+        let recent = openings(&pool, Some("2026-05-15T00:00:00.000Z")).await.unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].piece_id, "a/c");
     }
 
     #[tokio::test]

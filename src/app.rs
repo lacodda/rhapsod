@@ -19,6 +19,7 @@ use tower_http::trace::TraceLayer;
 use crate::auth::{self, Reader};
 use crate::bookmarks;
 use crate::feedback;
+use crate::journal;
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
 use crate::progress;
@@ -103,6 +104,7 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/typos", get(read_typos).post(report_typo))
         .route("/typos/{id}", delete(withdraw_typo))
         .route("/report", get(read_report))
+        .route("/journal", get(read_journal))
         .route("/reviews", get(read_due))
         .route("/reviews/{section}/{piece}", post(answer_review))
         .route("/export", get(export))
@@ -667,6 +669,10 @@ struct Export {
     requests: Vec<requests::Request>,
     reactions: Vec<feedback::Reaction>,
     typos: Vec<feedback::Typo>,
+    /// Every opening on record. The journal collapses these to a line per
+    /// piece per day; the export carries the rows themselves, because a
+    /// restore has to put back what was there and not a summary of it.
+    openings: Vec<progress::Opening>,
 }
 
 /// What could be written: the author's plan, as shelves of topics.
@@ -906,6 +912,42 @@ async fn read_report(_: Reader, State(state): State<AppState>) -> Response {
     }
 }
 
+/// How far the asking device's clock is from UTC.
+#[derive(Deserialize)]
+struct Clock {
+    /// Minutes east of UTC: `-180` for a reader three hours west. Absent
+    /// means UTC, which is what a script gets and what the stand itself
+    /// writes.
+    offset: Option<i64>,
+}
+
+/// What the reading adds up to over time: months, the schedule, the openings.
+///
+/// Behind the reader gate like the report: it names titles and says which
+/// days the reader was in the library.
+async fn read_journal(_: Reader, State(state): State<AppState>, axum::extract::Query(clock): axum::extract::Query<Clock>) -> Response {
+    let offset = clock.offset.unwrap_or(0);
+    if !(-journal::FARTHEST_OFFSET..=journal::FARTHEST_OFFSET).contains(&offset) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "offset is not a place on the calendar: minutes from UTC, at most 14 hours either way" })),
+        )
+            .into_response();
+    }
+
+    let library = {
+        let Ok(library) = state.library.read() else {
+            return lock_poisoned();
+        };
+        library.clone()
+    };
+
+    match journal::read(&state.pool, &library, offset).await {
+        Ok(kept) => Json(kept).into_response(),
+        Err(error) => failed(&error, "the journal could not be read"),
+    }
+}
+
 /// What is worth recalling today.
 ///
 /// The card is the piece title and the line it wants remembered; the text is
@@ -987,6 +1029,10 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         Ok(misspelt) => misspelt,
         Err(error) => return failed(&error, "the typos could not be read"),
     };
+    let opened = match progress::openings(&state.pool, since).await {
+        Ok(opened) => opened,
+        Err(error) => return failed(&error, "the openings could not be read"),
+    };
 
     // Not defaulted away: a vault-merge script keys "as of" on this field, and
     // an empty string would pass every check it makes while meaning nothing.
@@ -1010,6 +1056,7 @@ async fn export(_: Reader, State(state): State<AppState>, axum::extract::Query(r
         requests: asked,
         reactions: felt,
         typos: misspelt,
+        openings: opened,
     })
     .into_response()
 }
@@ -1679,10 +1726,64 @@ mod tests {
         assert_eq!(body["reading"][0]["status"], "read");
         assert_eq!(body["notes"][0]["body"], "a note");
         assert_eq!(body["quotes"][0]["text"], "a line");
+        // Finishing wrote the reading state without an opening: the log
+        // holds only what was reported as opened, and nothing was.
+        assert_eq!(body["openings"].as_array().map(Vec::len), Some(0), "{}", body["openings"]);
         // The field a vault-merge script keys "as of" on: an empty string
         // would pass a naive check while meaning nothing.
         let stamp = body["exported_at"].as_str().expect("the export is timestamped");
         assert!(stamp.ends_with('Z') && stamp.len() >= 20, "not a usable timestamp: {stamp:?}");
+    }
+
+    #[tokio::test]
+    async fn an_opening_reaches_the_journal_and_the_export_with_the_devices_clock() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+
+        // The empty report is what the app sends on opening a piece; the
+        // stamp is the phone's, hours before the stand heard about it.
+        post(
+            app.clone(),
+            "/api/progress/02-istoriya/god-bez-leta",
+            r#"{"marked_at":"2026-05-03T07:15:00.000Z"}"#,
+        )
+        .await;
+
+        let (status, body) = get_json(app.clone(), "/api/journal").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["history"][0]["day"], "2026-05-03", "{body}");
+        assert_eq!(body["history"][0]["title"], "Год без лета", "the journal reads as titles");
+        assert_eq!(body["history"][0]["times"], 1);
+        assert_eq!(body["months"].as_array().map(Vec::len), Some(0), "an opening is not a finished piece");
+
+        // Ten hours east, the same opening was in the evening of the same
+        // day; ten hours west, it was the evening before.
+        let (_, east) = get_json(app.clone(), "/api/journal?offset=600").await;
+        assert_eq!(east["history"][0]["day"], "2026-05-03");
+        let (_, west) = get_json(app.clone(), "/api/journal?offset=-600").await;
+        assert_eq!(west["history"][0]["day"], "2026-05-02", "the day did not follow the device's clock");
+        let (status, _) = get_json(app.clone(), "/api/journal?offset=100000").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "an offset off the calendar was accepted");
+
+        let (_, export) = get_json(app.clone(), "/api/export").await;
+        assert_eq!(export["openings"][0]["opened_at"], "2026-05-03T07:15:00.000Z", "{}", export["openings"]);
+
+        // An incremental export after the opening does not carry it.
+        let (_, later) = get_json(app, "/api/export?since=2026-05-04T00:00:00.000Z").await;
+        assert_eq!(later["openings"].as_array().map(Vec::len), Some(0), "{}", later["openings"]);
+    }
+
+    #[tokio::test]
+    async fn a_finished_piece_lands_in_the_journals_month() {
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+
+        let (_, body) = get_json(app, "/api/journal").await;
+        assert_eq!(body["months"].as_array().map(Vec::len), Some(1), "{body}");
+        assert_eq!(body["months"][0]["read"], 1);
+        assert_eq!(body["months"][0]["words"], 3, "the words did not come from the library");
+        assert_eq!(body["scheduled"], 1, "finishing did not put the piece in the schedule");
     }
 
     #[tokio::test]
@@ -1787,7 +1888,15 @@ mod tests {
 
         // The report is the most telling of these: it names titles and says
         // which ones lost the reader.
-        for path in ["/api/notes", "/api/quotes", "/api/export", "/api/reactions", "/api/typos", "/api/report"] {
+        for path in [
+            "/api/notes",
+            "/api/quotes",
+            "/api/export",
+            "/api/reactions",
+            "/api/typos",
+            "/api/report",
+            "/api/journal",
+        ] {
             let (status, _) = get_json(app.clone(), path).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
         }

@@ -20,6 +20,8 @@ export type Route =
   | { name: 'bookmarks'; kind?: string }
   | { name: 'ask' }
   | { name: 'report' }
+  | { name: 'journal' }
+  | { name: 'stand' }
 
 /** Reads the current path as a route. An unknown path is the library. */
 export function parse(path: string): Route {
@@ -27,6 +29,12 @@ export function parse(path: string): Route {
 
   if (parts[0] === 'quotes') {
     return { name: 'quotes' }
+  }
+  if (parts[0] === 'journal') {
+    return { name: 'journal' }
+  }
+  if (parts[0] === 'stand') {
+    return { name: 'stand' }
   }
   if (parts[0] === 'today') {
     return { name: 'today' }
@@ -68,6 +76,10 @@ export function href(route: Route): string {
       return '/ask'
     case 'report':
       return '/report'
+    case 'journal':
+      return '/journal'
+    case 'stand':
+      return '/stand'
     default:
       return '/'
   }
