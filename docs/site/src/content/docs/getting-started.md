@@ -70,4 +70,6 @@ pnpm dev
 - [Publishing content](/rhapsod/guides/publishing-content/) - getting a library onto the stand.
 - [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/) - the stand.
 - [Locking a stand](/rhapsod/guides/locking-a-stand/) - putting a password on the reader.
+- [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/) - the export, and what a script does with it.
+- [Moving a stand](/rhapsod/guides/moving-a-stand/) - the backup, and restoring it on another machine.
 - [Configuration](/rhapsod/reference/configuration/) - every variable the server reads.
