@@ -982,7 +982,7 @@ curl http://127.0.0.1:8084/api/report
 
 **A piece counts as abandoned only a day after the reader was last in it.** Without that gap the report would open with whatever is being read right now, which is not a piece that failed - it is a piece in progress.
 
-A piece that has left the library leaves the report with it: the author cannot act on a title that no longer exists, though the reading state keeps the row.
+A piece that has left the library leaves the report with it, and so does its row from every count: `read`, `unfinished` and `untouched` are counted against what is on the shelf, so the three add up to the library. The author cannot act on a title that no longer exists, though the reading state keeps the row.
 
 ## `GET /api/journal`
 

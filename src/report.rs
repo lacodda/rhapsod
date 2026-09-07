@@ -70,15 +70,26 @@ const SETTLED: &str = "-1 day";
 ///
 /// Fails when the database cannot be read.
 pub async fn read(pool: &SqlitePool, library: &Library) -> Result<Report> {
-    let read: i64 = sqlx::query_scalar("SELECT count(*) FROM reading_state WHERE status = 'read'")
-        .fetch_one(pool)
+    // Counted against the library rather than the table. A row about a piece
+    // that is no longer on the shelf - renamed in the vault, or a companion
+    // file the indexer once mistook for a piece - is not something the reader
+    // has in hand, and counting it would show one fewer piece waiting than
+    // there are. The row itself stays: it is the reading state's business.
+    let rows: Vec<(String, String)> = sqlx::query_as("SELECT piece_id, status FROM reading_state")
+        .fetch_all(pool)
         .await
-        .context("failed to count what was read")?;
-
-    let unfinished: i64 = sqlx::query_scalar("SELECT count(*) FROM reading_state WHERE status = 'reading'")
-        .fetch_one(pool)
-        .await
-        .context("failed to count what was left unfinished")?;
+        .context("failed to read the reading state")?;
+    let (mut read, mut unfinished) = (0_i64, 0_i64);
+    for (piece_id, status) in &rows {
+        if library.piece(piece_id).is_none() {
+            continue;
+        }
+        if status == "read" {
+            read += 1;
+        } else {
+            unfinished += 1;
+        }
+    }
 
     let good = count_reactions(pool, "good").await?;
     let struck = count_reactions(pool, "struck").await?;
@@ -272,7 +283,8 @@ mod tests {
         let (_dir, lib) = library();
         let report = read(&pool, &lib).await.unwrap();
         assert!(report.abandoned.is_empty(), "the report named a piece the library does not have");
-        assert_eq!(report.unfinished, 1, "the reading state still holds the row");
+        assert_eq!(report.unfinished, 0, "a row about a piece that is not on the shelf was counted as in hand");
+        assert_eq!(report.untouched, 2, "the ghost row took a piece off the waiting count");
     }
 
     #[tokio::test]
@@ -290,9 +302,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_library_smaller_than_what_was_read_reports_nothing_waiting() {
+    async fn rows_about_pieces_that_left_the_library_are_not_counted() {
         // Pieces leave the vault; the reading state keeps their rows. The
-        // count of what is still waiting must not go negative.
+        // stand once carried a row for a companion file the indexer had
+        // mistaken for a piece, and the report showed one fewer piece
+        // waiting than there were. Counting only what is on the shelf keeps
+        // the three numbers adding up to the library.
         let pool = pool().await;
         for id in ["a", "b", "c"] {
             sqlx::query("INSERT INTO reading_state (piece_id, status) VALUES (?, 'read')")
@@ -301,10 +316,14 @@ mod tests {
                 .await
                 .unwrap();
         }
+        sqlx::query("INSERT INTO reading_state (piece_id, status) VALUES ('01-paradoksy/kot', 'read')")
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let (_dir, lib) = library();
         let report = read(&pool, &lib).await.unwrap();
-        assert_eq!(report.read, 3);
-        assert_eq!(report.untouched, 0, "the count of what is waiting went negative");
+        assert_eq!(report.read, 1, "rows about pieces that are not on the shelf were counted");
+        assert_eq!(report.untouched, 1, "read + started + waiting no longer adds up to the library");
     }
 }
