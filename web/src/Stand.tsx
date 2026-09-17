@@ -38,6 +38,14 @@ function countHeld(kept: Held, index: LibraryIndex, shelves: Chosen): number {
 const REFRESH_WATCH_MS = 45_000
 const REFRESH_POLL_MS = 1_500
 
+/**
+ * How often the screen re-counts while the first fill is still running.
+ *
+ * Slower than a refresh the reader asked for and is watching: this one runs
+ * unasked, and reading the cache is not free.
+ */
+const FILL_POLL_MS = 2_500
+
 export function StandScreen({ library, sync }: { library: LibraryIndex; sync: SyncState }) {
   // `undefined` is "not asked yet"; `null` is "asked, and the stand is away".
   const [health, setHealth] = useState<Health | null | undefined>(undefined)
@@ -142,6 +150,31 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
       cancelled = true
     }
   }, [])
+
+  /**
+   * Keeps counting while the library is still arriving.
+   *
+   * The worker fills in the background and says nothing when it is done. Read
+   * once on mount, the screen showed "Not ready for the road" to a reader
+   * watching the last pieces land - and went on showing it until the page was
+   * opened again. Seen on the stand with all 62 pieces already held.
+   *
+   * The watch stops as soon as everything wanted is there, so a screen left
+   * open on a ready device is not polling a cache that will not change.
+   */
+  useEffect(() => {
+    if (refresh === 'running') return undefined
+    if (holding === null) return undefined
+    if (holding !== undefined && holding.index && countHeld(holding, index, keeping) >= want) return undefined
+    const timer = setInterval(() => {
+      void held().then((kept) => {
+        if (mounted.current) setHolding(kept)
+      })
+    }, FILL_POLL_MS)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [holding, index, keeping, want, refresh])
 
   return (
     <div className="flex flex-col gap-8">

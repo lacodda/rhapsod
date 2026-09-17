@@ -97,7 +97,18 @@ test('the stand screen says the device is ready for the road', async ({ page }) 
   await page.goto('/stand')
   // The verdict is the answer a reader acts on; a screen that says "ready"
   // while the cache is empty is the defect this whole gate exists for.
-  await expect(page.getByRole('heading', { name: 'Ready for the road.' })).toBeVisible({ timeout: FILL_MS })
+  await expect(page.getByRole('heading', { name: 'Ready for the road.', exact: true })).toBeVisible({ timeout: FILL_MS })
+})
+
+test('the verdict turns to ready while the screen is open', async ({ page }) => {
+  // Straight to the stand screen on a device holding nothing: the fill starts
+  // now and finishes while the reader is looking at the answer. Read once on
+  // mount, the screen said "Not ready" until the page was opened again -
+  // which is exactly when a reader is deciding whether they can leave.
+  await page.goto('/stand')
+  await expect(page.getByRole('heading', { name: /the road/ })).toBeVisible()
+
+  await expect(page.getByRole('heading', { name: 'Ready for the road.', exact: true })).toBeVisible({ timeout: FILL_MS })
 })
 
 test('a deep link opens with the stand out of reach', async ({ page }) => {

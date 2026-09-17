@@ -69,6 +69,15 @@ const whole = (piece) => ({
  */
 let reachable = true
 
+/**
+ * How long a piece takes to arrive.
+ *
+ * Enough that the library is still filling when the stand screen first draws
+ * - the condition the reader is actually in, and the one an instant local
+ * fill cannot reproduce.
+ */
+const PIECE_DELAY_MS = 700
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -129,7 +138,11 @@ const server = createServer((request, response) => {
         json(response, { error: 'no such piece' }, 404)
         return
       }
-      json(response, whole(piece))
+      // Slowly, on purpose. On the real stand the fill is 62 pieces over a
+      // home network and finishes well after the screen has drawn; here it
+      // is three files off a local disk and would finish before the first
+      // render, which hid a stale verdict that a reader saw for minutes.
+      setTimeout(() => json(response, whole(piece)), PIECE_DELAY_MS)
       return
     }
     // The rest of the reader's side starts empty - but empty has a different
