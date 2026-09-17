@@ -14,6 +14,7 @@ import { RequestsScreen } from '@/Requests'
 import { ReviewsScreen } from '@/Reviews'
 import { ReaderScreen } from '@/Reader'
 import { cacheLibrary } from '@/offline'
+import { chosen } from '@/packages'
 import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
@@ -72,9 +73,11 @@ export function App() {
       .then((index) => {
         if (cancelled) return
         setLibrary(index)
-        // Everything, not only what gets opened: the promise is that the
-        // library read at home is the library available on a train.
-        cacheLibrary(index)
+        // The chosen shelves, not only what gets opened: the promise is that
+        // the library read at home is the library available on a train. What
+        // "the chosen shelves" means is this device's business and defaults
+        // to all of them (see `packages.ts`).
+        cacheLibrary(index, chosen())
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof ApiError ? cause.message : 'The library could not be read.')
