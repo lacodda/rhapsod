@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.2] - 2026-09-17
+
+### Bug Fixes
+- Wait for a worker before sending the fill
+
 ## [0.13.1] - 2026-09-17
 
 ### Bug Fixes
