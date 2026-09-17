@@ -81,6 +81,46 @@ jobs:
       - name: Build
         run: pnpm build
 
+  # The promise the app exists to make: the library is there on a train.
+  # A browser decides whether the worker registers, the worker decides what
+  # is cached, and neither can be seen from a unit test - on 2026-09-07 the
+  # offline reader broke and nothing said so. `localhost` is a secure context
+  # by browser rule, so this needs no certificate; on a stand the same context
+  # comes from https (see the "Behind a door" guide).
+  road:
+    name: road
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Only Chromium: this is about a service worker, which every engine
+      # implements the same way, not about rendering.
+      - name: Install the browser
+        run: pnpm exec playwright install --with-deps chromium
+      # The built app, not the dev server: the worker is stamped with the
+      # version at build time and a dev server does not serve it as a stand does.
+      - name: Build
+        run: pnpm build
+      - name: The library holds
+        run: pnpm road
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: road-traces
+          path: web/test-results/
+          retention-days: 7
+
   docs:
     name: docs
     runs-on: ubuntu-latest

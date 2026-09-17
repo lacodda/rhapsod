@@ -30,4 +30,10 @@ export default tseslint.config(
     files: ['public/sw.js'],
     languageOptions: { globals: globals.serviceworker },
   },
+  {
+    // The road gate's stand is a Node program, not part of the app: it serves
+    // the built app to a real browser so the offline promise can be tested.
+    files: ['road/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
 )

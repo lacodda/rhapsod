@@ -28,3 +28,8 @@ Thumbs.db
 
 # Staging directory assembled by tools/stage-deploy.sh for a stand upload.
 /deploy/
+
+# What the road gate leaves behind: traces and screenshots of a failed run.
+# CI uploads them as an artifact; locally they are read and thrown away.
+/web/test-results/
+/web/playwright-report/
