@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.0] - 2026-09-17
+
+### Bug Fixes
+- Make the verdict readable, and the shelf rows thumb-sized
+
+### Documentation
+- Say how to put the stand behind a door
+
+### Features
+- Answer whether the library will be there on the train
+- Choose which shelves ride along
+- Carry the plan of topics onto the train
+- Offer to put the reader on the phone's own screen
+
+### Testing
+- Prove the library holds, in a real browser
+
 ## [0.12.0] - 2026-09-07
 
 ### Bug Fixes
@@ -16,24 +33,20 @@ All notable changes to this project are documented in this file.
 ### Testing
 - Prove the incremental export and the locked stand for every kind
 
-
 ## [0.11.0] - 2026-09-07
 
 ### Features
 - Keep a journal of the reading and say what the stand holds
-
 
 ## [0.10.0] - 2026-09-06
 
 ### Features
 - Say how a piece landed and where it lost the reader
 
-
 ## [0.9.5] - 2026-09-03
 
 ### Bug Fixes
 - Read .env as UTF-8 in the publishing scripts
-
 
 ## [0.9.4] - 2026-09-03
 
@@ -43,60 +56,50 @@ All notable changes to this project are documented in this file.
 ### Dependencies
 - Update the toolchain and dependencies
 
-
 ## [0.9.3] - 2026-09-03
 
 ### Bug Fixes
 - Keep the reader's own notes off the shelf
-
 
 ## [0.9.2] - 2026-09-02
 
 ### Bug Fixes
 - Draw the icons instead of borrowing them from a font
 
-
 ## [0.9.1] - 2026-09-02
 
 ### Bug Fixes
 - Carry the plan to the stand and the requests back
-
 
 ## [0.9.0] - 2026-09-02
 
 ### Features
 - Ask for a novella that is not written yet
 
-
 ## [0.8.0] - 2026-09-02
 
 ### Features
 - Reach the library without leaving the piece
-
 
 ## [0.7.0] - 2026-09-02
 
 ### Features
 - Keep the one file that cannot be republished
 
-
 ## [0.6.0] - 2026-09-02
 
 ### Features
 - Carry the reader's side back to the vault
-
 
 ## [0.5.0] - 2026-09-02
 
 ### Features
 - Bring a finished piece back before it fades
 
-
 ## [0.4.0] - 2026-09-02
 
 ### Features
 - Read anywhere, and deliver it when you are home
-
 
 ## [0.3.0] - 2026-09-02
 
