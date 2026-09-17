@@ -20,6 +20,8 @@ RHAPSOD_PORT=8084                      # the stand's address
 
 That is enough to run. A stand set up this way is **open**: everyone who can reach it on the network is the reader, which is how one reader at home usually runs it.
 
+It is also served over plain HTTP, which is enough to read at home and not enough to read on a train: browsers keep an offline copy for secure pages only. Putting a proxy with a certificate in front of it is a separate job and its own guide - [Behind a door](/rhapsod/guides/behind-a-door/). The stand screen says which of the two you have.
+
 To lock it, add the hash of a password to the same file - single-quoted, because a PHC string is full of `$`:
 
 ```sh

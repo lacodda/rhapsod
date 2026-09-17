@@ -9,6 +9,7 @@
 #
 #   RHAPSOD_CONTENT=/srv/rhapsod/content   # where the library is published to
 #   RHAPSOD_PORT=8084                      # the stand's address
+#   RHAPSOD_BIND=127.0.0.1                 # behind a proxy: loopback only
 #
 # Optionally, to lock the stand - single-quoted, because a PHC string is full
 # of $ and compose expands $VAR in an unquoted value:
@@ -30,7 +31,18 @@ services:
       # 8084 on the host: the other services on this machine hold the ports
       # below it. The port is the stand's address, so it is not a default to
       # change lightly.
-      - "${RHAPSOD_PORT:-8084}:8084"
+      #
+      # Behind a proxy, bind it to the loopback instead, so the only way in is
+      # the secure one:
+      #
+      #   RHAPSOD_BIND=127.0.0.1
+      #
+      # The reader needs a secure context for its offline copy, which means a
+      # proxy holding a certificate in front of this - see the "Behind a door"
+      # guide. Nothing about the door belongs in this file: the names, the
+      # certificates and the authority are the host's business, not the
+      # product's.
+      - "${RHAPSOD_BIND:-0.0.0.0}:${RHAPSOD_PORT:-8084}:8084"
     volumes:
       - ${RHAPSOD_CONTENT:?set RHAPSOD_CONTENT in .env to the library directory}:/content:ro
       - data:/data
