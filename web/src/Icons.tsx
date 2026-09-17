@@ -110,6 +110,29 @@ export function CheckIcon({ size = 14, className }: IconProps) {
   )
 }
 
+/** A cross, for something that is not done and has to be. */
+export function CrossIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...frame(size, className)}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  )
+}
+
+/**
+ * A check still being answered.
+ *
+ * A ring rather than a spinner: the readiness list settles in well under a
+ * second, and a thing that spins for that long reads as trouble.
+ */
+export function PendingIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...frame(size, className)}>
+      <circle cx="12" cy="12" r="7" strokeDasharray="3 3" />
+    </svg>
+  )
+}
+
 /** Onward, into a screen or a piece. */
 export function ArrowRightIcon({ size = 16, className }: IconProps) {
   return (
