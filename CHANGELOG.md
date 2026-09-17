@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.1] - 2026-09-17
+
+### Bug Fixes
+- Keep counting while the library is still arriving
+
 ## [0.13.0] - 2026-09-17
 
 ### Bug Fixes
