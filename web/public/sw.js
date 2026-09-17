@@ -49,9 +49,18 @@ self.addEventListener('activate', (event) => {
   )
 })
 
-/** The library reads that are worth holding: the index and the pieces. */
+/**
+ * The library reads that are worth holding: the index, the pieces, and the
+ * plan of what could be written.
+ *
+ * The plan is content like the rest: the author publishes it alongside the
+ * novellas, it does not change while the reader is out, and asking for a
+ * topic is the one thing a reader does on a train that is not reading. The
+ * request itself was always queued - without the plan cached, there was
+ * simply nothing on the screen to ask from.
+ */
 function isLibraryRead(url) {
-  return url.pathname === '/api/library' || url.pathname.startsWith('/api/pieces/')
+  return url.pathname === '/api/library' || url.pathname === '/api/topics' || url.pathname.startsWith('/api/pieces/')
 }
 
 /**
