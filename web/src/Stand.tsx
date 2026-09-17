@@ -265,12 +265,15 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
  * explanation, because the others explain nothing worth the room.
  */
 function Road({ state }: { state: Readiness }) {
-  const tone = state.ready === null ? 'text-dim' : state.ready ? 'text-good' : 'text-warn'
-
   return (
     <section className="flex flex-col gap-3">
       <header className="flex flex-col gap-1 px-3">
-        <h2 className={`text-lg font-medium ${tone}`}>{verdict(state)}</h2>
+        {/* The verdict is ordinary text, not a coloured one. `good` and `warn`
+            are display tones: measured on the light theme they come out at
+            4.1:1 against the page, and this is the sentence the reader acts
+            on. The colour lives in the marks below, where it is an icon
+            beside a label rather than the label itself. */}
+        <h2 className="text-lg font-medium text-text">{verdict(state)}</h2>
         {state.blocker ? <p className="text-sm leading-relaxed text-dim">{state.blocker.detail}</p> : null}
       </header>
 
@@ -415,8 +418,10 @@ function Shelf({
   on: boolean
   onToggle: () => void
 }) {
+  // `min-h-11` is 44px: a checkbox row is hit with a thumb on a phone, and
+  // the text alone left it at 32.
   return (
-    <label className="flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-soft">
+    <label className="flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-soft">
       <input
         type="checkbox"
         checked={on}
