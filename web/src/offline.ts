@@ -122,7 +122,7 @@ export async function held(): Promise<Held | null> {
  * touched a checkbox, is not a thing a fill should do on its own.
  */
 export function cacheLibrary(library: LibraryIndex, ids: Chosen): void {
-  post('cache-library', library, ids)
+  void postWhenReady('cache-library', library, ids)
 }
 
 /**
@@ -159,3 +159,46 @@ function post(type: 'cache-library' | 'refresh-library', library: LibraryIndex, 
   worker.postMessage({ type, paths: paths(library, ids) })
   return true
 }
+
+/**
+ * Sends the fill, waiting for a worker to send it to.
+ *
+ * On a first visit the worker is still installing when the index arrives, so
+ * there is no controller and `post` drops the message on the floor: the
+ * device held nothing until the reader happened to open the app a second
+ * time. Seen on the stand - a cold visit cached 0 of 62 pieces, and the
+ * screen honestly said it was not ready for the road.
+ *
+ * `ready` resolves once a worker is active for this page, and the controller
+ * arrives with `controllerchange` a moment later - the worker calls
+ * `clients.claim()`, so this does not wait for a reload.
+ */
+async function postWhenReady(
+  type: 'cache-library' | 'refresh-library',
+  library: LibraryIndex,
+  ids: Chosen,
+): Promise<boolean> {
+  if (post(type, library, ids)) return true
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
+  try {
+    await navigator.serviceWorker.ready
+    if (post(type, library, ids)) return true
+    // Active but not yet controlling this page: claim() is on its way.
+    await new Promise<void>((resolve) => {
+      const done = (): void => {
+        navigator.serviceWorker.removeEventListener('controllerchange', done)
+        clearTimeout(timer)
+        resolve()
+      }
+      const timer = setTimeout(done, CLAIM_WAIT_MS)
+      navigator.serviceWorker.addEventListener('controllerchange', done)
+    })
+    return post(type, library, ids)
+  } catch {
+    // No worker to be had; the app still reads online.
+    return false
+  }
+}
+
+/** How long to wait for a freshly activated worker to claim this page. */
+const CLAIM_WAIT_MS = 5_000

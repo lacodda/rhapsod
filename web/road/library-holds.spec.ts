@@ -58,6 +58,26 @@ test('the worker registers and holds the whole library', async ({ page }) => {
   ])
 })
 
+test('the very first visit fills the library, without a second one', async ({ page }) => {
+  // The worker is still installing when the index arrives, so there may be no
+  // controller to post the fill to. Dropped, the device holds nothing until
+  // the reader happens to come back - seen on the stand as 0 of 62 cached,
+  // with the screen honestly reporting it was not ready.
+  //
+  // HONEST LIMIT: this passes with `postWhenReady` disabled too. Against a
+  // stand on the same machine the worker activates before the index arrives,
+  // so the race this guards never opens here; on the Pi, over the network,
+  // it opens every time. The test holds the behaviour rather than proving
+  // the race - the proof was a cold browser against the real stand.
+  //
+  // No reload anywhere in it: that part is the assertion.
+  await page.goto('/stand')
+
+  await expect(page.getByRole('heading', { name: 'Ready for the road.', exact: true })).toBeVisible({
+    timeout: FILL_MS,
+  })
+})
+
 test('the library opens with the stand out of reach', async ({ page }) => {
   await page.goto('/')
   await fills(page, ['/api/library', '/api/pieces/02-myths/icarus'])
