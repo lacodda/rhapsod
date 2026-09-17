@@ -83,4 +83,4 @@ Building it yourself: [CONTRIBUTING.md](https://github.com/lacodda/rhapsod/blob/
 
 ## License
 
-[MIT](https://github.com/lacodda/rhapsod/blob/main/LICENSE)
+MIT (c) [Kirill Lakhtachev](https://lacodda.com)
