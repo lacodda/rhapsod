@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.1] - 2026-09-19
+
+### Bug Fixes
+- Read the volume through the container, not the host
+
 ## [0.14.0] - 2026-09-19
 
 ### Bug Fixes

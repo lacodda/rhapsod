@@ -34,6 +34,8 @@ RHAPSOD_STAND_HOST=pi              # the ssh host the stand runs on
 RHAPSOD_STAND_DIR=/srv/rhapsod     # where its compose file lives
 ```
 
+`RHAPSOD_STAND_COMPOSE` names the compose file on the stand if it is not `docker-compose.yml`. How a stand is deployed is a fact about that machine, so it is a setting rather than something this repository decides.
+
 `backup` takes two more, both optional: `RHAPSOD_BACKUP_TO` (default `./backups`) and `RHAPSOD_BACKUP_KEEP` (default 14).
 
 ## Backups
@@ -49,8 +51,8 @@ That copy is on the same card as the original, which covers a database going bad
 ```
 backup: asking pi for the newest copy
 backup: fetching rhapsod-2026-09-19.db
-backup: checked rhapsod-2026-09-19.db: whole, 48 pieces of reading state
-backup: kept ./backups/rhapsod-2026-09-19.db (2 MB)
+backup: checked rhapsod-2026-09-19.db: whole, 23 pieces of reading state
+backup: kept ./backups/rhapsod-2026-09-19.db (148 kB)
 backup: done: 14 copies in ./backups
 ```
 
@@ -78,10 +80,10 @@ Then it pulls, starts, and asks the stand how it is:
 
 ```
 restore: asking the stand how it is
-ok version   rhapsod 0.14.0
+ok version   rhapsod 0.14.1
 XX library   /content is empty - nothing has been published
 ok database  whole
-ok reader    48 pieces of reading state, 12 notes, 31 quotes
+ok reader    23 pieces of reading state, 0 notes, 7 quotes
 ```
 
 An empty library there is expected: nothing has been published to this machine yet. The line that matters is `reader`, because it is the one thing that could not have been recreated.
@@ -108,21 +110,25 @@ Rows that are already there are left alone, so running it twice changes nothing 
 ## Moving to a new version
 
 ```sh
-./tools/stand/update.sh v0.14.0
+./tools/stand/update.sh v0.14.1
 ```
 
 ```
-update: looking for the image for v0.14.0
-update: copying the database aside on pi: rhapsod-before-v0.14.0-20260919T140322Z.db
+update: looking for the image for v0.14.1
+update: copying the database aside on pi: rhapsod-before-v0.14.1-20260919T193404Z.db
 update: stopping the stand for the copy
-update: copied aside; a rollback restores rhapsod-before-v0.14.0-20260919T140322Z.db
+update: copied aside; a rollback restores rhapsod-before-v0.14.1-20260919T193404Z.db
 update: setting the version in /srv/rhapsod/.env
-update: pulling ghcr.io/lacodda/rhapsod:0.14.0
-update: starting v0.14.0
+update: pulling ghcr.io/lacodda/rhapsod:0.14.1
+update: starting v0.14.1
 update: asking the stand how it is
-ok version   rhapsod 0.14.0
-...
-update: the stand is on v0.14.0 and well.
+ok version   rhapsod 0.14.1
+ok library   62 pieces on 50 shelves in /content
+ok app       built at /app/web
+ok database  whole
+ok reader    23 pieces of reading state, 0 notes, 7 quotes
+ok backups   14 kept, newest from 2026-09-19 (today)
+update: the stand is on v0.14.1 and well.
 ```
 
 Three things it is careful about, all of them learnt the hard way:

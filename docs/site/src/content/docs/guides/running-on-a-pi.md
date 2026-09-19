@@ -51,7 +51,7 @@ That pulls the image the release built, for this Pi's architecture, and starts i
 To pin a version rather than follow `latest`, put it in `.env` - which is what [`tools/stand/update.sh`](/rhapsod/guides/moving-a-stand/#moving-to-a-new-version) does:
 
 ```sh
-RHAPSOD_VERSION=0.14.0
+RHAPSOD_VERSION=0.14.1
 ```
 
 ```sh

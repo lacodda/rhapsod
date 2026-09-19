@@ -57,7 +57,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.14.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.14.1","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
@@ -70,7 +70,7 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.14.0, running on a Pi at home and read daily on a phone. Reading and
+v0.14.1, running on a Pi at home and read daily on a phone. Reading and
 progress, notes and highlights, the offline app and the spaced return all work
 today, and a stand backs itself up, stands back up on a new machine and moves
 to a new version by script. What landed in each version:

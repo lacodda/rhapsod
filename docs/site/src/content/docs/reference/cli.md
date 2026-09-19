@@ -41,7 +41,7 @@ rhapsod doctor
 ```
 
 ```
-ok version   rhapsod 0.14.0
+ok version   rhapsod 0.14.1
 ok library   62 pieces on 19 shelves in /content
 ok app       built at /app/web
 ok database  whole
