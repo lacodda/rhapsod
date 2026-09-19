@@ -37,7 +37,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.13.2","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.14.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -286,6 +286,59 @@ set-cookie: rhapsod_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
 The row is deleted, not merely the cookie forgotten: presenting the same token afterwards gets `{"open":false,"reader":false}` from this endpoint and `401` from anything behind the gate. Sessions are rows rather than signed tokens exactly so that this can be true - a token that cannot be revoked is not a session but a promise.
 
 On an open stand this succeeds and changes nothing, answering `{"open":true,"reader":true}`: there was no session to end.
+
+## `GET /api/sessions`
+
+Every device signed in to this stand, newest first.
+
+```sh
+curl http://127.0.0.1:8084/api/sessions -b cookies.txt
+```
+
+```json
+{
+  "devices": [
+    {"device":"Android phone","started":"2026-09-12T08:14:22.104Z","seen":"2026-09-19T07:02:55.918Z","current":true},
+    {"device":"Windows desktop","started":"2026-08-30T19:41:07.552Z","seen":"2026-09-17T21:15:40.003Z","current":false}
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `device` | What the device is, in words: `Android phone`, `iPad`, `Windows desktop`, `a script`. |
+| `started` | When it signed in. |
+| `seen` | When it was last used. Every request behind the gate pushes this forward. |
+| `current` | Whether this is the device asking. |
+
+`current` is the field the list exists for. The others answer "what is signed in"; this one answers "which of these must I not sign out", which is the question a reader has in front of the list.
+
+The label is worked out from the user agent once, when the session starts, and stored with it - not read again on each request, which would rewrite the list under the reader the day their browser updates itself. A session that predates the label, or a browser that says nothing recognisable, is `a device`: honest about what is known rather than a guess the reader would act on.
+
+A session too old to be used is not listed. The rule is the same one the gate refuses it by, so the list never says a device is signed in when its next request would get a `401`.
+
+Behind the reader gate. On an open stand there are no sessions, so the list is empty - no password means nothing to sign in to.
+
+## `DELETE /api/sessions`
+
+Ends every session, **including this one**.
+
+```sh
+curl -i -X DELETE http://127.0.0.1:8084/api/sessions -b cookies.txt
+```
+
+```
+HTTP/1.1 200 OK
+set-cookie: rhapsod_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
+```
+
+```json
+{"ended":2,"open":false,"reader":false}
+```
+
+Including this one is the point, not an oversight. The case this exists for is a phone left on a train or a session opened on somebody else's machine, and "all the others" spares exactly the session that has to die. Every device, this one included, signs in again afterwards.
+
+`ended` is how many sessions were ended, so the reader can see that the number matched the list they were looking at.
 
 ## `GET /api/progress`
 
@@ -1115,7 +1168,7 @@ curl http://127.0.0.1:8084/api/export
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.13.2",
+  "version": "0.14.0",
   "reading": [
     {
       "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
@@ -1248,7 +1301,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.13.2",
+  "version": "0.14.0",
   "reading": [],
   "notes": [
     {

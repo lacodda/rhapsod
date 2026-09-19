@@ -195,6 +195,23 @@ export interface Session {
   reader: boolean
 }
 
+/** One device signed in to the stand. */
+export interface Device {
+  /** What it is, in words: "Android phone", "Windows desktop", "a device". */
+  device: string
+  /** When it signed in, in UTC. */
+  started: string
+  /** When it was last used, in UTC. */
+  seen: string
+  /**
+   * Whether this is the device asking.
+   *
+   * The field the list exists for: the others answer "what is signed in",
+   * this one answers "which of these must I not sign out".
+   */
+  current: boolean
+}
+
 /** One month of reading, as the journal counts it. */
 export interface Month {
   /** `YYYY-MM`, by the clock of the device that asked. */
@@ -452,6 +469,19 @@ export const withdrawTypo = (id: string): Promise<void> => queue({ path: `/typos
 export const signIn = (password: string): Promise<Session | null> => send<Session>('/session', 'POST', { password })
 
 export const signOut = (): Promise<Session | null> => send<Session>('/session', 'DELETE')
+
+/** Every device signed in to the stand, newest first. */
+export const fetchDevices = (): Promise<{ devices: Device[] }> => get<{ devices: Device[] }>('/sessions')
+
+/**
+ * Ends every session, including this one.
+ *
+ * Not queued like the reading marks are: signing out everywhere is the thing
+ * a reader does *because* something is wrong, and an offline queue would
+ * promise it had happened while the lost phone was still reading.
+ */
+export const signOutEverywhere = (): Promise<{ ended: number } | null> =>
+  send<{ ended: number }>('/sessions', 'DELETE')
 
 /**
  * Reports where the reader is.

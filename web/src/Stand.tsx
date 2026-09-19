@@ -14,13 +14,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { fetchHealth, fetchLibrary, type Health, type LibraryIndex, type Section } from '@/api'
+import { fetchDevices, fetchHealth, fetchLibrary, signOutEverywhere, type Device, type Health, type LibraryIndex, type Section, type Session } from '@/api'
 import { cacheLibrary, held, installed, refreshLibrary, secure, type Held } from '@/offline'
 import { CheckIcon, CrossIcon, PendingIcon } from '@/Icons'
 import { readiness, verdict, type Check, type Readiness } from '@/readiness'
 import { install, offerable, standalone, watchOffer } from '@/install'
 import { choose, chosen, holds, wanted, type Chosen } from '@/packages'
-import { ago, size } from '@/units'
+import { ago, since, size } from '@/units'
 import type { SyncState } from '@/sync'
 
 /**
@@ -46,7 +46,15 @@ const REFRESH_POLL_MS = 1_500
  */
 const FILL_POLL_MS = 2_500
 
-export function StandScreen({ library, sync }: { library: LibraryIndex; sync: SyncState }) {
+export function StandScreen({
+  library,
+  sync,
+  session,
+}: {
+  library: LibraryIndex
+  sync: SyncState
+  session: Session | null
+}) {
   // `undefined` is "not asked yet"; `null` is "asked, and the stand is away".
   const [health, setHealth] = useState<Health | null | undefined>(undefined)
   const [holding, setHolding] = useState<Held | null | undefined>(undefined)
@@ -260,6 +268,11 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
         />
       ) : null}
 
+      {/* Who is signed in. Only on a locked stand: an open one has no
+          sessions, and a section saying "no devices" on a stand that never
+          asks for a password would be answering a question nobody has. */}
+      {session !== null && !session.open ? <Devices /> : null}
+
       {/* The one thing to press. Not a setting: a reader who knows a piece
           was edited in the vault asks for the copy on this device to be
           replaced, and the count above shows it happening. */}
@@ -285,6 +298,118 @@ export function StandScreen({ library, sync }: { library: LibraryIndex; sync: Sy
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * The devices signed in to this stand, and the one way to act on them.
+ *
+ * The list is for a question with one shape: is there something signed in
+ * that should not be. So every row says what it is and when it was last used,
+ * this device is marked, and the only button ends all of them.
+ *
+ * All of them, including this one. "All the others" reads as the kinder
+ * option and is useless in the case the button exists for - a phone left
+ * somewhere, the reader at a machine that is not theirs - where sparing "this
+ * one" spares exactly the session that has to die.
+ */
+function Devices() {
+  // `undefined` is "not asked yet"; `null` is "asked, and it did not answer".
+  const [devices, setDevices] = useState<Device[] | null | undefined>(undefined)
+  const [signingOut, setSigningOut] = useState(false)
+  const [asked, setAsked] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchDevices()
+      .then((answer) => {
+        if (!cancelled) setDevices(answer.devices)
+      })
+      .catch(() => {
+        if (!cancelled) setDevices(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const endAll = async (): Promise<void> => {
+    setSigningOut(true)
+    try {
+      await signOutEverywhere()
+    } finally {
+      // Whatever happened, this device is signed out or the stand is out of
+      // reach; either way the app has to ask again rather than carry on
+      // showing a library it may no longer be allowed to read.
+      window.location.reload()
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="px-3 text-sm font-medium text-text">Signed in</h2>
+      {devices === undefined ? (
+        <p className="px-3 text-sm text-dim">Asking…</p>
+      ) : devices === null ? (
+        <p className="px-3 text-sm text-dim">The stand is out of reach, so what is signed in cannot be said.</p>
+      ) : (
+        <>
+          <ul className="mx-3 flex flex-col divide-y divide-line rounded-lg border border-line">
+            {devices.map((device) => (
+              <li key={`${device.device}-${device.started}`} className="flex items-baseline justify-between gap-4 px-3 py-2">
+                <span className="text-sm text-text">
+                  {device.device}
+                  {device.current ? <span className="ml-2 text-xs text-dim">this device</span> : null}
+                </span>
+                <span className="shrink-0 text-right text-xs text-dim">{since(device.seen)}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="flex flex-col gap-2 px-3 pt-1">
+            {asked ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void endAll()
+                  }}
+                  disabled={signingOut}
+                  className="rounded-lg border border-warn px-3 py-1.5 text-sm text-text transition-colors hover:bg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:text-dim"
+                >
+                  {signingOut ? 'Signing out…' : `Sign out all ${devices.length}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAsked(false)
+                  }}
+                  disabled={signingOut}
+                  className="rounded-lg px-3 py-1.5 text-sm text-dim transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  Keep them
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setAsked(true)
+                }}
+                className="self-start rounded-lg border border-line px-3 py-1.5 text-sm text-text transition-colors hover:border-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Sign out everywhere
+              </button>
+            )}
+            <p className="text-xs leading-relaxed text-dim">
+              {asked
+                ? 'Every device signs in again, this one included - there is no way to spare it, because the reason to press this is usually a device you are not holding.'
+                : 'Ends every session on the stand, including this device. For a phone left somewhere, or a browser signed in on a machine that is not yours.'}
+            </p>
+          </div>
+        </>
+      )}
+    </section>
   )
 }
 

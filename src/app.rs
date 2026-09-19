@@ -87,6 +87,7 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/pieces/{section}/{piece}", get(piece))
         .route("/reindex", post(reindex))
         .route("/session", get(session).post(sign_in).delete(sign_out))
+        .route("/sessions", get(sessions).delete(sign_out_everywhere))
         .route("/progress", get(read_progress))
         .route("/progress/{section}/{piece}", post(record_progress))
         .route("/next", get(what_next))
@@ -343,7 +344,11 @@ struct SignIn {
 }
 
 /// Signs in, setting the session cookie.
-async fn sign_in(State(state): State<AppState>, Json(body): Json<SignIn>) -> Response {
+///
+/// The headers come before the body in the signature because `Json` consumes
+/// the request: an extractor that takes the body has to be last, and putting
+/// the header one after it does not compile.
+async fn sign_in(State(state): State<AppState>, headers: axum::http::HeaderMap, Json(body): Json<SignIn>) -> Response {
     let Some(hash) = state.password_hash.as_deref() else {
         // Nothing to sign in to. Saying so beats handing out a session that
         // protects nothing and would confuse the app's own state.
@@ -367,7 +372,12 @@ async fn sign_in(State(state): State<AppState>, Json(body): Json<SignIn>) -> Res
     }
 
     let token = auth::new_token();
-    if let Err(error) = auth::start(&state.pool, &token).await {
+    // What this device is, worked out once and stored with the session: the
+    // stand screen lists what is signed in, and a label read out of the user
+    // agent on every request would change under the reader when their browser
+    // updates itself.
+    let device = auth::device_from(auth::agent_of(&headers));
+    if let Err(error) = auth::start(&state.pool, &token, device.as_deref()).await {
         return failed(&error, "the session could not be started");
     }
 
@@ -383,6 +393,49 @@ async fn sign_out(State(state): State<AppState>, headers: axum::http::HeaderMap)
     }
     let open = state.password_hash.is_none();
     ([(header::SET_COOKIE, auth::cleared_cookie())], Json(SessionState { open, reader: open })).into_response()
+}
+
+/// What `GET /api/sessions` answers: every device signed in to this stand.
+#[derive(Serialize)]
+struct Devices {
+    devices: Vec<auth::Device>,
+}
+
+/// The devices signed in, newest first.
+///
+/// Behind the reader gate: who is signed in is exactly the sort of thing a
+/// stand should not hand to whoever asks. On an open stand there is nothing
+/// to list - no password means no sessions - and the empty list says so
+/// truthfully without a special case.
+async fn sessions(_: Reader, State(state): State<AppState>, headers: axum::http::HeaderMap) -> Response {
+    let current = auth::token_from_headers(&headers);
+    match auth::devices(&state.pool, current.as_deref()).await {
+        Ok(devices) => Json(Devices { devices }).into_response(),
+        Err(error) => failed(&error, "the sessions could not be read"),
+    }
+}
+
+/// Ends every session on the stand, including this one.
+///
+/// Including this one on purpose: the case this exists for is a phone left
+/// somewhere, and "all but this one" spares exactly the session that has to
+/// die when the reader is signing out from a machine that is not theirs.
+///
+/// The cookie is cleared in the same answer, so the app the reader is holding
+/// does not go on believing it is signed in against a stand that has
+/// forgotten it.
+async fn sign_out_everywhere(_: Reader, State(state): State<AppState>) -> Response {
+    match auth::end_everywhere(&state.pool).await {
+        Ok(ended) => {
+            let open = state.password_hash.is_none();
+            (
+                [(header::SET_COOKIE, auth::cleared_cookie())],
+                Json(json!({ "ended": ended, "open": open, "reader": open })),
+            )
+                .into_response()
+        }
+        Err(error) => failed(&error, "the sessions could not be ended"),
+    }
 }
 
 /// Everything the reader has read, and what it adds up to.
@@ -1927,6 +1980,7 @@ mod tests {
             "/api/journal",
             "/api/reviews",
             "/api/export",
+            "/api/sessions",
         ] {
             let (status, _) = get_json(app.clone(), path).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path} was readable without signing in");
@@ -1950,6 +2004,7 @@ mod tests {
             ("POST", "/api/typos"),
             ("DELETE", "/api/typos/some-id"),
             ("POST", "/api/reviews/02-istoriya/god-bez-leta"),
+            ("DELETE", "/api/sessions"),
         ] {
             let (status, _) = match method {
                 "POST" => post(app.clone(), path, "{}").await,
@@ -1958,6 +2013,142 @@ mod tests {
             };
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path} was writable without signing in");
         }
+    }
+
+    #[tokio::test]
+    async fn the_stand_lists_the_devices_signed_in_to_it() {
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let hash = crate::auth::hash("a good passphrase").unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
+
+        // Two devices sign in, each saying what it is.
+        let sign_in = |agent: &'static str| {
+            let app = app.clone();
+            async move {
+                let response = app
+                    .oneshot(
+                        Request::post("/api/session")
+                            .header("content-type", "application/json")
+                            .header("user-agent", agent)
+                            .body(Body::from(r#"{"password":"a good passphrase"}"#))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                response
+                    .headers()
+                    .get(axum::http::header::SET_COOKIE)
+                    .expect("signing in should set a cookie")
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_string()
+            }
+        };
+
+        let phone = sign_in("Mozilla/5.0 (Linux; Android 14; SM-G991B) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36").await;
+        let _laptop = sign_in("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36").await;
+
+        // The phone asks, and sees itself marked.
+        let response = app
+            .clone()
+            .oneshot(Request::get("/api/sessions").header("cookie", &phone).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        let devices = body["devices"].as_array().expect("a list of devices");
+        assert_eq!(devices.len(), 2, "{body}");
+
+        let here = devices.iter().find(|row| row["current"] == true).expect("the asking device should be marked");
+        assert_eq!(here["device"], "Android phone", "{body}");
+        assert_eq!(
+            devices.iter().filter(|row| row["current"] == true).count(),
+            1,
+            "more than one device claimed to be the one asking"
+        );
+        assert!(
+            devices.iter().any(|row| row["device"] == "Windows desktop"),
+            "the other device is missing: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn signing_out_everywhere_locks_every_device_out_including_this_one() {
+        // The case this exists for is a phone left on a train. A version that
+        // spared "this one" would spare exactly the session that has to die
+        // when the reader is signing out from somebody else's machine.
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let hash = crate::auth::hash("a good passphrase").unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), Some(hash));
+
+        let mut cookies = Vec::new();
+        for agent in ["curl/8.4.0", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/api/session")
+                        .header("content-type", "application/json")
+                        .header("user-agent", agent)
+                        .body(Body::from(r#"{"password":"a good passphrase"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let cookie = response.headers().get(axum::http::header::SET_COOKIE).unwrap().to_str().unwrap();
+            cookies.push(cookie.split(';').next().unwrap().to_string());
+        }
+
+        // Both are live before.
+        for cookie in &cookies {
+            let response = app
+                .clone()
+                .oneshot(Request::get("/api/progress").header("cookie", cookie).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let response = app
+            .clone()
+            .oneshot(Request::delete("/api/sessions").header("cookie", &cookies[0]).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        // The cookie is cleared in the same answer, so the app holding it does
+        // not go on believing it is signed in.
+        let cleared = response.headers().get(axum::http::header::SET_COOKIE).expect("the cookie should be cleared");
+        assert!(cleared.to_str().unwrap().contains("Max-Age=0"));
+        let body: serde_json::Value = serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["ended"], 2, "{body}");
+
+        // Neither is live after - including the one that asked.
+        for cookie in &cookies {
+            let response = app
+                .clone()
+                .oneshot(Request::get("/api/progress").header("cookie", cookie).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "a device was left signed in");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_open_stand_has_no_devices_to_list() {
+        // No password means nothing to sign in to, so the list is empty
+        // rather than a special case saying so.
+        let (web, content) = (web_root(), content_root());
+        let library = Library::load(content.path()).unwrap();
+        let app = router(pool().await, web.path(), library, content.path().to_path_buf(), None);
+
+        let (status, body) = get_json(app, "/api/sessions").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["devices"].as_array().expect("a list").len(), 0);
     }
 
     #[tokio::test]

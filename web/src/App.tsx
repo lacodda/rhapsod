@@ -162,7 +162,7 @@ export function App() {
         ) : route.name === 'journal' ? (
           <JournalScreen />
         ) : route.name === 'stand' ? (
-          <StandScreen library={library} sync={sync} />
+          <StandScreen library={library} sync={sync} session={session} />
         ) : route.name === 'bookmarks' ? (
           <BookmarksScreen
             library={library}

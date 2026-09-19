@@ -23,3 +23,23 @@ export function size(bytes: number): string {
   if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} kB`
   return `${(bytes / 1_000_000).toFixed(1)} MB`
 }
+
+/**
+ * How long ago an instant was, given as an ISO timestamp.
+ *
+ * `ago` takes seconds, which is what the health endpoint gives; sessions carry
+ * the moment itself. Converting here rather than at each call site keeps one
+ * idea of what "2 days ago" means on a screen.
+ *
+ * A timestamp that cannot be read is said to be unknown rather than rendered
+ * as "NaN days ago": these come from the database and should always parse, so
+ * the case is about being honest if one ever does not.
+ */
+export function since(stamp: string, now: number = Date.now()): string {
+  const at = Date.parse(stamp)
+  if (Number.isNaN(at)) return 'at an unknown time'
+  // A clock a little ahead of the stand's would otherwise read as "-1 days
+  // ago"; there is no useful thing to say about the future here.
+  const seconds = Math.max(0, Math.round((now - at) / 1000))
+  return ago(seconds)
+}

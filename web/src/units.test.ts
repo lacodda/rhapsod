@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ago, size } from '@/units'
+import { ago, since, size } from '@/units'
 
 describe('ago', () => {
   it('rounds down to the largest unit that is at least one', () => {
@@ -20,5 +20,26 @@ describe('size', () => {
     expect(size(999)).toBe('999 B')
     expect(size(312_400)).toBe('312 kB')
     expect(size(4_180_000)).toBe('4.2 MB')
+  })
+})
+
+describe('since', () => {
+  const now = Date.parse('2026-09-19T12:00:00.000Z')
+
+  it('reads a timestamp the way the rest of the screen reads seconds', () => {
+    expect(since('2026-09-19T11:59:30.000Z', now)).toBe('just now')
+    expect(since('2026-09-19T11:30:00.000Z', now)).toBe('30 minutes ago')
+    expect(since('2026-09-19T09:00:00.000Z', now)).toBe('3 hours ago')
+    expect(since('2026-09-17T12:00:00.000Z', now)).toBe('2 days ago')
+  })
+
+  it('does not count backwards when a clock is ahead of the stand', () => {
+    // A phone a minute fast would otherwise be shown as signed in "-1 days
+    // ago", which reads as a bug in the stand rather than in the clock.
+    expect(since('2026-09-19T12:05:00.000Z', now)).toBe('just now')
+  })
+
+  it('says it does not know rather than showing NaN', () => {
+    expect(since('not a timestamp', now)).toBe('at an unknown time')
   })
 })
