@@ -43,10 +43,16 @@ The variable is read once at startup, so adding it takes a `docker compose up -d
 ## Bringing it up
 
 ```sh
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-The first build on a Pi takes a while - a Rust release build and a Node build. Later builds reuse the dependency layers and are much shorter.
+That pulls the image the release built, for this Pi's architecture, and starts it. Nothing is compiled here: a Pi recompiling Rust for every version is half an hour of every release, and the binary it produced was not the one the pipeline went green on.
+
+To pin a version rather than follow `latest`, put it in `.env` - which is what [`tools/stand/update.sh`](/rhapsod/guides/moving-a-stand/#moving-to-a-new-version) does:
+
+```sh
+RHAPSOD_VERSION=0.14.0
+```
 
 ```sh
 curl http://pi:8084/api/health
@@ -56,13 +62,33 @@ The container's own healthcheck calls the same endpoint, so `docker compose ps` 
 
 ## Where the state is
 
-The database is one file in the `data` volume: where you stopped in each piece, what you have finished, and the sessions of any browser signed in to a locked stand. A backup is a copy of it:
+The database is one file in the `data` volume: where you stopped in each piece, what you have finished, and the sessions of any browser signed in to a locked stand. It is the only part of a stand that exists nowhere else.
+
+The server copies it once a day into `backups/` beside it, opens the copy to check it, and keeps a fortnight. [`tools/stand/backup.sh`](/rhapsod/guides/moving-a-stand/#backups) brings the newest of those onto another machine, because a copy on the same card as the original does not survive the card.
+
+To take one by hand, stop the server first:
 
 ```sh
+docker compose -f docker-compose.prod.yml stop server
 docker compose -f docker-compose.prod.yml cp server:/data/rhapsod.db ./rhapsod-backup.db
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-Copying while the server runs is safe: the database is in WAL mode. Restoring is copying the file back and restarting the container.
+The stop matters. In WAL mode recent writes live in a sidecar file, so copying `rhapsod.db` from underneath a running server can catch it mid-write and produce a file that opens and is missing the last thing the reader did. A stopped server has checkpointed everything into the one file. (The daily copy needs no stop because it is written with `VACUUM INTO`, which is SQLite's own way of taking a consistent snapshot of a live database.)
+
+Whatever the copy, open it before trusting it - `backup.sh` does this for you:
+
+```sh
+sqlite3 rhapsod-backup.db 'PRAGMA integrity_check;'
+```
+
+## Asking how the stand is
+
+```sh
+docker compose -f docker-compose.prod.yml exec server rhapsod doctor
+```
+
+The library, the database, the backups, the app and the door in one answer, against the configuration the server is actually running on. See [Commands](/rhapsod/reference/cli/#rhapsod-doctor).
 
 ## Updating the library
 

@@ -52,12 +52,12 @@ Docker on a Raspberry Pi, and one container is the whole installation:
 git clone https://github.com/lacodda/rhapsod && cd rhapsod
 printf 'RHAPSOD_CONTENT=/srv/rhapsod/content
 ' > .env    # where the library is published to
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d
 curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.13.2","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.14.0","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
@@ -70,9 +70,10 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.13.2, running on a Pi at home and read daily on a phone. Reading and
+v0.14.0, running on a Pi at home and read daily on a phone. Reading and
 progress, notes and highlights, the offline app and the spaced return all work
-today. What landed in each version:
+today, and a stand backs itself up, stands back up on a new machine and moves
+to a new version by script. What landed in each version:
 [CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).
 
 ## Documentation

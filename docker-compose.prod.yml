@@ -15,11 +15,20 @@
 # of $ and compose expands $VAR in an unquoted value:
 #
 #   RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=...'   # from `rhapsod hash`
+#   RHAPSOD_VERSION=0.14.0                 # the released version to run
 services:
   server:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # The image the release built, not a build on this machine. A Pi
+    # recompiling Rust for every tag is half an hour of a release, and the
+    # binary it ends up with is not the one CI went green on - it was built
+    # by a different toolchain on a different machine, so a green pipeline
+    # said nothing about what the stand is actually running.
+    #
+    # Pinned by default to nothing: `latest` moves, and a stand that follows
+    # it changes version whenever somebody else ships. `tools/stand/update.sh`
+    # writes the number into .env, so a later `up -d` by hand brings up the
+    # same version rather than whatever latest has become.
+    image: ghcr.io/lacodda/rhapsod:${RHAPSOD_VERSION:-latest}
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-rhapsod=info,tower_http=info}
