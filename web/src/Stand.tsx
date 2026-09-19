@@ -356,12 +356,21 @@ function Devices() {
         <>
           <ul className="mx-3 flex flex-col divide-y divide-line rounded-lg border border-line">
             {devices.map((device) => (
-              <li key={`${device.device}-${device.started}`} className="flex items-baseline justify-between gap-4 px-3 py-2">
+              <li key={`${device.device}-${device.started}`} className="flex flex-col gap-0.5 px-3 py-2">
                 <span className="text-sm text-text">
                   {device.device}
                   {device.current ? <span className="ml-2 text-xs text-dim">this device</span> : null}
                 </span>
-                <span className="shrink-0 text-right text-xs text-dim">{since(device.seen)}</span>
+                {/* Both dates, because the label alone does not tell two
+                    phones apart - and a list of three "Android phone" rows is
+                    what a household actually has. The question the reader
+                    brings here is whether something is signed in that should
+                    not be, and that is answered by when it signed in: a phone
+                    from a month ago used an hour ago is a different story
+                    from one that signed in today. */}
+                <span className="text-xs text-dim">
+                  signed in {since(device.started)} · last used {since(device.seen)}
+                </span>
               </li>
             ))}
           </ul>
