@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.0] - 2026-09-19
+
+### Bug Fixes
+- Say when a device signed in, not only when it was used
+
+### Documentation
+- Make the readme a shopfront
+- Use the line's license line
+
+### Features
+- Open every copy before calling it a backup
+- Say whether a stand is well in one command
+- Back up, stand up and update a stand by script
+- Show what is signed in, and sign out everywhere
+
 ## [0.13.2] - 2026-09-17
 
 ### Bug Fixes
