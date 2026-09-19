@@ -24,7 +24,11 @@ $ErrorActionPreference = 'Stop'
 $app = 'rhapsod'
 $volume = 'rhapsod_data'
 $volumeData = '/data'
-$composeFile = 'docker-compose.prod.yml'
+# The compose file on the stand. A setting, not a constant: how a stand is
+# deployed is a fact about that machine, not something this repository gets
+# to decide.
+$composeFile = $env:RHAPSOD_STAND_COMPOSE
+if (-not $composeFile) { $composeFile = 'docker-compose.yml' }
 $service = 'server'
 # The variable the compose file reads the image tag from.
 $versionVar = 'RHAPSOD_VERSION'

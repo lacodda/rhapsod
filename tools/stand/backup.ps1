@@ -28,7 +28,11 @@ $ErrorActionPreference = 'Stop'
 # the same in every one of them.
 $app = 'rhapsod'
 $volumeData = '/data'
-$composeFile = 'docker-compose.prod.yml'
+# The compose file on the stand. A setting, not a constant: how a stand is
+# deployed is a fact about that machine, not something this repository gets
+# to decide.
+$composeFile = $env:RHAPSOD_STAND_COMPOSE
+if (-not $composeFile) { $composeFile = 'docker-compose.yml' }
 $service = 'server'
 
 $here = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -51,7 +55,12 @@ New-Item -ItemType Directory -Force -Path $To | Out-Null
 # copy is *of*; a modification time is the day the file was last touched, and
 # a directory copied about arrives stamped today.
 Say "asking $standHost for the newest copy"
-$newest = (& ssh $standHost "ls -1 '$volumeData'/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1") | Select-Object -Last 1
+# Listed through the container, not over ssh alone: the database lives in a
+# Docker volume, so this path is inside the running service and does not
+# exist on the host. An `ls` on the host finds nothing and looks exactly
+# like a stand that has taken no backups yet.
+$listing = "cd '$standDir' && docker compose -f '$composeFile' exec -T $service sh -c 'ls -1 $volumeData/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'"
+$newest = (& ssh $standHost $listing) | Select-Object -Last 1
 if (-not $newest) {
     # The server writes one within the hour of starting. Taking a copy of the
     # live database from outside would be exactly the mid-write copy the daily

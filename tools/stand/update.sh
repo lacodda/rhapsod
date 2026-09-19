@@ -25,7 +25,11 @@ set -euo pipefail
 app=rhapsod
 volume=rhapsod_data
 volume_data=/data
-compose_file=docker-compose.prod.yml
+# The compose file on the stand. A setting, not a constant: a stand is a
+# machine somebody set up, and how it is deployed is a fact about that
+# machine rather than something this repository gets to decide. The real one
+# is called docker-compose.yml.
+compose_file=${RHAPSOD_STAND_COMPOSE:-docker-compose.yml}
 service=server
 # The variable the compose file reads the image tag from. Spelt out rather
 # than derived from `$app`: upper-casing a variable is a bashism, and these

@@ -31,7 +31,11 @@ set -euo pipefail
 # this block and nothing else.
 app=rhapsod
 volume_data=/data
-compose_file=docker-compose.prod.yml
+# The compose file on the stand. A setting, not a constant: a stand is a
+# machine somebody set up, and how it is deployed is a fact about that
+# machine rather than something this repository gets to decide. The real one
+# is called docker-compose.yml.
+compose_file=${RHAPSOD_STAND_COMPOSE:-docker-compose.yml}
 service=server
 
 here="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -40,15 +44,24 @@ here="$(cd "$(dirname "$0")/../.." && pwd)"
 to=${1:-${RHAPSOD_BACKUP_TO:-./backups}}
 keep=${RHAPSOD_BACKUP_KEEP:-14}
 need RHAPSOD_STAND_HOST "name the ssh host the stand runs on (e.g. pi)"
+need RHAPSOD_STAND_DIR "name the directory on that host its compose file lives in (e.g. /srv/$app)"
 host=$RHAPSOD_STAND_HOST
+dir=$RHAPSOD_STAND_DIR
 
 mkdir -p "$to"
 
 # The newest daily copy, by the date in its name. The name carries the day the
 # copy is *of*; a modification time is the day the file was last touched, and
 # a directory copied about arrives stamped today.
+#
+# Listed through the container, not over ssh alone: the database lives in a
+# Docker volume, so `$volume_data` is a path inside the running service and
+# does not exist on the host at all. An `ls` on the host finds nothing and
+# looks exactly like a stand that has taken no backups yet.
 say "asking $host for the newest copy"
-newest=$(ssh "$host" "ls -1 '$volume_data'/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1" </dev/null || true)
+newest=$(ssh "$host" "cd '$dir' && docker compose -f '$compose_file' exec -T $service sh -c 'ls -1 $volume_data/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'" </dev/null || true)
+newest=$(printf '%s' "$newest" | tr -d '
+')
 
 if [ -z "$newest" ]; then
     # The server writes one within the hour of starting. Nothing here can make
@@ -69,15 +82,15 @@ say "fetching $name"
 #
 # Straight to a file here, so nothing is held in memory: a database is tens of
 # megabytes and a shell that buffers it is a shell that fails on a Pi.
-if ! ssh "$host" "cd '$RHAPSOD_STAND_DIR' && docker compose -f '$compose_file' exec -T $service cat '$newest'" </dev/null > "$landing.part"; then
+if ! ssh "$host" "cd '$dir' && docker compose -f '$compose_file' exec -T $service cat '$newest'" </dev/null > "$landing.part"; then
     rm -f "$landing.part"
-    die "the copy could not be read off $host: check that the stand is up (docker compose ps) and that $RHAPSOD_STAND_DIR is its directory"
+    die "the copy could not be read off $host: check that the stand is up (docker compose ps) and that $dir is its directory"
 fi
 
 # Opened here, before it is given the name of a backup. A file under the right
 # name that turns out to be truncated is worse than no file: it is the one
 # somebody reaches for.
-if ! check_database "$landing.part"; then
+if ! check_database "$landing.part" "$name"; then
     rm -f "$landing.part"
     die "what arrived is not a whole $app database - the copy was not kept"
 fi
@@ -98,4 +111,5 @@ if [ "$count" -gt "$keep" ]; then
     done
 fi
 
-say "done: $(ls -1 "$to"/$app-????-??-??.db 2>/dev/null | wc -l | tr -d ' ') copies in $to"
+kept=$(ls -1 "$to"/$app-????-??-??.db 2>/dev/null | wc -l | tr -d ' ')
+say "done: $kept $([ "$kept" -eq 1 ] && echo copy || echo copies) in $to"

@@ -74,6 +74,10 @@ load_env() {
 # the worst of the three answers.
 check_database() {
     file="$1"
+    # The name to say in the report. A copy is checked under a temporary name
+    # so a failed one never exists under the real one, and "rhapsod-...db.part
+    # is whole" reads as a different file from the one being kept.
+    shown=${2:-$(basename "$file")}
     [ -s "$file" ] || { echo "$_stand_who: $file is empty" >&2; return 1; }
 
     command -v sqlite3 >/dev/null 2>&1 || {
@@ -97,7 +101,7 @@ check_database() {
         echo "$_stand_who: $file does not hold a $app database: $rows" >&2
         return 1
     }
-    say "checked $(basename "$file"): whole, $rows pieces of reading state"
+    say "checked $shown: whole, $rows pieces of reading state"
     return 0
 }
 
