@@ -127,11 +127,16 @@ fn the_changelog_covers_the_version_being_shipped() {
 }
 
 #[test]
-fn the_readme_documents_every_environment_variable() {
+fn the_reference_documents_every_environment_variable() {
     // The configuration table is the only place an operator learns these
     // exist. A variable added to the code and not to the table is invisible
     // until someone reads the source, which is not what a self-hosted product
     // can ask of them.
+    //
+    // The table lives on the docs site: the README is a shopfront and the
+    // reference is a reference. This check followed the text there rather
+    // than being deleted with it - a gate that guarded a page is owed to
+    // wherever that page went, or the page arrives unguarded.
     //
     // The rule is "read by the server", not "starts with RHAPSOD_", which is
     // why this scans `config.rs` for `lookup(...)` rather than grepping the
@@ -141,7 +146,7 @@ fn the_readme_documents_every_environment_variable() {
     // table, and a check that swept the prefix would demand they be documented
     // as server configuration - which would be a lie.
     let config = read("src/config.rs");
-    let readme = read("README.md");
+    let reference = read("docs/site/src/content/docs/reference/configuration.md");
     let example = read(".env.example");
 
     let mut found = 0;
@@ -153,8 +158,8 @@ fn the_readme_documents_every_environment_variable() {
         found += 1;
 
         assert!(
-            readme.contains(variable),
-            "{variable} is read by the server but missing from the README's configuration table"
+            reference.contains(variable),
+            "{variable} is read by the server but missing from the configuration reference"
         );
         assert!(example.contains(variable), "{variable} is read by the server but missing from .env.example");
     }
@@ -162,10 +167,47 @@ fn the_readme_documents_every_environment_variable() {
 }
 
 #[test]
+fn the_reference_documents_every_command() {
+    // Same rule, for the other half of the surface: a command without a page
+    // does not exist. `doctor` is the reason this check is here - it was
+    // added in v0.14 and the CLI page had to gain it in the same commit.
+    let main = read("src/main.rs");
+    let reference = read("docs/site/src/content/docs/reference/cli.md");
+
+    // The subcommands as clap sees them: the variants of `enum Command`.
+    let Some(block) = main.split("enum Command {").nth(1).and_then(|rest| rest.split("\n}").next()) else {
+        panic!("src/main.rs no longer declares `enum Command`; the check is looking in the wrong place");
+    };
+
+    let mut found = 0;
+    for line in block.lines() {
+        let line = line.trim();
+        // A variant is a bare identifier at the start of a line; everything
+        // else in the block is a doc comment, an attribute or a field.
+        if line.starts_with("//") || line.starts_with('#') || line.starts_with('/') {
+            continue;
+        }
+        let Some(name) = line.split([' ', '{', '(', ',']).next().filter(|name| !name.is_empty()) else {
+            continue;
+        };
+        if !name.chars().next().is_some_and(char::is_uppercase) {
+            continue;
+        }
+        found += 1;
+        let command = name.to_lowercase();
+        assert!(
+            reference.contains(&format!("rhapsod {command}")),
+            "`rhapsod {command}` is a command but the CLI reference does not mention it"
+        );
+    }
+    assert!(found > 0, "no commands were found in src/main.rs; the check is looking in the wrong place");
+}
+
+#[test]
 fn the_compose_files_name_the_image_this_repository_publishes() {
-    // The stand builds from source; the publish workflow pushes an image
-    // under the repository's own name. If the two drift, `docker compose
-    // pull` on someone else's machine fails while ours keeps working.
+    // The stand runs the image the release built; the publish workflow pushes
+    // it under the repository's own name. If the two drift, `docker compose
+    // pull` fails on a stand while everything here keeps working.
     let workflow = read(".github/workflows/publish.yml");
     assert!(
         workflow.contains("ghcr.io/${{ github.repository }}"),
@@ -173,7 +215,20 @@ fn the_compose_files_name_the_image_this_repository_publishes() {
     );
 
     let prod = read("docker-compose.prod.yml");
-    assert!(prod.contains("build:"), "the stand compose must build from source");
+    assert!(
+        prod.contains("image: ghcr.io/lacodda/rhapsod:"),
+        "the stand compose must run the image this repository publishes, not build its own"
+    );
+    assert!(
+        !prod.contains("build:"),
+        "the stand compose must not build on the stand: the Pi would recompile every release, \
+         and the binary would not be the one CI went green on"
+    );
+
+    // Development still builds: that is what a working tree is for, and a
+    // developer waiting on a registry for their own change would be absurd.
+    let dev = read("docker-compose.yml");
+    assert!(dev.contains("build:"), "the development compose must build from the working tree");
 }
 
 /// Captured output in the docs must show the version being shipped.
@@ -361,4 +416,59 @@ fn nothing_private_is_in_the_repository() {
         "something about the author's own machine or vault is in the repository:\n  {}",
         found.join("\n  ")
     );
+}
+
+/// Every stand script exists for both the Pi and the machine it is driven
+/// from, and both halves read the same variables.
+///
+/// The scripts are how a stand is backed up, rebuilt and updated, and the
+/// author drives them from Windows while the stand is a Pi. A pair where only
+/// one half was written is a procedure that works until the day it is needed
+/// from the other machine - which, for a restore, is the day the Pi is dead.
+///
+/// The variables are compared rather than the text: the two are different
+/// languages and will never match line for line, but a value one half reads
+/// and the other does not is a real difference in what they do.
+#[test]
+fn the_stand_scripts_come_in_pairs_that_read_the_same_settings() {
+    const SCRIPTS: &[&str] = &["backup", "restore", "update", "common"];
+
+    for name in SCRIPTS {
+        let shell = repo_root().join(format!("tools/stand/{name}.sh"));
+        let power = repo_root().join(format!("tools/stand/{name}.ps1"));
+        assert!(shell.is_file(), "tools/stand/{name}.sh is missing: a stand script needs both halves");
+        assert!(
+            power.is_file(),
+            "tools/stand/{name}.ps1 is missing: the stand is driven from Windows, and a procedure \
+             that only exists as a shell script is one that cannot be run on the day it is needed"
+        );
+
+        // `RHAPSOD_*` as each half names them, minus the ones the shell half
+        // only mentions in a comment block of examples. Both halves list
+        // their settings in a header comment, so comparing everything the
+        // file names catches a value added to one and not the other.
+        let variables = |path: &std::path::Path| -> std::collections::BTreeSet<String> {
+            let text = read(path.strip_prefix(repo_root()).unwrap_or(path).to_string_lossy().as_ref());
+            let mut names = std::collections::BTreeSet::new();
+            let mut rest = text.as_str();
+            while let Some(at) = rest.find("RHAPSOD_") {
+                rest = &rest[at..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_uppercase() && !c.is_ascii_digit() && c != '_')
+                    .unwrap_or(rest.len());
+                names.insert(rest[..end].to_string());
+                rest = &rest[end..];
+            }
+            names
+        };
+
+        let (in_shell, in_power) = (variables(&shell), variables(&power));
+        let only_shell: Vec<_> = in_shell.difference(&in_power).collect();
+        let only_power: Vec<_> = in_power.difference(&in_shell).collect();
+        assert!(
+            only_shell.is_empty() && only_power.is_empty(),
+            "tools/stand/{name}: the two halves read different settings - \
+             only in the shell script: {only_shell:?}; only in the PowerShell one: {only_power:?}"
+        );
+    }
 }

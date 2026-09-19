@@ -10,6 +10,7 @@ pub mod backup;
 pub mod bookmarks;
 pub mod config;
 pub mod db;
+pub mod doctor;
 pub mod feedback;
 pub mod journal;
 pub mod library;

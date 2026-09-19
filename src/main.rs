@@ -27,6 +27,16 @@ enum Command {
         /// The export document, as `GET /api/export` produces it.
         file: std::path::PathBuf,
     },
+    /// Say whether this stand is well: library, database, backups, app, door.
+    ///
+    /// The questions asked when something is wrong are always the same ones,
+    /// and each used to have its own way of being asked - a curl, a docker
+    /// run with a volume mounted, a look in a directory. This asks them
+    /// together, against the configuration the server itself runs on.
+    ///
+    /// Exits non-zero only when something stops the stand doing its job, so
+    /// it can be the last line of a deployment script.
+    Doctor,
     /// Hash a password for `RHAPSOD_PASSWORD_HASH`.
     ///
     /// Without a hash to put in the variable, locking a stand means finding
@@ -64,6 +74,18 @@ async fn main() -> Result<()> {
             };
             anyhow::ensure!(!password.trim().is_empty(), "an empty password is not a password");
             println!("{}", auth::hash(&password)?);
+            Ok(())
+        }
+        Some(Command::Doctor) => {
+            let report = rhapsod::doctor::examine(&config::Config::from_env()?).await?;
+            print!("{report}");
+            // Only an illness is an error. A stand with no backup yet, or an
+            // empty library on a machine set up this morning, is worth saying
+            // and not worth failing a deployment over: a check that stops a
+            // script for those gets worked around rather than fixed.
+            if report.is_ill() {
+                std::process::exit(1);
+            }
             Ok(())
         }
         Some(Command::Restore { file }) => {
