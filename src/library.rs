@@ -132,6 +132,13 @@ impl Library {
             let Some(name) = dir.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
+            // A leading underscore marks a directory that lives beside the
+            // shelves without being one: the vault ritual keeps the reader's
+            // digest, quote book and last export there, and publishing
+            // carries it along with everything else.
+            if name.starts_with('_') {
+                continue;
+            }
             let (number, title) = split_section_name(name);
             let id = slug(name);
             let mut count = 0;
@@ -708,6 +715,20 @@ topic: Тема
         std::fs::create_dir_all(dir.path().join("26 — Символы")).unwrap();
         let lib = Library::load(dir.path()).unwrap();
         assert_eq!(lib.sections().len(), 2, "an empty directory became a shelf");
+    }
+
+    #[test]
+    fn a_directory_behind_an_underscore_is_not_a_shelf() {
+        // The reader's own files travel with the library. A digest without a
+        // `type` would read as a novella, so the directory itself is what
+        // keeps them off the shelves - not the care of whoever wrote them.
+        let dir = library();
+        let reader = dir.path().join("_Reader");
+        std::fs::create_dir_all(&reader).unwrap();
+        std::fs::write(reader.join("Quote book.md"), "# Quote book\n\n> A kept line.\n").unwrap();
+        let lib = Library::load(dir.path()).unwrap();
+        assert_eq!(lib.sections().len(), 2, "the reader's directory became a shelf");
+        assert_eq!(lib.len(), 2, "a file of the reader's became a piece");
     }
 
     #[test]
