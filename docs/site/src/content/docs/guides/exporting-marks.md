@@ -1,11 +1,11 @@
 ---
 title: Taking your marks back to the vault
-description: Fetch the reading state, the notes and the quotes off a stand as one JSON document - one script per platform, configured from the environment.
+description: Fetch everything the reader left on a stand as one JSON document, and where each kind of mark belongs once it is back among the markdown.
 ---
 
-The library goes out to the stand as files. What you made of it - where you got to, what you wrote, the lines you kept - stays on the stand, in a SQLite file the markdown never touches ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
+The library goes out to the stand as files. What you made of it - where you got to, what you wrote, the lines you kept, the typos you spotted - stays on the stand, in a SQLite file the markdown never touches ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
 
-**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a script of your own can fold your notes into the vault the library was published from. One document carries the whole of it: what you read, what you wrote, what you kept, what you marked, what you asked to be written, and where each piece stands in its review schedule.
+**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a ritual of your own can fold your marks into the vault the library was published from. One document carries the whole of it.
 
 It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is strictly a read: nothing on the stand changes, and running it twice differs only in the file it writes.
 
@@ -71,168 +71,89 @@ export-marks: 2 pieces read, 2 notes, 2 quotes, taken at 2026-09-02T11:25:07.935
 
 Everything about the reading is behind the session on a locked stand, the export included - a stand that handed out your notes to anyone who could reach it would be protecting nothing that matters.
 
-## The document
+## Every kind, and where it lands
 
-One JSON object with four keys.
+The document is one JSON object; its full shape, with an example of every row, is in [the API reference](/rhapsod/reference/api/#get-apiexport). The rules behind the fields are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 
-```json
-{
-  "exported_at": "2026-09-02T22:20:55.648Z",
-  "since": null,
-  "version": "0.9.3",
-  "reading": [
-    {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "status": "read",
-      "paragraph": 0,
-      "updated_at": "2026-09-02T22:20:55.321Z",
-      "read_at": "2026-09-02T22:20:55.321Z"
-    },
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "status": "reading",
-      "paragraph": 7,
-      "updated_at": "2026-09-02T22:20:55.384Z",
-      "read_at": null
-    }
-  ],
-  "notes": [
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "body": "Год без лета — и целая эпоха следом.",
-      "updated_at": "2026-09-02T22:20:55.444Z"
-    },
-    {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "body": "Письма шли дольше, чем длится иная жизнь.",
-      "updated_at": "2026-09-02T22:20:55.413Z"
-    }
-  ],
-  "quotes": [
-    {
-      "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "paragraph": 1,
-      "text": "Она пишет ему из монастыря.",
-      "comment": "Двадцать лет спустя.",
-      "created_at": "2026-09-02T22:20:55.490Z"
-    },
-    {
-      "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
-      "piece_id": "02-istoriya/god-bez-leta",
-      "paragraph": 1,
-      "text": "Следующее лето не пришло.",
-      "comment": "Тамбора, 1815.",
-      "created_at": "2026-09-02T22:20:55.460Z"
-    }
-  ],
-  "reviews": [
-    {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "done": 0,
-      "due_on": "2026-09-03",
-      "last_seen": null
-    }
-  ],
-  "bookmarks": [
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "kind": "song",
-      "marked_at": "2026-09-02T22:20:55.553Z"
-    },
-    {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "kind": "loved",
-      "marked_at": "2026-09-02T22:20:55.522Z"
-    }
-  ],
-  "requests": [
-    {
-      "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
-      "title": "Парадокс лжеца",
-      "section": "01 — Парадоксы и эффекты",
-      "asked_at": "2026-09-02T22:20:55.585Z"
-    }
-  ],
-  "reactions": [
-    {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "kind": "struck",
-      "felt_at": "2026-09-06T23:14:54.922Z"
-    }
-  ],
-  "typos": [
-    {
-      "id": "9a3f-typo",
-      "piece_id": "02-istoriya/god-bez-leta",
-      "quoted": "вулкан Томбора",
-      "paragraph": 1,
-      "spotted_at": "2026-09-06T23:15:00.878Z"
-    }
-  ]
-}
+Every kind the export carries is listed here with the place it belongs once it is back in the vault. A kind with nowhere to go is a mark that rides along in every export and lands nowhere - which is worse than not keeping it, because every run reports success. The test suite asks a real server for its list of kinds and fails if this table is missing one.
+
+| Key | What it holds | Where it lands |
+| --- | --- | --- |
+| `exported_at` | The moment the snapshot was taken. | The *as of* line of every file the merge writes. |
+| `version` | The server that produced it. | The merge's own report, nowhere else. |
+| `reading` | One row per piece you have opened. A piece with no row here has not been opened. | The piece's companion file: read on which day, or where you stopped. |
+| `notes` | One row per note. **A piece missing from this list has no note**: an emptied note is deleted rather than kept empty. | The piece's companion file, under its own heading. |
+| `quotes` | Every line you kept, newest first. | The piece's companion file, and every one of them again in the quote book. |
+| `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. | The piece's companion file: how far through, and when next. |
+| `bookmarks` | One row per marked piece, newest first. `kind` is one of `loved`, `return`, `song`, `reread`; a piece carries at most one. | The piece's companion file. |
+| `reactions` | One row per piece reacted to, newest first. `kind` is `good` or `struck`; a piece carries at most one. | The piece's companion file, one line. |
+| `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made. | Appended to wherever the author keeps what to write next - see [Requests](#requests). |
+| `typos` | One row per misspelling reported and not withdrawn. `quoted` is the words as selected; `paragraph` is where they were when spotted, and may have moved since. | A patch file of was / now pairs, applied to the piece on one confirmation - see [Typos](#typos). |
+| `openings` | One row per opening of a piece, oldest first - the log the journal is built from. | Only the off-site copy. Nothing in the vault wants them beside a piece; they are there so that a stand rebuilt from the copy keeps its journal. |
+
+## Where the files go
+
+The arrangement that works, and the one the author uses. Nothing in the software depends on it; what it does depend on is described under [The boundary](#the-boundary).
+
+```
+library/
+├── 02 — History/
+│   ├── The Salt Road.md               the piece - never written by the merge
+│   └── The Salt Road — notes.md       its companion
+└── _Reader/
+    ├── Reader.md                      the digest
+    ├── Quote book.md                  every kept line, by shelf
+    ├── Typos.md                       was / now pairs waiting for a fix
+    └── export.json                    the last full export, as it came
 ```
 
-| Key | What it holds |
-| --- | --- |
-| `exported_at` | The moment the snapshot was taken. What a merge into the vault records as "as of". |
-| `version` | The server that produced it. |
-| `reading` | One row per piece you have opened. A piece with no row here has not been opened - that status has no storage. |
-| `notes` | One row per note. **A piece missing from this list has no note**: an emptied note is deleted rather than kept empty. |
-| `quotes` | Every line you kept, newest first. |
-| `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. |
-| `bookmarks` | One row per marked piece, newest first. `kind` is one of `loved`, `return`, `song`, `reread`; a piece carries at most one. |
-| `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, so a request outliving its topic is still legible. |
-| `reactions` | One row per piece reacted to, newest first. `kind` is `good` or `struck`; a piece carries at most one. |
-| `typos` | One row per misspelling reported and not withdrawn. `quoted` is the words as selected - the thing to search the file for; `paragraph` is where they were when spotted, and may have moved since. |
-| `openings` | One row per opening of a piece, oldest first - the log the journal is built from. Nothing in the vault wants these beside a piece; they are here so that a stand rebuilt from an export keeps its journal. |
+**A companion file** beside each piece holds everything about the reading of that one piece: whether and when it was read, where it stands in its review schedule, its bookmark and reaction, the lines kept from it with their comments, and the note.
 
-The field meanings are in [the API reference](/rhapsod/reference/api/#get-apiexport); the rules behind them are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
+**The reader's directory** holds what is about the reading as a whole rather than one piece:
 
-## Where the requests go
+- **The digest** - what the reading adds up to by month (pieces finished, words, pieces recalled) and **where the reader gives up**, the unfinished pieces ordered by how early they lost the reader. It is not in the export: it comes from [`GET /api/journal`](/rhapsod/reference/api/#get-apijournal) and [`GET /api/report`](/rhapsod/reference/api/#get-apireport), which derive it on the way out. Pass the machine's `offset`, or a piece finished late in the evening is filed under the next day.
+- **The quote book** - every kept line in one place, grouped by shelf and piece in reading order, each with its comment. A piece that has left the library keeps its lines, under its id.
+- **The typo patches** - see [Typos](#typos).
+- **The off-site copy** - the export itself, byte for byte. If the stand dies together with its backups, [`rhapsod restore`](/rhapsod/reference/cli/#rhapsod-restore) rebuilds the reading from it.
 
-The marks belong beside their pieces; a **request** does not - it names something that has not been written, so there is no file to sit next to. It belongs wherever the author keeps what to write next.
+The digest, the quote book and the patches are **summaries, rewritten whole on every merge**. The history lives on the stand and in the copy beside them; a summary that was edited by hand would be overwritten by the next run, so they say so at the top.
 
-The ritual the author uses appends them to that file rather than replacing it, and two properties are worth copying into any script that does the same:
+## The boundary
+
+Three rules hold whatever shape you choose, and each is there because breaking it has cost something.
+
+- **The merge never edits a piece, not even its frontmatter.** The library is the author's; the reading is the reader's. Keeping them in separate files means a ritual that goes wrong can only damage its own output, and republishing a piece never collides with a merge. Fixing a typo is the one change to a piece, and it is a separate step with its own confirmation.
+- **The reader's files live in the library directory, not with notes about the project.** They are about the library, travel with it, and are read beside it. A directory whose name starts with `_` is not a shelf: the server skips it when it indexes, so it can be published along with everything else without a digest showing up as a novella. Each generated file still carries a `type` other than `novella` in its frontmatter, the same way a companion does.
+- **A piece that cannot be matched is reported, not skipped quietly.** Renaming a file in the vault changes the id the reader's rows are keyed to. A merge that silently drops those marks loses them; one that names them lets you fix the rename.
+
+Match rows to files by asking the stand, not by rebuilding the id. Every row is keyed by `piece_id` - shelf and file, as slugs - and the slug rule lives in the server. [`GET /api/library`](/rhapsod/reference/api/#get-apilibrary) gives each id with its title, which is the `topic` of the file it came from.
+
+## Take the whole export
+
+A merge that **rewrites** a file from what the export says must ask for the whole export, every time.
+
+[`?since=`](/rhapsod/reference/api/#only-what-changed) returns only what changed after a previous `exported_at`, and it is right for a consumer that only appends. It is wrong for a companion file: a piece that gained one quote arrives with one quote, and a companion rebuilt from that has lost every line kept before. An incremental export also cannot report a deletion. The whole export of a personal library is a few hundred rows; taking it every time costs nothing and leaves no way to be stale.
+
+## Requests
+
+A **request** does not belong beside a piece - it names something that has not been written, so there is no file to sit next to. It belongs wherever the author keeps what to write next.
 
 - **A request already written down is not written again.** The merge is run often and a request lives on the stand until it is withdrawn, so every run would otherwise add the same line.
-- **What is already in the file survives.** The author's own notes share that file; a script that rewrites it wholesale trades a small convenience for the thing it was meant to protect.
+- **What is already in the file survives.** The author's own notes share that file; a merge that rewrites it wholesale trades a small convenience for the thing it was meant to protect.
 
-## Where the typos go
+The request is withdrawn from the stand - `DELETE /api/requests/{shelf}/{topic}` - by whoever writes the piece, not by the merge. Only the author knows it has been done.
 
-A typo is the one thing in the export that asks for a change to a piece rather than a note beside it. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what a merge should search the file for, and `paragraph` is only a hint for the eye.
+## Typos
 
-The stand never edits the library, so the fix is the author's to make in the vault. Whatever a ritual does with a report - lists them for review, or opens each file in turn - it should leave the report on the stand until the fix is made, because withdrawing it is how the reader says it is dealt with.
+A typo is the one thing in the export that asks for a change to a piece. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what to search the file for, and `paragraph` is only a hint for the eye.
 
-## Only what changed
+The author's ritual turns each one into a patch:
 
-A second run does not need the whole document. `?since=` takes the `exported_at` of the previous one and returns only what has changed:
+1. **The merge finds the words** in the piece's file. Found on exactly one line, that line becomes a pair - *was* and *now*, both the same to begin with - in the patch file. Not found, or found on more than one line, the typo goes into a list at the end of the same file instead, with the reason.
+2. **Someone writes the fix** into *now*: the author, or whoever runs the ritual for them. A pair left unchanged is skipped.
+3. **One confirmation applies all of them.** A second script shows each change in its context, and with the confirmation replaces *was* with *now* - only if *was* is still on exactly one line of the file, and without touching any other byte, so the encoding and line endings of the piece survive. Then it withdraws the report from the stand, `DELETE /api/typos/{id}`, because withdrawing is how the reader learns it was dealt with.
 
-```sh
-curl "http://127.0.0.1:8084/api/export?since=$(cat .last-export)"
-```
-
-The bound comes back as `since` in the answer, so a script can tell an incremental document from a full one. The rules for what counts as changed - and the one thing an incremental export cannot report, which is a deletion - are in [the API reference](/rhapsod/reference/api/#get-apiexport).
-
-Keep the stamp only after the merge has succeeded. A stamp saved before the files are written turns a crash halfway into silently skipped marks on the next run.
-
-## Where the marks land
-
-The export is JSON because it has to be exact. What a vault wants is markdown, and the shape that reaches it is a decision about someone's own notes rather than about this software, so it belongs to whoever runs the ritual.
-
-One arrangement that works, and the one the author uses: a **companion file** next to each piece - `Ship of Theseus - notes.md` beside `Ship of Theseus.md` - holding the kept lines, the note, whether the piece was read, and where it stands in its review schedule.
-
-Two properties are worth copying whatever shape you choose:
-
-- **The piece itself is never edited, not even its frontmatter.** The library is the author's; the reading is the reader's. Keeping them in separate files means a ritual that goes wrong can only damage its own output, and republishing a piece never collides with a merge.
-- **A piece that cannot be matched is reported, not skipped quietly.** Renaming a file in the vault changes the id the reader's rows are keyed to. A script that silently drops those marks loses them; one that names them lets you fix the rename.
-
-Two things to know before writing a script against it:
-
-- **A quote is anchored by its text, not by an offset.** `text` is the exact words that were selected. Matching them back onto a piece is a search; `paragraph` says where to look first. An edited piece can leave a quote that no longer matches anything - which is the intended failure, because a highlight that moved onto the wrong sentence would be worse.
-- **The same line can appear twice.** Two readings can mark the same sentence, each with its own comment, and each is a row with its own `id`. Do not deduplicate by `text`.
-
-Everything is keyed by `piece_id`, which is the piece's path in the library: shelf and file, as slugs. That is what joins a row back to the markdown file it came from.
+The fixed piece reaches the stand with the next publish. A report the merge could not place stays on the stand until someone looks, and stays in the list until then.
 
 ## What it checks
 
@@ -277,13 +198,9 @@ export-marks: signing in to http://pi:8084 failed: RHAPSOD_PASSWORD is wrong, or
 
 In every case the file that was there before is left as it was. An export that failed leaves you with the last one that worked, which is the right half-state: a stale snapshot is worth something, and half of one is worth nothing.
 
-## Folding it into the vault
+## Two things to know before writing a merge
 
-The script stops at the JSON. What to do with it is yours, because the shape of a vault is yours: a note under a heading in the piece it belongs to, a file of quotes per shelf, a daily log of what was finished.
-
-Two things make that script easy to write and are the reason the export looks the way it does:
-
-- **It is one snapshot.** All three kinds are from the same instant, so nothing you write into the vault describes a state the stand was never in.
-- **It is a read.** Running it before every merge costs nothing and interrupts nobody, so there is no reason to cache it or to reason about when it was last taken.
+- **A quote is anchored by its text, not by an offset.** `text` is the exact words that were selected. Matching them back onto a piece is a search; `paragraph` says where to look first. An edited piece can leave a quote that no longer matches anything - which is the intended failure, because a highlight that moved onto the wrong sentence would be worse.
+- **The same line can appear twice.** Two readings can mark the same sentence, each with its own comment, and each is a row with its own `id`. Do not deduplicate by `text`.
 
 Publishing the library again afterwards changes nothing about your marks. They live in the database, keyed to the piece; [publishing](/rhapsod/guides/publishing-content/) only ever writes files.
