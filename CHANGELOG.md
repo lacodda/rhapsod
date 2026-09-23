@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.0] - 2026-09-23
+
+### Documentation
+- Use synthetic English examples instead of real pieces
+- Say where every exported kind lands in the vault
+
+### Features
+- Keep underscore directories off the shelves
+
 ## [0.14.1] - 2026-09-19
 
 ### Bug Fixes

@@ -80,7 +80,7 @@ Then it pulls, starts, and asks the stand how it is:
 
 ```
 restore: asking the stand how it is
-ok version   rhapsod 0.14.1
+ok version   rhapsod 0.15.0
 XX library   /content is empty - nothing has been published
 ok database  whole
 ok reader    23 pieces of reading state, 0 notes, 7 quotes
@@ -110,25 +110,25 @@ Rows that are already there are left alone, so running it twice changes nothing 
 ## Moving to a new version
 
 ```sh
-./tools/stand/update.sh v0.14.1
+./tools/stand/update.sh v0.15.0
 ```
 
 ```
-update: looking for the image for v0.14.1
-update: copying the database aside on pi: rhapsod-before-v0.14.1-20260919T193404Z.db
+update: looking for the image for v0.15.0
+update: copying the database aside on pi: rhapsod-before-v0.15.0-20260919T193404Z.db
 update: stopping the stand for the copy
-update: copied aside; a rollback restores rhapsod-before-v0.14.1-20260919T193404Z.db
+update: copied aside; a rollback restores rhapsod-before-v0.15.0-20260919T193404Z.db
 update: setting the version in /srv/rhapsod/.env
-update: pulling ghcr.io/lacodda/rhapsod:0.14.1
-update: starting v0.14.1
+update: pulling ghcr.io/lacodda/rhapsod:0.15.0
+update: starting v0.15.0
 update: asking the stand how it is
-ok version   rhapsod 0.14.1
+ok version   rhapsod 0.15.0
 ok library   62 pieces on 50 shelves in /content
 ok app       built at /app/web
 ok database  whole
 ok reader    23 pieces of reading state, 0 notes, 7 quotes
 ok backups   14 kept, newest from 2026-09-19 (today)
-update: the stand is on v0.14.1 and well.
+update: the stand is on v0.15.0 and well.
 ```
 
 Three things it is careful about, all of them learnt the hard way:
