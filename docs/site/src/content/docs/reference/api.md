@@ -55,25 +55,25 @@ curl http://127.0.0.1:8084/api/library
 ```json
 {
   "sections": [
-    {"id": "02-istoriya", "number": 2, "title": "История", "pieces": 1},
-    {"id": "19-lyubov-i-pary", "number": 19, "title": "Любовь и пары", "pieces": 1}
+    {"id": "02-history", "number": 2, "title": "History", "pieces": 1},
+    {"id": "19-letters", "number": 19, "title": "Letters", "pieces": 1}
   ],
   "pieces": [
     {
-      "id": "02-istoriya/god-bez-leta",
-      "section": "02-istoriya",
-      "title": "Год без лета",
+      "id": "02-history/the-salt-road",
+      "section": "02-history",
+      "title": "The Salt Road",
       "written": "2026-08-30",
       "words": 953,
-      "one_liner": "Небо взяло год и не отдало."
+      "one_liner": "The caravan never carried what the ledger said."
     },
     {
-      "id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "section": "19-lyubov-i-pary",
-      "title": "Абеляр и Элоиза",
+      "id": "19-letters/the-lighthouse-letters",
+      "section": "19-letters",
+      "title": "The Lighthouse Letters",
       "written": "2026-09-01",
       "words": 1012,
-      "one_liner": "Ради него, а не ради Бога."
+      "one_liner": "The lamp was for ships. She lit it for him."
     }
   ]
 }
@@ -93,8 +93,8 @@ curl http://127.0.0.1:8084/api/sections
 
 ```json
 [
-  {"id": "02-istoriya", "number": 2, "title": "История", "pieces": 1},
-  {"id": "19-lyubov-i-pary", "number": 19, "title": "Любовь и пары", "pieces": 1}
+  {"id": "02-history", "number": 2, "title": "History", "pieces": 1},
+  {"id": "19-letters", "number": 19, "title": "Letters", "pieces": 1}
 ]
 ```
 
@@ -112,18 +112,18 @@ Numbered shelves come first in their numeric order; anything unnumbered follows 
 The pieces of one shelf, without their text.
 
 ```sh
-curl http://127.0.0.1:8084/api/sections/19-lyubov-i-pary
+curl http://127.0.0.1:8084/api/sections/19-letters
 ```
 
 ```json
 [
   {
-    "id": "19-lyubov-i-pary/abelyar-i-eloiza",
-    "section": "19-lyubov-i-pary",
-    "title": "Абеляр и Элоиза",
+    "id": "19-letters/the-lighthouse-letters",
+    "section": "19-letters",
+    "title": "The Lighthouse Letters",
     "written": "2026-09-01",
     "words": 1012,
-    "one_liner": "Ради него, а не ради Бога."
+    "one_liner": "The lamp was for ships. She lit it for him."
   }
 ]
 ```
@@ -145,21 +145,21 @@ The distinction matters to a client: an empty array means "this shelf is real an
 One piece, with everything in it.
 
 ```sh
-curl http://127.0.0.1:8084/api/pieces/19-lyubov-i-pary/abelyar-i-eloiza
+curl http://127.0.0.1:8084/api/pieces/19-letters/the-lighthouse-letters
 ```
 
 ```json
 {
-  "id": "19-lyubov-i-pary/abelyar-i-eloiza",
-  "section": "19-lyubov-i-pary",
-  "title": "Абеляр и Элоиза",
+  "id": "19-letters/the-lighthouse-letters",
+  "section": "19-letters",
+  "title": "The Lighthouse Letters",
   "written": "2026-09-01",
   "words": 1012,
-  "paragraphs": ["Париж, около 1132 года.", "Она пишет ему из монастыря."],
-  "neighbours": ["Орфей и Эвридика — другая пара.", "Данте и Беатриче — любовь в тексте."],
-  "one_liner": "Ради него, а не ради Бога.",
-  "song": ["**Ситуация:** она осталась.", "**Образ:** покрывало у алтаря."],
-  "reference": ["**Что это:** исторические лица и корпус писем.", "**Область:** средневековая философия."]
+  "paragraphs": ["A rock off the coast, 1888.", "She writes to him from the mainland, once a month, whatever the sea allows."],
+  "neighbours": ["The Clockmaker's Bet — another kind of waiting.", "The Salt Road — distance measured in a different unit."],
+  "one_liner": "The lamp was for ships. She lit it for him.",
+  "song": ["**Situation:** she keeps the light going past the point of duty.", "**Image:** the harbour master's lamp, still burning at dawn."],
+  "reference": ["**What this is:** a fictional keeper and a correspondence.", "**Field:** invented for this example."]
 }
 ```
 
@@ -352,14 +352,14 @@ curl http://127.0.0.1:8084/api/progress
 {
   "pieces": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "status": "reading",
       "paragraph": 7,
       "updated_at": "2026-09-02T10:36:35.471Z",
       "read_at": null
     },
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "status": "read",
       "paragraph": 0,
       "updated_at": "2026-09-02T10:36:35.611Z",
@@ -367,7 +367,7 @@ curl http://127.0.0.1:8084/api/progress
     }
   ],
   "stats": {"read": 1, "words": 1012, "streak": 1},
-  "continue_with": "02-istoriya/god-bez-leta"
+  "continue_with": "02-history/the-salt-road"
 }
 ```
 
@@ -400,21 +400,21 @@ Both kinds of report go through one endpoint because they arrive from the same s
 **A position:**
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/progress/02-istoriya/god-bez-leta \
+curl -X POST http://127.0.0.1:8084/api/progress/02-history/the-salt-road \
   -H 'content-type: application/json' -d '{"paragraph":7}'
 ```
 
 **Finishing, or putting a finished piece back:**
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/progress/19-lyubov-i-pary/abelyar-i-eloiza \
+curl -X POST http://127.0.0.1:8084/api/progress/19-letters/the-lighthouse-letters \
   -H 'content-type: application/json' -d '{"read":true}'
 ```
 
 **That a piece was opened** - an empty object, which starts a row without claiming a position:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/progress/19-lyubov-i-pary/abelyar-i-eloiza \
+curl -X POST http://127.0.0.1:8084/api/progress/19-letters/the-lighthouse-letters \
   -H 'content-type: application/json' -d '{}'
 ```
 
@@ -437,13 +437,13 @@ The answer is `204` either way. A rejected-as-stale report is not an error - the
 The position **only moves forward**. A stale report is accepted and changes nothing:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/progress/02-istoriya/god-bez-leta \
+curl -X POST http://127.0.0.1:8084/api/progress/02-history/the-salt-road \
   -H 'content-type: application/json' -d '{"paragraph":2}'
 curl http://127.0.0.1:8084/api/progress
 ```
 
 ```json
-{"piece_id":"02-istoriya/god-bez-leta","status":"reading","paragraph":7,"updated_at":"2026-09-02T10:36:35.767Z","read_at":null}
+{"piece_id":"02-history/the-salt-road","status":"reading","paragraph":7,"updated_at":"2026-09-02T10:36:35.767Z","read_at":null}
 ```
 
 Still 7; only `updated_at` moved. A phone syncing a position from before the desktop moved on must not send the reader back up the page. Re-reading from the top is done by finishing and reopening, not by scrolling up. A negative index is read as the top.
@@ -453,7 +453,7 @@ Opening a finished piece does not unfinish it, and finishing one twice does not 
 A report about a piece that is not in the library is refused:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/progress/02-istoriya/nope \
+curl -X POST http://127.0.0.1:8084/api/progress/02-history/nope \
   -H 'content-type: application/json' -d '{"paragraph":1}'
 ```
 
@@ -468,11 +468,11 @@ curl -X POST http://127.0.0.1:8084/api/progress/02-istoriya/nope \
 What to read next: an unread piece, **preferring another shelf**.
 
 ```sh
-curl 'http://127.0.0.1:8084/api/next?after=02-istoriya/god-bez-leta'
+curl 'http://127.0.0.1:8084/api/next?after=02-history/the-salt-road'
 ```
 
 ```json
-{"next":{"id":"19-lyubov-i-pary/abelyar-i-eloiza","one_liner":"Ради него, а не ради Бога.","section":"19-lyubov-i-pary","title":"Абеляр и Элоиза","words":1012,"written":"2026-09-01"}}
+{"next":{"id":"19-letters/the-lighthouse-letters","one_liner":"The lamp was for ships. She lit it for him.","section":"19-letters","title":"The Lighthouse Letters","words":1012,"written":"2026-09-01"}}
 ```
 
 `after` names the piece just finished, so the answer can come from somewhere else. Reading straight down one shelf turns thirty pieces about paradoxes into a textbook, and the format is built for the opposite.
@@ -480,11 +480,11 @@ curl 'http://127.0.0.1:8084/api/next?after=02-istoriya/god-bez-leta'
 If everything unread is on the shelf just finished, that shelf is the answer rather than nothing:
 
 ```sh
-curl 'http://127.0.0.1:8084/api/next?after=19-lyubov-i-pary/abelyar-i-eloiza'
+curl 'http://127.0.0.1:8084/api/next?after=19-letters/the-lighthouse-letters'
 ```
 
 ```json
-{"next":{"id":"02-istoriya/god-bez-leta","one_liner":"Небо взяло год и не отдало.","section":"02-istoriya","title":"Год без лета","words":953,"written":"2026-08-30"}}
+{"next":{"id":"02-history/the-salt-road","one_liner":"The caravan never carried what the ledger said.","section":"02-history","title":"The Salt Road","words":953,"written":"2026-08-30"}}
 ```
 
 `after` is optional; without it every unread piece is a candidate. With nothing unread left the answer is `{"next":null}`, which the app renders as "That was the last unread piece" rather than as an error.
@@ -502,13 +502,13 @@ curl http://127.0.0.1:8084/api/notes
 ```json
 [
   {
-    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-    "body": "Письма пережили обоих. Это и есть сюжет.",
+    "piece_id": "19-letters/the-lighthouse-letters",
+    "body": "The letters outlived them both. That is the whole story.",
     "updated_at": "2026-09-02T11:22:44.935Z"
   },
   {
-    "piece_id": "02-istoriya/god-bez-leta",
-    "body": "Снег в июне — и потом Франкенштейн.",
+    "piece_id": "02-history/the-salt-road",
+    "body": "Salt in June, and a whole trade route after it.",
     "updated_at": "2026-09-02T11:22:38.896Z"
   }
 ]
@@ -529,9 +529,9 @@ A reader who has written nothing gets `[]`.
 Writes the note on a piece. Answers `204` with no body.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/notes/19-lyubov-i-pary/abelyar-i-eloiza \
+curl -i -X POST http://127.0.0.1:8084/api/notes/19-letters/the-lighthouse-letters \
   -H 'content-type: application/json' \
-  -d '{"body":"Письма пережили обоих. Это и есть сюжет."}'
+  -d '{"body":"The letters outlived them both. That is the whole story."}'
 ```
 
 ```
@@ -545,7 +545,7 @@ An optional `marked_at` carries the time the device wrote the note, and works ex
 **An empty body deletes the note:**
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/notes/19-lyubov-i-pary/abelyar-i-eloiza \
+curl -X POST http://127.0.0.1:8084/api/notes/19-letters/the-lighthouse-letters \
   -H 'content-type: application/json' -d '{"body":"   "}'
 curl http://127.0.0.1:8084/api/notes
 ```
@@ -559,7 +559,7 @@ Whitespace counts as empty. There is no separate `DELETE`: clearing the textarea
 A note on a piece that is not in the library is refused:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/notes/02-istoriya/nope \
+curl -X POST http://127.0.0.1:8084/api/notes/02-history/nope \
   -H 'content-type: application/json' -d '{"body":"x"}'
 ```
 
@@ -581,18 +581,18 @@ curl http://127.0.0.1:8084/api/quotes
 [
   {
     "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
-    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "piece_id": "19-letters/the-lighthouse-letters",
     "paragraph": 1,
-    "text": "Она пишет ему из монастыря.",
-    "comment": "Двадцать лет спустя.",
+    "text": "She writes to him from the mainland, once a month, whatever the sea allows.",
+    "comment": "Twenty years on, and still the same hand.",
     "created_at": "2026-09-02T16:28:08.305Z"
   },
   {
     "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
-    "piece_id": "02-istoriya/god-bez-leta",
+    "piece_id": "02-history/the-salt-road",
     "paragraph": 1,
-    "text": "Следующее лето не пришло.",
-    "comment": "Тамбора, 1815.",
+    "text": "The caravan never reached the coast that season.",
+    "comment": "The drought that started it, 1815.",
     "created_at": "2026-09-02T16:28:08.303Z"
   }
 ]
@@ -618,7 +618,7 @@ Keeps a line. Answers `201` with the quote as stored.
 `client_id` is required, and it **is** the quote's id: it is minted by the device that kept the line, so a highlight made with the stand out of reach can be commented on and removed straight away rather than waiting for an id to come back ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism"}'
+curl -i -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-letters/the-lighthouse-letters", "paragraph": 1, "text": "She writes to him from the mainland, once a month, whatever the sea allows.", "comment": "this is the mechanism"}'
 ```
 
 ```
@@ -627,7 +627,7 @@ content-type: application/json
 ```
 
 ```json
-{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
+{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-letters/the-lighthouse-letters", "paragraph": 1, "text": "She writes to him from the mainland, once a month, whatever the sea allows.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
 ```
 
 `comment` is optional and may be `null`; a blank one is stored as `null` rather than as an empty string, so a client has one thing to check.
@@ -635,27 +635,27 @@ content-type: application/json
 **The same line can be kept twice** - under a different `client_id`. Two readings of the same piece can mark the same sentence, and the second is not a mistake to refuse:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 1, "text": "Следующее лето не пришло.", "comment": null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-history/the-salt-road", "paragraph": 1, "text": "The caravan never reached the coast that season.", "comment": null}'
 ```
 
 ```json
-{"id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 1, "text": "Следующее лето не пришло.", "comment": null, "created_at": "2026-09-02T15:21:18.476Z"}
+{"id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62", "piece_id": "02-history/the-salt-road", "paragraph": 1, "text": "The caravan never reached the coast that season.", "comment": null, "created_at": "2026-09-02T15:21:18.476Z"}
 ```
 
 **Sending the same one twice keeps it once.** A connection dropped mid-delivery leaves the app unsure whether the quote landed, so it retries; the second arrival answers with the row already stored, down to its `created_at`:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism"}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-letters/the-lighthouse-letters", "paragraph": 1, "text": "She writes to him from the mainland, once a month, whatever the sea allows.", "comment": "this is the mechanism"}'
 ```
 
 ```json
-{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza", "paragraph": 1, "text": "Она пишет ему из монастыря.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
+{"id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-letters/the-lighthouse-letters", "paragraph": 1, "text": "She writes to him from the mainland, once a month, whatever the sea allows.", "comment": "this is the mechanism", "created_at": "2026-09-02T15:19:52.200Z"}
 ```
 
 A quote with no text is a mis-tap the app sent, not a server failure, and saying so as a `400` lets it tell the difference:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "aa", "piece_id": "02-istoriya/god-bez-leta", "paragraph": 0, "text": "   ", "comment": null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "aa", "piece_id": "02-history/the-salt-road", "paragraph": 0, "text": "   ", "comment": null}'
 ```
 
 ```json
@@ -665,7 +665,7 @@ curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/js
 A quote on a piece that is not in the library is `404`:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "bb", "piece_id": "02-istoriya/nope", "paragraph": 0, "text": "a line", "comment": null}'
+curl -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "bb", "piece_id": "02-history/nope", "paragraph": 0, "text": "a line", "comment": null}'
 ```
 
 ```json
@@ -678,7 +678,7 @@ Changes what the reader said about a quote. Answers `204`. The `{id}` is the one
 
 ```sh
 curl -i -X POST http://127.0.0.1:8084/api/quotes/1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7 \
-  -H 'content-type: application/json' -d '{"comment":"Тамбора, 1815."}'
+  -H 'content-type: application/json' -d '{"comment":"Twenty years on, and still the same hand."}'
 ```
 
 ```
@@ -741,29 +741,29 @@ curl http://127.0.0.1:8084/api/topics
 {
   "shelves": [
     {
-      "id": "01-paradoksy-i-effekty",
-      "title": "01 — Парадоксы и эффекты",
+      "id": "01-paradoxes",
+      "title": "01 — Paradoxes",
       "topics": [
         {
-          "id": "01-paradoksy-i-effekty/paradoks-lzheca",
-          "title": "Парадокс лжеца",
-          "section": "01 — Парадоксы и эффекты"
+          "id": "01-paradoxes/the-unfinished-map",
+          "title": "The Unfinished Map",
+          "section": "01 — Paradoxes"
         },
         {
-          "id": "01-paradoksy-i-effekty/buridanov-osel",
-          "title": "Буриданов осёл",
-          "section": "01 — Парадоксы и эффекты"
+          "id": "01-paradoxes/the-weighing-room",
+          "title": "The Weighing Room",
+          "section": "01 — Paradoxes"
         }
       ]
     },
     {
-      "id": "02-istoriya",
-      "title": "02 — История",
+      "id": "02-history",
+      "title": "02 — History",
       "topics": [
         {
-          "id": "02-istoriya/tungusskoe-sobytie",
-          "title": "Тунгусское событие",
-          "section": "02 — История"
+          "id": "02-history/the-frozen-fleet",
+          "title": "The Frozen Fleet",
+          "section": "02 — History"
         }
       ]
     }
@@ -788,9 +788,9 @@ curl http://127.0.0.1:8084/api/requests
 ```json
 [
   {
-    "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
-    "title": "Парадокс лжеца",
-    "section": "01 — Парадоксы и эффекты",
+    "topic_id": "01-paradoxes/the-unfinished-map",
+    "title": "The Unfinished Map",
+    "section": "01 — Paradoxes",
     "asked_at": "2026-09-02T22:20:55.585Z"
   }
 ]
@@ -803,7 +803,7 @@ Each request carries the **words** of the topic as well as its id. A topic that 
 Asks for a topic to be written. Answers `204`.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/requests/01-paradoksy-i-effekty/paradoks-lzheca   -H 'content-type: application/json' -d '{}'
+curl -i -X POST http://127.0.0.1:8084/api/requests/01-paradoxes/the-unfinished-map   -H 'content-type: application/json' -d '{}'
 ```
 
 ```
@@ -817,7 +817,7 @@ An optional `asked_at` carries the device clock, as everywhere else (ADR 0003).
 A topic the plan does not offer is `404` rather than a stored row:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/requests/01-paradoksy-i-effekty/nothing-like-this   -H 'content-type: application/json' -d '{}'
+curl -X POST http://127.0.0.1:8084/api/requests/01-paradoxes/nothing-like-this   -H 'content-type: application/json' -d '{}'
 ```
 
 ```json
@@ -841,12 +841,12 @@ curl http://127.0.0.1:8084/api/bookmarks
 ```json
 [
   {
-    "piece_id": "02-istoriya/god-bez-leta",
+    "piece_id": "02-history/the-salt-road",
     "kind": "song",
     "marked_at": "2026-09-02T21:16:25.043Z"
   },
   {
-    "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+    "piece_id": "19-letters/the-lighthouse-letters",
     "kind": "loved",
     "marked_at": "2026-09-02T21:16:25.041Z"
   }
@@ -862,7 +862,7 @@ A bookmark is not a kept line. A quote is a sentence worth keeping; a bookmark i
 Marks a piece, or changes which kind it carries. Answers `204`.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"song"}'
+curl -i -X POST http://127.0.0.1:8084/api/bookmarks/02-history/the-salt-road   -H 'content-type: application/json' -d '{"kind":"song"}'
 ```
 
 ```
@@ -881,7 +881,7 @@ HTTP/1.1 204 No Content
 A kind the app cannot draw is refused rather than stored:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"favourite"}'
+curl -X POST http://127.0.0.1:8084/api/bookmarks/02-history/the-salt-road   -H 'content-type: application/json' -d '{"kind":"favourite"}'
 ```
 
 ```json
@@ -895,7 +895,7 @@ curl -X POST http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta   -H '
 Takes the mark off. Answers `204`, or `404` when there was nothing to take off - which is how an app holding a stale list finds out.
 
 ```sh
-curl -i -X DELETE http://127.0.0.1:8084/api/bookmarks/02-istoriya/god-bez-leta
+curl -i -X DELETE http://127.0.0.1:8084/api/bookmarks/02-history/the-salt-road
 ```
 
 ## `GET /api/reactions`
@@ -909,7 +909,7 @@ curl http://127.0.0.1:8084/api/reactions
 ```json
 [
   {
-    "piece_id": "02-istoriya/god-bez-leta",
+    "piece_id": "02-history/the-salt-road",
     "kind": "struck",
     "felt_at": "2026-09-06T23:14:54.922Z"
   }
@@ -925,7 +925,7 @@ There is no negative kind. A piece that did not land already says so twice over:
 Records how a piece landed, or changes the reaction it carries. One reaction per piece: reacting again means the newer one.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/reactions/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"struck"}'
+curl -i -X POST http://127.0.0.1:8084/api/reactions/02-history/the-salt-road   -H 'content-type: application/json' -d '{"kind":"struck"}'
 ```
 
 ```http
@@ -937,7 +937,7 @@ HTTP/1.1 204 No Content
 A kind outside the two is refused:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/reactions/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"kind":"meh"}'
+curl -X POST http://127.0.0.1:8084/api/reactions/02-history/the-salt-road   -H 'content-type: application/json' -d '{"kind":"meh"}'
 ```
 
 ```json
@@ -962,8 +962,8 @@ curl http://127.0.0.1:8084/api/typos
 [
   {
     "id": "9a3f-typo",
-    "piece_id": "02-istoriya/god-bez-leta",
-    "quoted": "вулкан Томбора",
+    "piece_id": "02-history/the-salt-road",
+    "quoted": "the carvan's ledger",
     "paragraph": 1,
     "spotted_at": "2026-09-06T23:15:00.878Z"
   }
@@ -979,14 +979,14 @@ The server never edits the library ([ADR 0002](https://github.com/lacodda/rhapso
 Reports a misspelling.
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/json'   -d '{"client_id":"9a3f-typo","piece_id":"02-istoriya/god-bez-leta","paragraph":1,"quoted":"вулкан Томбора"}'
+curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/json'   -d '{"client_id":"9a3f-typo","piece_id":"02-history/the-salt-road","paragraph":1,"quoted":"the carvan's ledger"}'
 ```
 
 ```json
 {
   "id": "9a3f-typo",
-  "piece_id": "02-istoriya/god-bez-leta",
-  "quoted": "вулкан Томбора",
+  "piece_id": "02-history/the-salt-road",
+  "quoted": "the carvan's ledger",
   "paragraph": 1,
   "spotted_at": "2026-09-06T23:15:00.878Z"
 }
@@ -1018,8 +1018,8 @@ curl http://127.0.0.1:8084/api/report
   "typos": 1,
   "abandoned": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "title": "Год без лета",
+      "piece_id": "02-history/the-salt-road",
+      "title": "The Salt Road",
       "paragraph": 1,
       "paragraphs": 3,
       "through": 0.3333333333333333,
@@ -1060,15 +1060,15 @@ curl 'http://127.0.0.1:8084/api/journal?offset=-180'
   "history": [
     {
       "day": "2026-09-07",
-      "piece_id": "01-paradoksy-i-effekty/buridanov-osel",
-      "title": "Буриданов осёл",
+      "piece_id": "01-paradoxes/the-borrowed-hour",
+      "title": "The Borrowed Hour",
       "opened_at": "2026-09-07T17:49:57.000Z",
       "times": 1
     },
     {
       "day": "2026-09-02",
-      "piece_id": "01-paradoksy-i-effekty/korabl-teseya",
-      "title": "Корабль Тесея",
+      "piece_id": "01-paradoxes/the-ship-that-waited",
+      "title": "The Ship That Waited",
       "opened_at": "2026-09-02T09:00:00.000Z",
       "times": 2
     }
@@ -1101,10 +1101,10 @@ curl http://127.0.0.1:8084/api/reviews
 {
   "due": [
     {
-      "one_liner": "Письмо шло год и пришло без обратного адреса.",
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "one_liner": "The lamp was for ships. She lit it for him.",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "step": 1,
-      "title": "Абеляр и Элоиза"
+      "title": "The Lighthouse Letters"
     }
   ]
 }
@@ -1121,7 +1121,7 @@ A piece renamed in the vault is skipped rather than drawn as a card with no text
 Answers a card. Answers `204`.
 
 ```sh
-curl -i -X POST http://127.0.0.1:8084/api/reviews/02-istoriya/god-bez-leta   -H 'content-type: application/json' -d '{"again":false}'
+curl -i -X POST http://127.0.0.1:8084/api/reviews/02-history/the-salt-road   -H 'content-type: application/json' -d '{"again":false}'
 ```
 
 ```
@@ -1149,7 +1149,7 @@ curl http://127.0.0.1:8084/api/reviews
 A piece with no schedule - never finished, or marked unread on another device - is `404` rather than a silent success, so an app holding a stale card finds out:
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/reviews/19-lyubov-i-pary/abelyar-i-eloiza   -H 'content-type: application/json' -d '{"again":false}'
+curl -X POST http://127.0.0.1:8084/api/reviews/19-letters/the-lighthouse-letters   -H 'content-type: application/json' -d '{"again":false}'
 ```
 
 ```json
@@ -1171,14 +1171,14 @@ curl http://127.0.0.1:8084/api/export
   "version": "0.14.1",
   "reading": [
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "status": "read",
       "paragraph": 0,
       "updated_at": "2026-09-02T22:20:55.321Z",
       "read_at": "2026-09-02T22:20:55.321Z"
     },
     {
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "status": "reading",
       "paragraph": 7,
       "updated_at": "2026-09-02T22:20:55.384Z",
@@ -1187,37 +1187,37 @@ curl http://127.0.0.1:8084/api/export
   ],
   "notes": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "body": "Год без лета — и целая эпоха следом.",
+      "piece_id": "02-history/the-salt-road",
+      "body": "Salt in June, and a whole trade route after it.",
       "updated_at": "2026-09-02T22:20:55.444Z"
     },
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
-      "body": "Письма шли дольше, чем длится иная жизнь.",
+      "piece_id": "19-letters/the-lighthouse-letters",
+      "body": "The letters ran longer than either of their lives.",
       "updated_at": "2026-09-02T22:20:55.413Z"
     }
   ],
   "quotes": [
     {
       "id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7",
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "paragraph": 1,
-      "text": "Она пишет ему из монастыря.",
-      "comment": "Двадцать лет спустя.",
+      "text": "She writes to him from the mainland, once a month, whatever the sea allows.",
+      "comment": "Twenty years on, and still the same hand.",
       "created_at": "2026-09-02T22:20:55.490Z"
     },
     {
       "id": "9d3b81c0-2f45-4c88-b7e6-31a0d5e79b62",
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "paragraph": 1,
-      "text": "Следующее лето не пришло.",
-      "comment": "Тамбора, 1815.",
+      "text": "The caravan never reached the coast that season.",
+      "comment": "The drought that started it, 1815.",
       "created_at": "2026-09-02T22:20:55.460Z"
     }
   ],
   "reviews": [
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "done": 0,
       "due_on": "2026-09-03",
       "last_seen": null
@@ -1225,27 +1225,27 @@ curl http://127.0.0.1:8084/api/export
   ],
   "bookmarks": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "kind": "song",
       "marked_at": "2026-09-02T22:20:55.553Z"
     },
     {
-      "piece_id": "19-lyubov-i-pary/abelyar-i-eloiza",
+      "piece_id": "19-letters/the-lighthouse-letters",
       "kind": "loved",
       "marked_at": "2026-09-02T22:20:55.522Z"
     }
   ],
   "requests": [
     {
-      "topic_id": "01-paradoksy-i-effekty/paradoks-lzheca",
-      "title": "Парадокс лжеца",
-      "section": "01 — Парадоксы и эффекты",
+      "topic_id": "01-paradoxes/the-unfinished-map",
+      "title": "The Unfinished Map",
+      "section": "01 — Paradoxes",
       "asked_at": "2026-09-02T22:20:55.585Z"
     }
   ],
   "reactions": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "kind": "struck",
       "felt_at": "2026-09-06T23:14:54.922Z"
     }
@@ -1253,15 +1253,15 @@ curl http://127.0.0.1:8084/api/export
   "typos": [
     {
       "id": "9a3f-typo",
-      "piece_id": "02-istoriya/god-bez-leta",
-      "quoted": "вулкан Томбора",
+      "piece_id": "02-history/the-salt-road",
+      "quoted": "the carvan's ledger",
       "paragraph": 1,
       "spotted_at": "2026-09-06T23:15:00.878Z"
     }
   ],
   "openings": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
+      "piece_id": "02-history/the-salt-road",
       "opened_at": "2026-09-02T22:20:55.301Z"
     }
   ]
@@ -1305,8 +1305,8 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
   "reading": [],
   "notes": [
     {
-      "piece_id": "02-istoriya/god-bez-leta",
-      "body": "Год без лета — и целая эпоха следом. Дописано позже.",
+      "piece_id": "02-history/the-salt-road",
+      "body": "Salt in June, and a whole trade route after it. Added a line later.",
       "updated_at": "2026-09-02T17:42:02.008Z"
     }
   ],

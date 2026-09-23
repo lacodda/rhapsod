@@ -7,11 +7,11 @@ The library is a directory of directories. Each one is a **section** - a shelf -
 
 ```
 library/
-├── 02 — История/
-│   └── Год без лета.md
-└── 19 — Любовь и пары/
-    ├── Абеляр и Элоиза.md
-    └── Орфей и Эвридика.md
+├── 02 — History/
+│   └── The Salt Road.md
+└── 19 — Letters/
+    ├── The Lighthouse Letters.md
+    └── The Clockmaker's Bet.md
 ```
 
 ## Section directories
@@ -19,10 +19,12 @@ library/
 A section directory is named `NN — Title`, with an em dash: the number orders the shelves, the title is what a reader sees.
 
 ```
-19 — Любовь и пары
+19 — Letters
 ```
 
 A directory that does not follow that shape is still a section - it is named after itself and sorts after every numbered one. A section directory holding no readable pieces is not a shelf at all and never appears: empty directories exist in a vault the moment a section is created, and a shelf with nothing on it is noise in the app.
+
+A directory whose name starts with `_` is never a section. It is how files that belong with the library without being on a shelf travel with it - the reader's digest and quote book that [a merge](/rhapsod/guides/exporting-marks/#where-the-files-go) writes, for one - and it is skipped whatever is inside it, so nothing there depends on having the right frontmatter.
 
 ## A piece
 
@@ -31,35 +33,35 @@ A piece is a markdown file with a flat YAML frontmatter block, then prose, then 
 ```markdown
 ---
 type: novella
-section: 19 — Любовь и пары
-topic: Абеляр и Элоиза
+section: 19 — Letters
+topic: The Lighthouse Letters
 written: 2026-09-01
 words: 1012
 source: ""
 songs: []
 ---
 
-# Абеляр и Элоиза
+# The Lighthouse Letters
 
-Париж, около 1132 года.
+A rock off the coast, 1888.
 
 ---
 
-Она пишет ему из монастыря.
+She writes to him from the mainland, once a month, whatever the sea allows.
 
 ## Соседи
 
-- Орфей и Эвридика — другая пара.
-- Данте и Беатриче — любовь в тексте.
+- The Clockmaker's Bet — another kind of waiting.
+- The Salt Road — distance measured in a different unit.
 
 ## Одной строкой
 
-**«Ради него, а не ради Бога».**
+**"The lamp was for ships. She lit it for him."**
 
 ## Для песни
 
-- **Ситуация:** она осталась.
-- **Образ:** покрывало у алтаря.
+- **Situation:** she keeps the light going past the point of duty.
+- **Image:** the harbour master's lamp, still burning at dawn.
 ```
 
 ### Frontmatter
@@ -103,12 +105,12 @@ Any other heading stays in the prose. A piece that invents its own section shoul
 An id is the section slug and the file slug, joined by a slash:
 
 ```
-19 — Любовь и пары/Абеляр и Элоиза.md
+19 — Letters/The Clockmaker's Bet.md
         ↓
-19-lyubov-i-pary/abelyar-i-eloiza
+19-letters/the-clockmaker-s-bet
 ```
 
-Cyrillic is transliterated rather than percent-encoded. These ids end up in the address bar of a phone, and `19-lyubov-i-pary` is a link a person can read, while `19-%D0%9B%D1%8E%D0%B1...` is not. Letters and digits pass through lowercased, Cyrillic maps to its latin sound, and everything else becomes a separator - so `Кейдж и 4′33″` becomes `keydzh-i-4-33`.
+For a section written in Cyrillic, the same rule transliterates rather than percent-encodes. These ids end up in the address bar of a phone, and `tikhaya-gavan` is a link a person can read, while `%D0%A2%D0%B8%D1%85%D0%B0%D1%8F...` is not. Letters and digits pass through lowercased, Cyrillic maps to its latin sound, and everything else becomes a separator - so `Тихая гавань` becomes `tikhaya-gavan`.
 
 The mapping only has to be stable and collision-free within one library, not reversible. Note that `й` and `ы` map to `y`, not to `i`: collapsing them would turn `пары` into `pari`, which reads as a different word.
 
