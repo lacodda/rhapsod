@@ -28,7 +28,7 @@ A directory whose name starts with `_` is never a section. It is how files that 
 
 ## A piece
 
-A piece is a markdown file with a flat YAML frontmatter block, then prose, then up to three named trailing blocks.
+A piece is a markdown file with a flat YAML frontmatter block, then prose, then up to four named trailing blocks.
 
 ```markdown
 ---
@@ -87,9 +87,9 @@ Everything before the first named heading is prose, split into paragraphs. Two t
 
 Paragraphs stay a list rather than becoming one blob of markdown, because reading position is an index into that list.
 
-### The three trailing blocks
+### The four trailing blocks
 
-Three headings are known by name and lifted out of the prose, so the reading app can set them apart from the text:
+Four headings are known by name and lifted out of the prose, so the reading app can set them apart from the text. The parser matches them exactly, as `## ` followed by the words below, and only the Russian spellings are recognised; there is no English alternative yet. This is a current limitation: an English `## Neighbours` stays in the prose as an ordinary heading. The example piece above uses the real headings for that reason.
 
 | Heading | Becomes | What it is |
 | --- | --- | --- |

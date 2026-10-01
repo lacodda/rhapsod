@@ -15,10 +15,12 @@ The file is read as UTF-8. Write it as UTF-8 too: Windows PowerShell 5.1 decodes
 | --- | --- | --- | --- |
 | `RHAPSOD_PUBLISH_SRC` | yes | - | The local library directory to publish. |
 | `RHAPSOD_PUBLISH_HOST` | yes | - | The ssh host to publish to, as ssh resolves it. |
-| `RHAPSOD_PUBLISH_DEST` | yes | - | The directory on that host to publish into: what `RHAPSOD_CONTENT_DIR` points at over there. |
+| `RHAPSOD_PUBLISH_DEST` | yes | - | The directory on that host to publish into: the host path the stand's `.env` sets as `RHAPSOD_CONTENT` (for example `/srv/rhapsod/content`), which compose mounts into the container. |
 | `RHAPSOD_PUBLISH_URL` | no | `http://localhost:8084` | Base URL of the running server, called to reindex after the copy. |
 
 These are **not** server configuration. The server never reads them; it only ever learns about a publish through `POST /api/reindex`. The variables the server itself reads are on the [Configuration](/rhapsod/reference/configuration/) page.
+
+Two similarly named settings are different things. `RHAPSOD_CONTENT` is in the stand's `.env`: a path on the host, which compose mounts into the container. `RHAPSOD_CONTENT_DIR` is the server's own setting: where it reads the library from inside its process, `/content` in the image. `RHAPSOD_PUBLISH_DEST` names the first of them, because the copy lands on the host.
 
 Publishing works the same whether the stand is open or [locked](/rhapsod/guides/locking-a-stand/): `POST /api/reindex` and `GET /api/health` are in front of the password, because a publishing script on the same network is not a browser and a monitor is not a reader.
 
@@ -144,7 +146,7 @@ curl http://pi:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.15.1","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 For everything else the API offers, see the [API reference](/rhapsod/reference/api/).

@@ -5,7 +5,7 @@ description: Fetch everything the reader left on a stand as one JSON document, a
 
 The library goes out to the stand as files. What you made of it - where you got to, what you wrote, the lines you kept, the typos you spotted - stays on the stand, in a SQLite file the markdown never touches ([ADR 0002](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0002-content-as-files.md)).
 
-**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file, so a ritual of your own can fold your marks into the vault the library was published from. One document carries the whole of it.
+**Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file. One document carries the whole of it. That file is all this repository ships: folding it into a vault is a ritual of your own, and the sections below describe the author's, as an example of what one can build on the export.
 
 It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is strictly a read: nothing on the stand changes, and running it twice differs only in the file it writes.
 
@@ -75,7 +75,7 @@ Everything about the reading is behind the session on a locked stand, the export
 
 The document is one JSON object; its full shape, with an example of every row, is in [the API reference](/rhapsod/reference/api/#get-apiexport). The rules behind the fields are in [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/).
 
-Every kind the export carries is listed here with the place it belongs once it is back in the vault. A kind with nowhere to go is a mark that rides along in every export and lands nowhere - which is worse than not keeping it, because every run reports success. The test suite asks a real server for its list of kinds and fails if this table is missing one.
+Every kind the export carries is listed here with the place it belongs once it is back in the vault - the destinations are the ones the author's own merge uses, offered as a model. A kind with nowhere to go is a mark that rides along in every export and lands nowhere - which is worse than not keeping it, because every run reports success. The test suite asks a real server for its list of kinds and fails if this table is missing one.
 
 | Key | What it holds | Where it lands |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ Every kind the export carries is listed here with the place it belongs once it i
 
 ## Where the files go
 
-The arrangement that works, and the one the author uses. Nothing in the software depends on it; what it does depend on is described under [The boundary](#the-boundary).
+The arrangement the author uses, offered as an example rather than shipped: no script in this repository writes these files. Nothing in the software depends on it; what it does depend on is described under [The boundary](#the-boundary).
 
 ```
 library/
@@ -120,7 +120,7 @@ The digest, the quote book and the patches are **summaries, rewritten whole on e
 
 ## The boundary
 
-Three rules hold whatever shape you choose, and each is there because breaking it has cost something.
+The merge is the author's, not shipped here, but three rules hold whatever shape you choose, and each is there because breaking it has cost something.
 
 - **The merge never edits a piece, not even its frontmatter.** The library is the author's; the reading is the reader's. Keeping them in separate files means a ritual that goes wrong can only damage its own output, and republishing a piece never collides with a merge. Fixing a typo is the one change to a piece, and it is a separate step with its own confirmation.
 - **The reader's files live in the library directory, not with notes about the project.** They are about the library, travel with it, and are read beside it. A directory whose name starts with `_` is not a shelf: the server skips it when it indexes, so it can be published along with everything else without a digest showing up as a novella. Each generated file still carries a `type` other than `novella` in its frontmatter, the same way a companion does.
@@ -147,11 +147,11 @@ The request is withdrawn from the stand - `DELETE /api/requests/{shelf}/{topic}`
 
 A typo is the one thing in the export that asks for a change to a piece. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what to search the file for, and `paragraph` is only a hint for the eye.
 
-The author's ritual turns each one into a patch:
+The author's own ritual, built on the export and not part of this repository, turns each one into a patch:
 
 1. **The merge finds the words** in the piece's file. Found on exactly one line, that line becomes a pair - *was* and *now*, both the same to begin with - in the patch file. Not found, or found on more than one line, the typo goes into a list at the end of the same file instead, with the reason.
 2. **Someone writes the fix** into *now*: the author, or whoever runs the ritual for them. A pair left unchanged is skipped.
-3. **One confirmation applies all of them.** A second script shows each change in its context, and with the confirmation replaces *was* with *now* - only if *was* is still on exactly one line of the file, and without touching any other byte, so the encoding and line endings of the piece survive. Then it withdraws the report from the stand, `DELETE /api/typos/{id}`, because withdrawing is how the reader learns it was dealt with.
+3. **One confirmation applies all of them.** In the author's ritual a second script of theirs shows each change in its context, and with the confirmation replaces *was* with *now* - only if *was* is still on exactly one line of the file, and without touching any other byte, so the encoding and line endings of the piece survive. Then it withdraws the report from the stand, `DELETE /api/typos/{id}`, because withdrawing is how the reader learns it was dealt with.
 
 The fixed piece reaches the stand with the next publish. A report the merge could not place stays on the stand until someone looks, and stays in the list until then.
 

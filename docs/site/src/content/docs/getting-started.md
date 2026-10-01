@@ -13,11 +13,20 @@ rhapsod is one process: a Rust server over a SQLite file, serving a JSON API and
 
 ## The library
 
-The server needs a directory of markdown files to serve. Make one with anything in it:
+The server needs a directory of markdown files to serve, and a piece has to sit inside a shelf: a subdirectory of the library. A markdown file placed directly in the top-level directory is not indexed. Make one shelf with one piece in it:
 
 ```sh
-mkdir -p content
-printf -- '---\ntype: novella\nsection: first\ntopic: beginnings\nwritten: 2026-09-02\nwords: 12\n---\n\nA first piece, so the shelf is not empty.\n' > content/first.md
+mkdir -p "content/01 — Paradoxes"
+printf -- '---
+type: novella
+section: 01 — Paradoxes
+topic: Beginnings
+written: 2026-09-02
+words: 12
+---
+
+A first piece, so the shelf is not empty.
+' > "content/01 — Paradoxes/first.md"
 ```
 
 Copy the example environment; `RHAPSOD_CONTENT_DIR` already points at that directory:
@@ -34,15 +43,17 @@ cargo run -- serve
 
 `serve` is also what running the binary with no arguments does, which is what a container image or a service unit expects.
 
-The server binds `0.0.0.0:8084` (override with `RHAPSOD_ADDR`), creates `data/rhapsod.db` if it is not there, applies any pending migrations, and serves `/api/health`:
+The server binds the address in `RHAPSOD_ADDR`. Without the variable that is `0.0.0.0:8084`, every interface; the `.env.example` you just copied sets `127.0.0.1:8084`, so this machine only, which is what you want while developing. Delete that line to be reachable from other machines. It creates `data/rhapsod.db` if it is not there, applies any pending migrations, and serves `/api/health`:
 
 ```sh
 curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.0","pieces":1,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.15.1","pieces":1,"indexed_seconds_ago":2}
 ```
+
+`pieces` is 1 because the library holds one shelf with one piece. `indexed_seconds_ago` is small because the server indexed the directory a moment ago, when it started.
 
 ## The app
 
