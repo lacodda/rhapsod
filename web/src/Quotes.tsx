@@ -39,7 +39,7 @@ export function QuotesScreen({ library, marks }: { library: LibraryIndex; marks:
           const piece = library.pieces.find((candidate) => candidate.id === quote.piece_id)
           return (
             <li key={quote.id} className="flex flex-col gap-2 border-l-2 border-accent/40 pl-4">
-              <p className="text-pretty break-words text-[1.0625rem] leading-relaxed text-text">{quote.text}</p>
+              <p className="text-pretty break-words text-lg leading-relaxed text-text">{quote.text}</p>
               {quote.comment ? <p className="text-sm leading-relaxed text-dim">{quote.comment}</p> : null}
               <a
                 href={`/read/${quote.piece_id}`}

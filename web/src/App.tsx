@@ -127,7 +127,7 @@ export function App() {
           route={route}
         />
       ) : null}
-      <main className="mx-auto w-full max-w-[42rem] px-4 pb-16 pt-4 sm:px-6">
+      <main className="mx-auto w-full max-w-168 px-4 pb-16 pt-4 sm:px-6">
         {session === null ? (
           <p className="px-3 py-12 text-sm text-dim">Reaching the library…</p>
         ) : !mayRead ? (
@@ -199,7 +199,7 @@ function Header({
   onOpenMenu?: () => void
 }) {
   return (
-    <header className="mx-auto flex w-full max-w-[42rem] items-center justify-between px-4 py-4 sm:px-6">
+    <header className="mx-auto flex w-full max-w-168 items-center justify-between px-4 py-4 sm:px-6">
       <span className="flex items-center gap-1">
         {onOpenMenu ? (
           <button
@@ -254,7 +254,7 @@ function Header({
           </a>
         ) : null}
         <SyncMark sync={sync} />
-        <span className="px-2 font-mono text-[0.6875rem] text-dim">v{__APP_VERSION__}</span>
+        <span className="px-2 font-mono text-xs text-dim">v{__APP_VERSION__}</span>
       </span>
     </header>
   )
@@ -290,7 +290,7 @@ function SyncMark({ sync }: { sync: SyncState }) {
   const label = sync.waiting > 0 ? `${sync.waiting} kept on this phone` : 'the stand is away'
   return (
     <span
-      className="px-2 font-mono text-[0.6875rem] text-dim"
+      className="px-2 font-mono text-xs text-dim"
       // The count is not a decoration: a reader who is about to wipe the
       // browser's data should be able to find out that something is waiting.
       title={

@@ -169,7 +169,7 @@ function Marked({ text, marked }: { text: string; marked?: string[] }) {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3 border-t border-line pt-6">
-      <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">{title}</h2>
+      <h2 className="font-mono text-xs uppercase tracking-caption text-dim">{title}</h2>
       {children}
     </section>
   )
@@ -187,7 +187,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 function Framed({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-line bg-raise p-5">
-      <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">{title}</h2>
+      <h2 className="font-mono text-xs uppercase tracking-caption text-dim">{title}</h2>
       {children}
     </section>
   )
@@ -354,7 +354,7 @@ export function ReaderScreen({
               event.preventDefault()
               go({ name: 'section', section: shelf.id })
             }}
-            className="font-mono text-xs uppercase tracking-[0.14em] text-dim hover:text-accent"
+            className="font-mono text-xs uppercase tracking-caption text-dim hover:text-accent"
           >
             {shelf.title}
           </a>
@@ -375,7 +375,7 @@ export function ReaderScreen({
             ref={(element) => {
               paragraphs.current[index] = element
             }}
-            className="text-pretty text-[1.0625rem] leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
+            className="text-pretty text-lg leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
           >
             <Rich text={paragraph} marked={highlights.get(index)} library={library} />
           </p>
@@ -399,7 +399,7 @@ export function ReaderScreen({
         <Block title="Neighbours">
           <ul className="flex flex-col gap-2">
             {piece.neighbours.map((neighbour, index) => (
-              <li key={index} className="text-[0.9375rem] leading-relaxed text-dim">
+              <li key={index} className="text-lg leading-relaxed text-dim">
                 <Rich text={neighbour} library={library} />
               </li>
             ))}
@@ -419,7 +419,7 @@ export function ReaderScreen({
         <Block title="Song seed">
           <ul className="flex flex-col gap-2">
             {piece.song.map((line, index) => (
-              <li key={index} className="text-[0.9375rem] leading-relaxed text-dim">
+              <li key={index} className="text-lg leading-relaxed text-dim">
                 <Rich text={line} />
               </li>
             ))}
@@ -431,7 +431,7 @@ export function ReaderScreen({
         <Framed title="What this was">
           <ul className="flex flex-col gap-2">
             {piece.reference.map((line, index) => (
-              <li key={index} className="text-[0.9375rem] leading-relaxed text-dim">
+              <li key={index} className="text-lg leading-relaxed text-dim">
                 <Rich text={line} />
               </li>
             ))}
@@ -507,7 +507,7 @@ function Finish({
           }}
           className="flex flex-col gap-2 rounded-xl border border-line p-4 transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Next, unread</span>
+          <span className="font-mono text-xs uppercase tracking-caption text-dim">Next, unread</span>
           <span className="text-lg font-medium leading-snug text-text">{next.title}</span>
           {next.one_liner ? <span className="text-sm leading-snug text-dim">{next.one_liner}</span> : null}
           <span className="font-mono text-xs text-dim">{minutes(next.words)} min</span>

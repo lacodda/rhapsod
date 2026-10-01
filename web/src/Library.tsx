@@ -67,7 +67,7 @@ function PieceRow({
 function Mark({ label, accent = false }: { label: string; accent?: boolean }) {
   return (
     <span
-      className={`rounded px-1.5 py-0.5 font-mono text-[0.625rem] uppercase tracking-[0.1em] ${
+      className={`rounded px-1.5 py-0.5 font-mono text-2xs uppercase tracking-caption ${
         accent ? 'bg-accent/15 text-accent' : 'bg-soft text-dim'
       }`}
     >
@@ -166,7 +166,7 @@ function Today({ due }: { due: number }) {
       className="mx-3 flex items-baseline justify-between gap-3 rounded-xl border border-accent/40 bg-accent/5 p-4 transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <span className="flex flex-col gap-1">
-        <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Today</span>
+        <span className="font-mono text-xs uppercase tracking-caption text-dim">Today</span>
         <span className="text-lg font-medium leading-snug text-text">
           {due} {due === 1 ? 'piece' : 'pieces'} to bring back
         </span>
@@ -186,7 +186,7 @@ function Resume({ piece }: { piece: PieceSummary }) {
       }}
       className="mx-3 flex flex-col gap-2 rounded-xl border border-line p-4 transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
-      <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Continue</span>
+      <span className="font-mono text-xs uppercase tracking-caption text-dim">Continue</span>
       <span className="text-lg font-medium leading-snug text-text">{piece.title}</span>
       {piece.one_liner ? <span className="text-sm leading-snug text-dim">{piece.one_liner}</span> : null}
     </a>

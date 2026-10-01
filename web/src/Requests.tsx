@@ -73,7 +73,7 @@ export function RequestsScreen({ requests }: { requests: RequestStore }) {
 
       {requests.asked.length > 0 && needle.length === 0 ? (
         <section className="flex flex-col gap-2 px-3">
-          <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Asked for</h2>
+          <h2 className="font-mono text-xs uppercase tracking-caption text-dim">Asked for</h2>
           <ul className="flex flex-col gap-1">
             {requests.asked.map((request) => (
               <li key={request.topic_id}>
@@ -91,7 +91,7 @@ export function RequestsScreen({ requests }: { requests: RequestStore }) {
 
       {found !== null ? (
         <section className="flex flex-col gap-2 px-3">
-          <h2 className="font-mono text-xs uppercase tracking-[0.14em] text-dim">
+          <h2 className="font-mono text-xs uppercase tracking-caption text-dim">
             {found.length === 0 ? 'Nothing matches' : `${found.length}${found.length >= 60 ? '+' : ''} found`}
           </h2>
           <ul className="flex flex-col gap-1">
@@ -192,7 +192,7 @@ function Row({
     >
       <span className="flex flex-col gap-0.5">
         <span className={`text-sm leading-snug ${wanted ? 'text-text' : 'text-dim'}`}>{topic.title}</span>
-        {showShelf ? <span className="font-mono text-[0.625rem] text-faint">{topic.section}</span> : null}
+        {showShelf ? <span className="font-mono text-2xs text-faint">{topic.section}</span> : null}
       </span>
       <span
         className={`flex shrink-0 items-center gap-1 font-mono text-xs ${wanted ? 'text-accent' : 'text-faint'}`}

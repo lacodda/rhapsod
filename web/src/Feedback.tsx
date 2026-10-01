@@ -168,7 +168,7 @@ function Stopped({ piece }: { piece: Abandoned }) {
         className="flex w-full flex-col gap-1.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         <span className="flex items-baseline justify-between gap-3">
-          <span className="min-w-0 truncate text-[0.9375rem] text-text">{piece.title}</span>
+          <span className="min-w-0 truncate text-lg text-text">{piece.title}</span>
           <span className="shrink-0 font-mono text-xs text-dim">{percent}%</span>
         </span>
         <span className="h-1 w-full overflow-hidden rounded-full bg-soft">

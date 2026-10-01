@@ -56,7 +56,7 @@ function CardRow({ card, reviews }: { card: Card; reviews: ReviewStore }) {
       <div className="flex flex-col gap-2">
         <span className="flex items-baseline justify-between gap-3">
           <span className="text-base font-medium leading-snug text-text">{card.title}</span>
-          <span className="shrink-0 font-mono text-[0.625rem] uppercase tracking-[0.1em] text-dim">
+          <span className="shrink-0 font-mono text-2xs uppercase tracking-caption text-dim">
             {card.step} of {STEPS}
           </span>
         </span>

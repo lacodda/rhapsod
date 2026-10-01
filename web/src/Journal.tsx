@@ -70,7 +70,7 @@ export function JournalScreen() {
         ) : (
           days.map((day) => (
             <div key={day.day} className="flex flex-col gap-1">
-              <h3 className="px-3 pt-2 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-dim">
+              <h3 className="px-3 pt-2 font-mono text-2xs uppercase tracking-caption text-dim">
                 {dayLabel(day.day)}
               </h3>
               <ul className="flex flex-col">
@@ -97,7 +97,7 @@ function Months({ months }: { months: Month[] }) {
     <div className="mx-3 overflow-x-auto rounded-lg border border-line">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-line font-mono text-[0.625rem] uppercase tracking-[0.14em] text-dim">
+          <tr className="border-b border-line font-mono text-2xs uppercase tracking-caption text-dim">
             <th scope="col" className="px-3 py-2 text-left font-normal">
               Month
             </th>
@@ -140,7 +140,7 @@ function Line({ line }: { line: Opened }) {
         }}
         className="flex items-baseline justify-between gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        <span className="min-w-0 truncate text-[0.9375rem] text-text">{line.title}</span>
+        <span className="min-w-0 truncate text-lg text-text">{line.title}</span>
         <span className="shrink-0 font-mono text-xs tabular-nums text-dim">
           {timeLabel(line.opened_at)}
           {line.times > 1 ? ` ×${line.times}` : ''}

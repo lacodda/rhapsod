@@ -19,7 +19,7 @@ import { CloseIcon } from '@/Icons'
 import { go, type Route } from '@/routing'
 
 /** How wide the panel is: enough for a shelf title, never the whole screen. */
-const WIDTH = 'w-[18rem] max-w-[85vw]'
+const WIDTH = 'w-72 max-w-[85vw]'
 
 export function Drawer({
   open,
@@ -107,7 +107,7 @@ export function Drawer({
         }`}
       >
         <div className="flex items-center justify-between border-b border-line px-4 py-4">
-          <span className="font-mono text-xs uppercase tracking-[0.14em] text-dim">Library</span>
+          <span className="font-mono text-xs uppercase tracking-caption text-dim">Library</span>
           <button
             type="button"
             onClick={onClose}
@@ -146,7 +146,7 @@ export function Drawer({
         </nav>
 
         <div className="flex flex-col gap-1 border-b border-line px-2 py-3">
-          <span className="px-3 pb-1 font-mono text-[0.625rem] uppercase tracking-[0.14em] text-dim">Shelves</span>
+          <span className="px-3 pb-1 font-mono text-2xs uppercase tracking-caption text-dim">Shelves</span>
           {library.sections.map((shelf) => (
             <Entry
               key={shelf.id}

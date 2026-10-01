@@ -14,6 +14,14 @@ export default tseslint.config(
   reactHooks.configs.flat['recommended-latest'],
   ...dowel.configs.recommended,
   {
+    // dowel 0.33 turns no-raw-button on, and the way off a raw button is
+    // Button, RowButton and Chip, which rhapsod has not vendored from the
+    // registry yet. Until that adoption stage the screen buttons stay raw
+    // rather than being scattered with per-line disables.
+    files: ['**/*.{ts,tsx}'],
+    rules: { 'dowel/no-raw-button': 'off' },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       ecmaVersion: 2022,

@@ -166,7 +166,7 @@ export function NoteEditor({ pieceId, marks }: { pieceId: string; marks: MarksSt
         }}
         rows={4}
         placeholder="What this left you with."
-        className="w-full resize-y rounded-lg border border-line bg-soft px-3 py-2 text-[0.9375rem] leading-relaxed text-text outline-none focus-visible:border-accent"
+        className="w-full resize-y rounded-lg border border-line bg-soft px-3 py-2 text-lg leading-relaxed text-text outline-none focus-visible:border-accent"
       />
     </label>
   )
@@ -190,7 +190,7 @@ function KeptLine({ quote, marks }: { quote: Quote; marks: MarksStore }) {
 
   return (
     <li className="flex flex-col gap-2 border-l-2 border-accent/40 pl-3">
-      <p className="text-pretty break-words text-[0.9375rem] leading-relaxed text-text">{quote.text}</p>
+      <p className="text-pretty break-words text-lg leading-relaxed text-text">{quote.text}</p>
 
       {editing ? (
         <input
@@ -223,7 +223,7 @@ function KeptLine({ quote, marks }: { quote: Quote; marks: MarksStore }) {
         onClick={() => {
           marks.drop(quote.id)
         }}
-        className="self-start font-mono text-[0.625rem] uppercase tracking-[0.1em] text-dim hover:text-bad"
+        className="self-start font-mono text-2xs uppercase tracking-caption text-dim hover:text-bad"
       >
         remove
       </button>
