@@ -10,6 +10,7 @@
  * local queue and are delivered when the stand comes back (ADR 0003).
  */
 
+import { fromCache } from '@/offline'
 import { enqueue, mintId, type Change } from '@/queue'
 import { drain, sawServer } from '@/sync'
 
@@ -269,7 +270,20 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string): Promise<T> {
+/** What a read is told when the stand cannot be reached. */
+const OUT_OF_REACH = 'The library is out of reach. It comes back when you are home.'
+
+/** How a read may be answered. */
+interface ReadOptions {
+  /**
+   * Only the stand will do. Set where the answer is about the stand rather
+   * than for showing: a refresh fetched against the worker's copy of the
+   * index would refresh nothing and look as if it had worked.
+   */
+  fresh?: boolean
+}
+
+async function get<T>(path: string, { fresh = false }: ReadOptions = {}): Promise<T> {
   let response: Response
   try {
     response = await fetch(`/api${path}`)
@@ -277,7 +291,15 @@ async function get<T>(path: string): Promise<T> {
     // The stand is a Pi at home: unreachable is the normal case on a train,
     // not an exception worth a stack trace.
     sawServer(false)
-    throw new ApiError('The library is out of reach. It comes back when you are home.', 0)
+    throw new ApiError(OUT_OF_REACH, 0)
+  }
+
+  // An answer from the worker's copy is the worker answering, not the stand:
+  // the reader is on the train however readable the piece is.
+  if (fromCache(response)) {
+    sawServer(false)
+    if (fresh) throw new ApiError(OUT_OF_REACH, 0)
+    return (await response.json()) as T
   }
 
   // The stand answered, whatever it said: a 404 is the server being there and
@@ -297,25 +319,16 @@ async function get<T>(path: string): Promise<T> {
  * that must not wait for a Pi on a network they may not be on.
  */
 async function queue(change: Change): Promise<void> {
-  try {
-    await enqueue(change)
-  } catch {
-    // A browser that will not open IndexedDB still reads. Try the wire once
-    // so a change is not silently dropped on a working connection.
-    void fetch(`/api${change.path}`, {
-      method: change.method,
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(change.body),
-    }).catch(() => undefined)
-    return
-  }
+  // Never fails: a browser that will not keep the change on the device has
+  // it held in the page instead, and the screens say so (see `queue.ts`).
+  await enqueue(change)
   void drain()
 }
 
 /** The device's clock, as the server wants to read it. */
 const now = (): string => new Date().toISOString()
 
-export const fetchLibrary = (): Promise<LibraryIndex> => get<LibraryIndex>('/library')
+export const fetchLibrary = (options?: ReadOptions): Promise<LibraryIndex> => get<LibraryIndex>('/library', options)
 
 export const fetchPiece = (id: string): Promise<Piece> => get<Piece>(`/pieces/${id}`)
 
@@ -346,7 +359,7 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T 
     })
   } catch {
     sawServer(false)
-    throw new ApiError('The library is out of reach. It comes back when you are home.', 0)
+    throw new ApiError(OUT_OF_REACH, 0)
   }
   sawServer(true)
   if (!response.ok) {
@@ -365,8 +378,15 @@ export const fetchRequests = (): Promise<Request[]> => get<Request[]>('/requests
  * Queued like every other change: a reader decides they want something while
  * reading, which is usually nowhere near the stand.
  */
-export const askFor = (topicId: string): Promise<void> =>
-  queue({ path: `/requests/${topicId}`, method: 'POST', body: { asked_at: now() } })
+export const askFor = (topic: Topic): Promise<void> =>
+  queue({
+    path: `/requests/${topic.id}`,
+    method: 'POST',
+    body: { asked_at: now() },
+    // The title travels with the request so a list read back from the queue,
+    // away from home, can still say what was asked for.
+    context: { title: topic.title, section: topic.section },
+  })
 
 export const withdrawRequest = (topicId: string): Promise<void> =>
   queue({ path: `/requests/${topicId}`, method: 'DELETE', body: {} })
@@ -401,8 +421,16 @@ export const fetchNotes = (): Promise<Note[]> => get<Note[]>('/notes')
 
 export const fetchQuotes = (): Promise<Quote[]> => get<Quote[]>('/quotes')
 
-export const saveNote = (id: string, body: string): Promise<void> =>
-  queue({ path: `/notes/${id}`, method: 'POST', body: { body, marked_at: now() } })
+/**
+ * Writes the note on a piece.
+ *
+ * `base` is the text the edit started from - `null` when the note was not
+ * known. The stand compares it with the note it has when the write arrives,
+ * so text the reader never saw is kept rather than written over, whatever
+ * the clocks say (see `settle_note` in `src/marks.rs`).
+ */
+export const saveNote = (id: string, body: string, base: string | null): Promise<void> =>
+  queue({ path: `/notes/${id}`, method: 'POST', body: { body, marked_at: now(), base } })
 
 /**
  * Keeps a line.
@@ -417,7 +445,12 @@ export function keepQuote(quote: { piece_id: string; paragraph: number; text: st
     id: mintId(),
     created_at: now(),
   }
-  void queue({ path: '/quotes', method: 'POST', body: { ...quote, client_id: kept.id } })
+  void queue({
+    path: '/quotes',
+    method: 'POST',
+    body: { ...quote, client_id: kept.id },
+    context: { created_at: kept.created_at },
+  })
   return kept
 }
 

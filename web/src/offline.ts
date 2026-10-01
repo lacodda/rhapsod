@@ -4,7 +4,9 @@
  * The service worker does the caching (see `public/sw.js`); this is the app's
  * side of it - registering the worker, and telling it what the library holds
  * so the whole of it is cached rather than only the pieces that happened to
- * be opened (ADR 0003).
+ * be opened (ADR 0003). The reader's own state is held too, read by read, so
+ * the app starts away from home with the reader's marks and not only with the
+ * library.
  */
 
 import type { LibraryIndex } from '@/api'
@@ -68,6 +70,117 @@ export async function installed(): Promise<boolean | null> {
 
 /** The name the worker gives the library cache; see `public/sw.js`. */
 const LIBRARY_CACHE = 'rhapsod-library'
+
+/**
+ * The header the worker puts on an answer it gave from its own copy, because
+ * the stand did not answer; see `public/sw.js`.
+ *
+ * Without it a cached answer looked exactly like the stand answering, and the
+ * app counted it as the stand being there: opening a held piece on a train
+ * hid "the stand is away", and fetching the library again away from home
+ * looked like it worked.
+ */
+export const FROM_CACHE = 'x-rhapsod-cached'
+
+/** Whether an answer came from the worker's copy rather than from the stand. */
+export const fromCache = (response: Response): boolean => response.headers.get(FROM_CACHE) !== null
+
+/**
+ * The reads of the reader's own state that the worker holds; `public/sw.js`
+ * keeps the same list.
+ *
+ * Everything the app loads about the reader at the start, so that it starts
+ * away from home with the reader's marks rather than without them. Without
+ * them a note the reader wrote at home showed as "+ Write a note" on the
+ * train, and the note written there replaced it on delivery.
+ */
+export const READER_STATE = [
+  '/api/progress',
+  '/api/notes',
+  '/api/quotes',
+  '/api/reviews',
+  '/api/bookmarks',
+  '/api/reactions',
+  '/api/requests',
+]
+
+/**
+ * The held read that a delivered change makes stale, if any.
+ *
+ * `/notes/<id>` changes what `/api/notes` answers, `/quotes/<id>` what
+ * `/api/quotes` does, and so on; a typo report changes nothing the worker
+ * holds.
+ */
+export function staleBy(changePath: string): string | null {
+  const read = `/api/${changePath.split('/')[1] ?? ''}`
+  return READER_STATE.includes(read) ? read : null
+}
+
+/**
+ * Reads the given paths again through the worker, so its copy is the stand's
+ * current answer.
+ *
+ * Called after the queue lands. The copy was taken when the app opened, which
+ * at home is usually before the drain that delivered the train's changes -
+ * and the next time the app opened away from home it showed the state from
+ * before that journey. Nothing is done with the answers: the point is the
+ * worker storing them on the way past.
+ */
+export function rehold(reads: Iterable<string>): void {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker?.controller) return
+  for (const read of reads) {
+    void fetch(read).catch(() => undefined)
+  }
+}
+
+/** What the worker says when a fill of the library ends. */
+export interface Filled {
+  type: 'library-filled'
+  /** Whether it was the reader's refresh rather than the background fill. */
+  refresh: boolean
+  /** False when the stand went out of reach part way through. */
+  reached: boolean
+  /** The paths it did not get - not attempted, or not given by the stand. */
+  missed: string[]
+}
+
+/** Listens for the worker reporting a finished fill. Returns the unsubscribe. */
+export function watchFills(listener: (filled: Filled) => void): () => void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return () => undefined
+  const container = navigator.serviceWorker
+  const onMessage = (event: MessageEvent): void => {
+    const data = event.data as Partial<Filled> | null
+    if (data?.type === 'library-filled') listener(data as Filled)
+  }
+  container.addEventListener('message', onMessage)
+  // A listener added this way does not start the message queue the way
+  // `onmessage` does; without this a report sent early could wait unread.
+  container.startMessages()
+  return () => {
+    container.removeEventListener('message', onMessage)
+  }
+}
+
+/** How a refresh fell short, in pieces - the unit the screen counts in. */
+export interface Shortfall {
+  fetched: number
+  total: number
+  /** False when the stand went away part way, rather than refusing some. */
+  reached: boolean
+}
+
+/**
+ * What a finished fill means to the reader: `null` when every piece arrived.
+ *
+ * Counted in pieces, not paths: the index and the plan ride along in every
+ * fill, and "40 of 42" for a shelf of forty pieces would be a riddle.
+ */
+export function shortfall(filled: Filled, sent: string[]): Shortfall | null {
+  const pieces = sent.filter((path) => path.startsWith(PIECE_PREFIX))
+  const missed = filled.missed.filter((path) => path.startsWith(PIECE_PREFIX)).length
+  if (missed === 0) return null
+  return { fetched: pieces.length - missed, total: pieces.length, reached: filled.reached }
+}
 
 /** What a cached piece's path starts with; the rest of it is the piece's id. */
 const PIECE_PREFIX = '/api/pieces/'
@@ -182,18 +295,25 @@ async function postWhenReady(
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
   try {
     await navigator.serviceWorker.ready
-    if (post(type, library, ids)) return true
-    // Active but not yet controlling this page: claim() is on its way.
-    await new Promise<void>((resolve) => {
-      const done = (): void => {
-        navigator.serviceWorker.removeEventListener('controllerchange', done)
-        clearTimeout(timer)
-        resolve()
-      }
-      const timer = setTimeout(done, CLAIM_WAIT_MS)
-      navigator.serviceWorker.addEventListener('controllerchange', done)
-    })
-    return post(type, library, ids)
+    if (!post(type, library, ids)) {
+      // Active but not yet controlling this page: claim() is on its way.
+      await new Promise<void>((resolve) => {
+        const done = (): void => {
+          navigator.serviceWorker.removeEventListener('controllerchange', done)
+          clearTimeout(timer)
+          resolve()
+        }
+        const timer = setTimeout(done, CLAIM_WAIT_MS)
+        navigator.serviceWorker.addEventListener('controllerchange', done)
+      })
+      if (!post(type, library, ids)) return false
+    }
+    // The page was not the worker's when it loaded the reader's marks, so
+    // those reads went past it and nothing of them is held. Read once more
+    // now that they pass through it, or the first trip after a first visit
+    // starts without the reader's notes.
+    rehold(READER_STATE)
+    return true
   } catch {
     // No worker to be had; the app still reads online.
     return false

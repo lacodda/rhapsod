@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LibraryIndex } from '@/api'
-import { paths } from '@/offline'
+import { paths, shortfall, staleBy } from '@/offline'
 
 const LIBRARY: LibraryIndex = {
   sections: [
@@ -35,5 +35,36 @@ describe('paths', () => {
     // the plan is what the reader asks the next novella from: neither is a
     // shelf, so neither is given up with the shelves.
     expect(paths(LIBRARY, [])).toEqual(['/api/library', '/api/topics'])
+  })
+})
+
+describe('shortfall', () => {
+  const sent = ['/api/library', '/api/topics', '/api/pieces/a/one', '/api/pieces/a/two', '/api/pieces/a/three']
+
+  it('says nothing when every piece arrived', () => {
+    // The plan missing is not a piece missing; the screen counts pieces.
+    expect(shortfall({ type: 'library-filled', refresh: true, reached: true, missed: ['/api/topics'] }, sent)).toBeNull()
+  })
+
+  it('counts the pieces a refresh did not get', () => {
+    expect(
+      shortfall(
+        { type: 'library-filled', refresh: true, reached: false, missed: ['/api/pieces/a/two', '/api/pieces/a/three'] },
+        sent,
+      ),
+    ).toEqual({ fetched: 1, total: 3, reached: false })
+  })
+})
+
+describe('staleBy', () => {
+  it('names the held read a delivered change makes stale', () => {
+    expect(staleBy('/notes/02-myths/icarus')).toBe('/api/notes')
+    expect(staleBy('/quotes')).toBe('/api/quotes')
+    expect(staleBy('/quotes/q1')).toBe('/api/quotes')
+    expect(staleBy('/progress/02-myths/icarus')).toBe('/api/progress')
+  })
+
+  it('names nothing for a change the worker holds nothing of', () => {
+    expect(staleBy('/typos')).toBeNull()
   })
 })

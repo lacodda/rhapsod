@@ -32,10 +32,117 @@ pub struct Quote {
     pub created_at: String,
 }
 
+/// What separates text the writer had not seen from what they wrote.
+const GAP: &str = "\n\n";
+
+/// The note to keep, given what is stored and what the edit started from;
+/// `None` when nothing changes.
+///
+/// A note is sent whole. That is right when the writer was looking at what is
+/// stored, and destroys text when they were not: a note started on a train
+/// with nothing held, delivered at home, replaced the note written there. So
+/// stored text the edit did not start from stays, first, and the new text
+/// goes after it. `None` for the base is "no note was known", which keeps any
+/// note there is.
+#[must_use]
+pub fn settle(current: &str, base: Option<&str>, next: &str) -> Option<String> {
+    let seen = base.unwrap_or("");
+    if current == seen {
+        return (current != next).then(|| next.to_owned());
+    }
+    // A retry of a write that already landed: the connection dropped after
+    // the stand took it and before the answer came back. Taking it again
+    // would put the text after itself.
+    if current == next || (!next.is_empty() && current.ends_with(&format!("{GAP}{next}"))) {
+        return None;
+    }
+    // What is stored that the writer has not seen. An earlier save of the
+    // same edit may already have gone after it; then the stored note is the
+    // unseen text followed by that save, and only the unseen part is kept
+    // again - a note typed over several pauses must not repeat itself.
+    let unseen = match current.strip_suffix(seen) {
+        Some(rest) if !seen.is_empty() => rest.strip_suffix(GAP).unwrap_or(current),
+        _ => current,
+    };
+    // Emptying a note takes away only what the writer saw.
+    let settled = if next.is_empty() {
+        unseen.to_owned()
+    } else if unseen.is_empty() {
+        next.to_owned()
+    } else {
+        format!("{unseen}{GAP}{next}")
+    };
+    (settled != current).then_some(settled)
+}
+
+/// Writes a note that says what it was an edit of.
+///
+/// `base` is the text the edit started from, or `None` when the note was not
+/// known - the app opened away from home with none of the reader's notes on
+/// the device. The write is decided by content, not by the clock (see
+/// [`settle`]): the result is stored whatever the order of the two
+/// `marked_at`s, and carries the newer of them. The clock is the wrong judge
+/// here - a note typed on a train and delivered after one written at home
+/// lost to the newer stamp, or wrote over a note it had never seen, and either
+/// way the reader's words were gone.
+///
+/// # Errors
+///
+/// Fails when the database rejects the write.
+pub async fn settle_note(pool: &SqlitePool, piece_id: &str, body: &str, marked_at: Option<&str>, base: Option<&str>) -> Result<()> {
+    let body = body.trim();
+    let seen = base.map(str::trim);
+
+    // The write lock is taken before the note is read, not when it is
+    // written: with a plain BEGIN two deliveries could both read the same
+    // note and the second would settle against text that was no longer
+    // there. IMMEDIATE makes the second wait for the first.
+    let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await.context("failed to start writing the note")?;
+    let stored: Option<(String, Option<String>)> = sqlx::query_as("SELECT body, marked_at FROM notes WHERE piece_id = ?")
+        .bind(piece_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to read the note")?;
+    let (current, stored_at) = stored.unwrap_or_default();
+
+    let Some(settled) = settle(&current, seen, body) else {
+        // Nothing to change; the lock goes with the transaction.
+        return Ok(());
+    };
+    if settled.is_empty() {
+        sqlx::query("DELETE FROM notes WHERE piece_id = ?")
+            .bind(piece_id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to clear the note")?;
+    } else {
+        sqlx::query(
+            "INSERT INTO notes (piece_id, body, marked_at) VALUES (?, ?, ?)
+             ON CONFLICT (piece_id) DO UPDATE
+                SET body = excluded.body,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    marked_at = excluded.marked_at",
+        )
+        .bind(piece_id)
+        .bind(&settled)
+        // The newer of the two, so a later write that goes by the clock -
+        // an older app's - replaces this one only if it is newer than both.
+        .bind(marked_at.max(stored_at.as_deref()))
+        .execute(&mut *transaction)
+        .await
+        .context("failed to save the note")?;
+    }
+    transaction.commit().await.context("failed to save the note")?;
+    Ok(())
+}
+
 /// Writes a note, or removes it when the body is empty.
 ///
 /// An empty note is the absence of one: keeping an empty row would put a note
 /// marker on a piece that has nothing written about it.
+///
+/// The newest `marked_at` wins. This is the write of an app from before
+/// [`settle_note`], still cached on a phone somewhere, and of the restore.
 ///
 /// # Errors
 ///
@@ -381,6 +488,128 @@ mod tests {
         // A full export still carries it: the bound is what filters, not the
         // query.
         assert_eq!(notes(&pool, None).await.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn settle_writes_the_note_when_nothing_was_there() {
+        assert_eq!(settle("", None, "new").as_deref(), Some("new"));
+        assert_eq!(settle("", Some(""), "new").as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn settle_takes_the_edit_when_the_writer_saw_what_is_stored() {
+        assert_eq!(settle("old", Some("old"), "old, and more").as_deref(), Some("old, and more"));
+    }
+
+    #[test]
+    fn settle_keeps_text_the_writer_never_saw_ahead_of_theirs() {
+        // The defect this exists for: a note started away from home with
+        // nothing held, delivered over the note written at home.
+        assert_eq!(settle("from home", None, "from the train").as_deref(), Some("from home\n\nfrom the train"));
+        assert_eq!(settle("from home", Some(""), "from the train").as_deref(), Some("from home\n\nfrom the train"));
+        assert_eq!(
+            settle("edited at home", Some("as it was"), "as it was, on the train").as_deref(),
+            Some("edited at home\n\nas it was, on the train")
+        );
+    }
+
+    #[test]
+    fn settle_does_not_repeat_an_edit_saved_over_several_pauses() {
+        // The first save of the edit went after the unseen text; the second
+        // is an edit of the first and replaces it rather than following it.
+        assert_eq!(
+            settle("from home\n\nfrom the", Some("from the"), "from the train").as_deref(),
+            Some("from home\n\nfrom the train")
+        );
+    }
+
+    #[test]
+    fn settle_takes_nothing_again_from_a_write_that_already_landed() {
+        assert_eq!(settle("from the train", Some("old"), "from the train"), None);
+        assert_eq!(settle("from home\n\nfrom the train", None, "from the train"), None);
+        assert_eq!(settle("same", Some("same"), "same"), None);
+    }
+
+    #[test]
+    fn settle_empties_only_what_the_writer_saw() {
+        assert_eq!(settle("the note", Some("the note"), "").as_deref(), Some(""));
+        assert_eq!(settle("from home", Some("something else"), ""), None);
+        assert_eq!(settle("from home\n\nfrom the train", Some("from the train"), "").as_deref(), Some("from home"));
+    }
+
+    #[tokio::test]
+    async fn a_note_with_a_base_is_decided_by_content_not_by_the_clock() {
+        // Written on the train in the morning, delivered after the note
+        // written at home that evening. By the clock it is older and would
+        // be dropped; it says it did not know the note, so it goes after it.
+        let pool = pool().await;
+        set_note(&pool, "a/b", "written at home", Some("2026-09-02T18:00:00.000Z")).await.unwrap();
+        settle_note(&pool, "a/b", "written on the train", Some("2026-09-02T09:00:00.000Z"), None)
+            .await
+            .unwrap();
+
+        assert_eq!(notes(&pool, None).await.unwrap()[0].body, "written at home\n\nwritten on the train");
+        let (stamp,): (Option<String>,) = sqlx::query_as("SELECT marked_at FROM notes WHERE piece_id = 'a/b'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            stamp.as_deref(),
+            Some("2026-09-02T18:00:00.000Z"),
+            "the settled note did not keep the newer stamp"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_note_with_a_base_replaces_what_the_writer_saw() {
+        let pool = pool().await;
+        set_note(&pool, "a/b", "the note", Some("2026-09-02T18:00:00.000Z")).await.unwrap();
+        settle_note(&pool, "a/b", "the note, edited", Some("2026-09-02T09:00:00.000Z"), Some("the note"))
+            .await
+            .unwrap();
+        assert_eq!(notes(&pool, None).await.unwrap()[0].body, "the note, edited");
+
+        // And emptied by someone who saw it, it is gone.
+        settle_note(&pool, "a/b", "", None, Some("the note, edited")).await.unwrap();
+        assert!(notes(&pool, None).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_note_is_settled_against_the_note_as_it_is_when_written() {
+        // The read and the write are one step. Another connection holds the
+        // write lock and is about to store the note from home; a delivery
+        // that started meanwhile must wait for it and settle against it.
+        // Reading first and locking later, it read "no note", and its write
+        // was then refused as stale - the train's note lost to a busy lock.
+        let dir = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}?mode=rwc", dir.path().join("reader.db").display());
+        let pool = crate::db::connect(&url).await.unwrap();
+
+        let mut home = pool.acquire().await.unwrap();
+        sqlx::query("BEGIN IMMEDIATE").execute(&mut *home).await.unwrap();
+
+        let delivery = tokio::spawn({
+            let pool = pool.clone();
+            async move { settle_note(&pool, "a/b", "written on the train", Some("2026-09-02T09:00:00.000Z"), None).await }
+        });
+        // Long enough for the delivery to have started and reached the lock;
+        // there is no signal to wait on from outside the function.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        sqlx::query("INSERT INTO notes (piece_id, body, marked_at) VALUES ('a/b', 'written at home', '2026-09-02T18:00:00.000Z')")
+            .execute(&mut *home)
+            .await
+            .unwrap();
+        sqlx::query("COMMIT").execute(&mut *home).await.unwrap();
+        drop(home);
+
+        delivery.await.unwrap().expect("the delivery should wait for the lock, not fail on it");
+        assert_eq!(
+            notes(&pool, None).await.unwrap()[0].body,
+            "written at home
+
+written on the train"
+        );
     }
 
     #[tokio::test]

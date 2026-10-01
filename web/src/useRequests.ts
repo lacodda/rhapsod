@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { askFor, fetchRequests, fetchTopics, withdrawRequest, type Plan, type Request, type Topic } from '@/api'
+import { replayRequests, withQueue } from '@/replay'
 
 export interface RequestStore {
   /** The published plan. Empty shelves when none was published. */
@@ -34,15 +35,20 @@ export function useRequests(enabled: boolean): RequestStore {
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void Promise.all([fetchTopics(), fetchRequests()])
-      .then(([published, requested]) => {
-        if (cancelled) return
-        setPlan(published)
-        setAsked(requested)
+    // Apart, not together. The plan is held for the road on its own; loaded
+    // in one breath with the requests, a plan that was right there vanished
+    // whenever the requests were not - which away from home was always, and
+    // "Ask for one" disappeared from the menu on exactly the train it was
+    // cached for.
+    void fetchTopics()
+      .then((published) => {
+        if (!cancelled) setPlan(published)
       })
-      // A reader who cannot reach the stand still gets to read; what they
-      // lose is the list of what could be written.
+      // Nothing held and the stand away: there is nothing to ask from.
       .catch(() => undefined)
+    void withQueue(fetchRequests).then(({ loaded, queued }) => {
+      if (!cancelled) setAsked(replayRequests(loaded ?? [], queued))
+    })
     return () => {
       cancelled = true
     }
@@ -63,7 +69,7 @@ export function useRequests(enabled: boolean): RequestStore {
           void withdrawRequest(topic.id)
           return held.filter((request) => request.topic_id !== topic.id)
         }
-        void askFor(topic.id)
+        void askFor(topic)
         return [
           { topic_id: topic.id, title: topic.title, section: topic.section, asked_at: new Date().toISOString() },
           ...held,

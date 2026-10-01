@@ -16,6 +16,8 @@
  * showing a button that could not work.
  */
 
+import { keep } from '@/storage'
+
 /** The event browsers fire when the app could be installed. Not in lib.dom. */
 interface InstallPrompt extends Event {
   prompt: () => Promise<void>
@@ -100,5 +102,9 @@ export function watchForInstall(): void {
   window.addEventListener('appinstalled', () => {
     offered = null
     tell()
+    // Installed is what most browsers want to see before they promise to
+    // keep a site's storage, and this fires however the install was made -
+    // the button on the stand screen or the browser's own menu.
+    void keep()
   })
 }

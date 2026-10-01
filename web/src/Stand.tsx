@@ -15,11 +15,24 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { fetchDevices, fetchHealth, fetchLibrary, signOutEverywhere, type Device, type Health, type LibraryIndex, type Section, type Session } from '@/api'
-import { cacheLibrary, held, installed, refreshLibrary, secure, type Held } from '@/offline'
+import {
+  cacheLibrary,
+  held,
+  installed,
+  paths,
+  refreshLibrary,
+  secure,
+  shortfall,
+  watchFills,
+  type Filled,
+  type Held,
+  type Shortfall,
+} from '@/offline'
 import { CheckIcon, CrossIcon, PendingIcon } from '@/Icons'
 import { readiness, verdict, type Check, type Readiness } from '@/readiness'
 import { install, offerable, standalone, watchOffer } from '@/install'
 import { choose, chosen, holds, wanted, type Chosen } from '@/packages'
+import { keep, persisted } from '@/storage'
 import { ago, since, size } from '@/units'
 import type { SyncState } from '@/sync'
 
@@ -61,7 +74,14 @@ export function StandScreen({
   const [usage, setUsage] = useState<number | null>(null)
   /** The index the counts are taken against - refreshed one after a refresh. */
   const [index, setIndex] = useState(library)
-  const [refresh, setRefresh] = useState<'idle' | 'running' | 'no-worker' | 'unreachable'>('idle')
+  const [refresh, setRefresh] = useState<'idle' | 'running' | 'no-worker' | 'unreachable' | 'short'>('idle')
+  /** How the last refresh fell short, when it did. */
+  const [short, setShort] = useState<Shortfall | null>(null)
+  /**
+   * Whether the browser promised to keep what this device holds; `null` where
+   * it cannot say, `undefined` until asked.
+   */
+  const [kept, setKept] = useState<boolean | null | undefined>(undefined)
   /** Whether the offline part of the app is installed; `undefined` until asked. */
   const [worker, setWorker] = useState<boolean | null | undefined>(undefined)
   /** The shelves this device keeps. `null` is all of them (see `packages.ts`). */
@@ -99,34 +119,54 @@ export function StandScreen({
    */
   const refreshCache = async (shelves: Chosen): Promise<void> => {
     setRefresh('running')
+    setShort(null)
     let fresh: LibraryIndex
     try {
-      fresh = await fetchLibrary()
+      // From the stand and nowhere else. Away from home the worker answers
+      // the index from its copy, and a refresh against the copy fetched
+      // nothing, waited, and then looked exactly like one that had worked.
+      fresh = await fetchLibrary({ fresh: true })
     } catch {
       if (mounted.current) setRefresh('unreachable')
       return
     }
-    if (!refreshLibrary(fresh, shelves)) {
-      if (mounted.current) setRefresh('no-worker')
-      return
+    // The worker says when it is done and what it did not get. Held in an
+    // object because it is written from the listener, between the awaits.
+    const report: { filled: Filled | null } = { filled: null }
+    const stop = watchFills((filled) => {
+      if (filled.refresh) report.filled = filled
+    })
+    try {
+      if (!refreshLibrary(fresh, shelves)) {
+        if (mounted.current) setRefresh('no-worker')
+        return
+      }
+      setIndex(fresh)
+      // The count is watched while the worker works, so the reader sees it
+      // move. The watch ends on the worker's report - not on every piece
+      // being held, which on a refresh they all are from the first second -
+      // or when the time is up.
+      const until = Date.now() + REFRESH_WATCH_MS
+      while (mounted.current && Date.now() < until && report.filled === null) {
+        await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS))
+        const now = await held()
+        if (!mounted.current) return
+        setHolding(now)
+      }
+    } finally {
+      stop()
     }
-    setIndex(fresh)
-    const want = wanted(fresh.pieces, shelves).length
-    // The worker fetches one piece at a time and says nothing when it is
-    // done; the count is watched instead, and the watch ends when every
-    // piece is held or the time is up.
-    const until = Date.now() + REFRESH_WATCH_MS
-    while (mounted.current && Date.now() < until) {
-      await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS))
-      const kept = await held()
-      if (!mounted.current) return
-      setHolding(kept)
-      // Held is counted against the selection, not the cache: a refresh that
-      // drops shelves finishes when the wanted ones are there, whatever is
-      // still on its way out.
-      if (kept && kept.index && countHeld(kept, fresh, shelves) >= want) break
-    }
-    if (mounted.current) setRefresh('idle')
+    if (!mounted.current) return
+    const fell = report.filled ? shortfall(report.filled, paths(fresh, shelves)) : null
+    setShort(fell)
+    setRefresh(fell ? 'short' : 'idle')
+  }
+
+  /** Asks for this device's storage to be kept, and shows the answer. */
+  const askToKeep = (): void => {
+    void keep().then((answer) => {
+      if (mounted.current) setKept(answer)
+    })
   }
 
   useEffect(() => {
@@ -143,6 +183,9 @@ export function StandScreen({
     })
     void installed().then((yes) => {
       if (!cancelled) setWorker(yes)
+    })
+    void persisted().then((yes) => {
+      if (!cancelled) setKept(yes)
     })
     // What the browser has set aside for this origin: the library cache, the
     // queue, the shell. An estimate, and one some browsers refuse to give.
@@ -188,7 +231,7 @@ export function StandScreen({
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-1 px-3">
         <h1 className="text-2xl font-semibold tracking-tight text-text">The stand</h1>
-        <p className="text-sm text-dim">What this device knows about the library and the Pi it came from.</p>
+        <p className="text-sm text-dim">What this device knows about the library and the stand it came from.</p>
       </header>
 
       <Road
@@ -237,12 +280,22 @@ export function StandScreen({
           />
         )}
         {usage !== null ? <Fact label="storage" value={size(usage)} /> : null}
+        {/* Whether the browser may clear it under pressure. Not shown where
+            the browser cannot say: a line reading "unknown" is not something
+            the reader can act on. */}
+        {kept === true || kept === false ? (
+          <Fact label="kept" value={kept ? 'until you clear it' : 'until the browser needs the space'} />
+        ) : null}
         <Fact
           label="waiting"
           value={
             sync.waiting === 0
               ? 'nothing'
-              : `${sync.waiting} ${sync.waiting === 1 ? 'change' : 'changes'}${sync.syncing ? ', sending' : ''}`
+              : `${sync.waiting} ${sync.waiting === 1 ? 'change' : 'changes'}${sync.syncing ? ', sending' : ''}${
+                  // The one thing on this screen a reader must see before
+                  // closing the page.
+                  sync.unkept > 0 ? ' - held only while this page is open; this browser will not keep them' : ''
+                }`
           }
         />
       </Facts>
@@ -264,6 +317,9 @@ export function StandScreen({
             // missing. Narrowing only frees the space at the next refresh,
             // which the line under the button says.
             cacheLibrary(index, next)
+            // Choosing what rides along is choosing to keep it here, and it
+            // is a tap: the moment a browser that asks will ask.
+            askToKeep()
           }}
         />
       ) : null}
@@ -281,6 +337,7 @@ export function StandScreen({
           <button
             type="button"
             onClick={() => {
+              askToKeep()
               void refreshCache(keeping)
             }}
             disabled={refresh === 'running'}
@@ -293,7 +350,11 @@ export function StandScreen({
               ? 'The stand is out of reach; the copy on this device is unchanged.'
               : refresh === 'no-worker'
                 ? 'This browser has no offline cache to refresh.'
-                : 'Every piece of the shelves you keep is fetched again, and everything else is dropped - an edit published to the vault reaches this device now rather than the next time the piece is opened at home, and shelves you stopped keeping give their space back.'}
+                : refresh === 'short' && short !== null
+                  ? short.reached
+                    ? `The stand did not give ${short.total - short.fetched} of ${short.total} pieces; the copies of those on this device are as they were.`
+                    : `The stand went out of reach part way through: ${short.fetched} of ${short.total} pieces were fetched again, and the rest are as they were.`
+                  : 'Every piece of the shelves you keep is fetched again, and everything else is dropped - an edit published to the vault reaches this device now rather than the next time the piece is opened at home, and shelves you stopped keeping give their space back.'}
           </p>
         </div>
       ) : null}
@@ -474,15 +535,17 @@ function Requirement({ check }: { check: Check }) {
  * Putting the reader on the phone's own screen.
  *
  * Shown only where it is worth showing: an app already installed says
- * nothing, because the reader has done the thing being suggested. Where the
- * browser offers a prompt there is a button; where it does not - iOS, which
- * installs from the share sheet - there are the words, because a button that
- * cannot work is worse than none.
+ * nothing, because the reader has done the thing being suggested, and a page
+ * over plain http says nothing either - no browser installs one, and the
+ * steps would lead to a menu item that is not there. Where the browser offers
+ * a prompt there is a button; where it does not - iOS, which installs from
+ * the share sheet, or an Android browser that keeps it in its menu - there
+ * are the words, because a button that cannot work is worse than none.
  */
 function OnYourScreen({ offer }: { offer: boolean }) {
   // Asked at render rather than held in state: it changes when the reader
   // opens the installed app, which is a different page load.
-  if (standalone()) return null
+  if (standalone() || !secure()) return null
 
   return (
     <section className="flex flex-col gap-2 px-3">
@@ -501,7 +564,7 @@ function OnYourScreen({ offer }: { offer: boolean }) {
       <p className="text-xs leading-relaxed text-dim">
         {offer
           ? 'Installed, the library opens by its own icon rather than by an address on your home network - and opens without the browser around it.'
-          : 'This browser installs from its own menu: on iPhone, Share and then "Add to Home Screen". The library then opens by its icon rather than by an address on your home network.'}
+          : 'This browser installs from its own menu: on iPhone, Share and then "Add to Home Screen"; on Android, the browser menu and then "Install app" or "Add to Home screen". The library then opens by its icon rather than by an address on your home network.'}
       </p>
     </section>
   )

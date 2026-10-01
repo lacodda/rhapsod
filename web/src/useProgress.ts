@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { fetchProgress, report, type Progress, type ReadingState } from '@/api'
+import { replayProgress, withQueue } from '@/replay'
 
 export interface ProgressStore {
   /** State by piece id; a piece missing from it has not been opened. */
@@ -60,13 +61,11 @@ export function useProgress(enabled: boolean): ProgressStore {
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void fetchProgress()
-      .then((loaded) => {
-        if (!cancelled) setProgress(loaded)
-      })
-      // A reader who cannot reach the server still gets to read; what they
-      // lose is the marks on the shelves, not the library.
-      .catch(() => undefined)
+    // With the queue laid over it: a piece read on this morning's train is
+    // read on this evening's, whether or not the stand has heard yet.
+    void withQueue(fetchProgress).then(({ loaded, queued }) => {
+      if (!cancelled) setProgress(replayProgress(loaded, queued))
+    })
     return () => {
       cancelled = true
     }

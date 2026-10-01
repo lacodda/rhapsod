@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { answerCard, fetchDue, type Card } from '@/api'
+import { replayDue, withQueue } from '@/replay'
 
 export interface ReviewStore {
   /** The cards due today, in the order the server offered them. */
@@ -27,13 +28,11 @@ export function useReviews(enabled: boolean): ReviewStore {
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void fetchDue()
-      .then((answer) => {
-        if (!cancelled) setCards(answer.due)
-      })
-      // A reader who cannot reach the server still gets to read; what they
-      // lose is today's cards, not the library.
-      .catch(() => undefined)
+    // A card answered on the train stays answered when the app is opened
+    // again before the stand has heard.
+    void withQueue(fetchDue).then(({ loaded, queued }) => {
+      if (!cancelled) setCards(replayDue(loaded?.due ?? [], queued))
+    })
     return () => {
       cancelled = true
     }

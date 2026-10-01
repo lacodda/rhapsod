@@ -217,7 +217,7 @@ export function ReaderScreen({
 }) {
   const [piece, setPiece] = useState<Piece | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [next, setNext] = useState<PieceSummary | null>(null)
+  const [next, setNext] = useState<Next>('asking')
   const paragraphs = useRef<(HTMLParagraphElement | null)[]>([])
   const restored = useRef(false)
 
@@ -244,13 +244,19 @@ export function ReaderScreen({
     let cancelled = false
     void fetchNext(id)
       .then((answer) => {
-        if (!cancelled) setNext(answer.next)
+        if (!cancelled) setNext(answer.next ?? 'none')
       })
-      .catch(() => undefined)
+      .catch((cause: unknown) => {
+        // The stand picks what comes next, and away from home it cannot be
+        // asked. Swallowed, this read as "nothing left" - on a train, at the
+        // end of every piece, in a library with dozens unread.
+        if (!cancelled) setNext(cause instanceof ApiError && cause.status === 0 ? 'away' : 'unknown')
+      })
     return () => {
       cancelled = true
     }
   }, [id])
+  const nextPiece = typeof next === 'object' ? next : null
 
   const { opened } = progress
   useEffect(() => {
@@ -323,14 +329,14 @@ export function ReaderScreen({
     const onKey = (event: KeyboardEvent): void => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
       if (event.key === 'ArrowLeft' && previous) go({ name: 'piece', id: previous.id })
-      if (event.key === 'ArrowRight' && next) go({ name: 'piece', id: next.id })
+      if (event.key === 'ArrowRight' && nextPiece) go({ name: 'piece', id: nextPiece.id })
       if (event.key === 't') go({ name: 'library' })
     }
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
     }
-  }, [previous, next])
+  }, [previous, nextPiece])
 
   if (error !== null) {
     return <Empty title={error} />
@@ -375,7 +381,7 @@ export function ReaderScreen({
             ref={(element) => {
               paragraphs.current[index] = element
             }}
-            className="text-pretty text-lg leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
+            className="text-pretty text-xl leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
           >
             <Rich text={paragraph} marked={highlights.get(index)} library={library} />
           </p>
@@ -463,6 +469,12 @@ export function ReaderScreen({
 }
 
 /**
+ * What the stand said comes next: a piece, nothing unread, or no answer -
+ * because it could not be reached, or because it did not say.
+ */
+type Next = PieceSummary | 'asking' | 'none' | 'away' | 'unknown'
+
+/**
  * The end of a piece: whether it is finished, and what comes next.
  *
  * Finishing is a button rather than something that happens on reaching the
@@ -479,7 +491,7 @@ function Finish({
 }: {
   id: string
   isRead: boolean
-  next: PieceSummary | null
+  next: Next
   previous: PieceSummary | null
   progress: ProgressStore
 }) {
@@ -497,7 +509,7 @@ function Finish({
         {isRead ? 'Read · mark unread' : 'Mark as read'}
       </button>
 
-      {next ? (
+      {typeof next === 'object' ? (
         <a
           href={`/read/${next.id}`}
           onClick={(event) => {
@@ -512,9 +524,16 @@ function Finish({
           {next.one_liner ? <span className="text-sm leading-snug text-dim">{next.one_liner}</span> : null}
           <span className="font-mono text-xs text-dim">{minutes(next.words)} min</span>
         </a>
-      ) : (
+      ) : next === 'none' ? (
         <p className="text-sm text-dim">That was the last unread piece.</p>
-      )}
+      ) : next === 'away' ? (
+        <p className="text-sm text-dim">
+          The stand picks what comes next, and it is out of reach. The shelves still have everything held on this
+          device.
+        </p>
+      ) : next === 'unknown' ? (
+        <p className="text-sm text-dim">The stand did not say what comes next. The shelves have the rest.</p>
+      ) : null}
 
       {previous ? (
         <a

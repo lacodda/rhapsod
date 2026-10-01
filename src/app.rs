@@ -597,13 +597,35 @@ struct NoteBody {
     body: String,
     /// When the device wrote this; see `Moved::marked_at`.
     marked_at: Option<String>,
+    /// The text the edit started from, in three states: absent (an app from
+    /// before bases, still cached on a phone), `null` (the note was not known
+    /// when the edit started) and a text. See `marks::settle_note`.
+    #[serde(default, deserialize_with = "present")]
+    #[expect(clippy::option_option, reason = "absent, null and a text are three different answers here")]
+    base: Option<Option<String>>,
+}
+
+/// Reads a field that was sent, `null` or not, as `Some`.
+///
+/// serde reads an absent field and a `null` one both as `None`. With
+/// `#[serde(default)]` an absent field never reaches this function and stays
+/// `None`, so a field that arrives - even as `null` - is told apart from one
+/// that did not.
+#[expect(clippy::option_option, reason = "the three states of `NoteBody::base` are its whole point")]
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// Writes the note on a piece.
 ///
 /// The whole note every time rather than a diff: it is a few hundred words at
-/// most, typed by one person on one device at a time, and a merge algorithm
-/// would be more machinery than the problem has.
+/// most, typed by one person on one device at a time. What the edit started
+/// from comes with it, so a note written where the reader could not see the
+/// stored one goes after it instead of over it (see `marks::settle`).
 async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>, Json(note): Json<NoteBody>) -> Response {
     let id = format!("{section}/{piece}");
     {
@@ -615,7 +637,12 @@ async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, 
         }
     }
 
-    match marks::set_note(&state.pool, &id, &note.body, note.marked_at.as_deref()).await {
+    let written = match &note.base {
+        // An app from before bases: the newest stamp wins, as it always did.
+        None => marks::set_note(&state.pool, &id, &note.body, note.marked_at.as_deref()).await,
+        Some(base) => marks::settle_note(&state.pool, &id, &note.body, note.marked_at.as_deref(), base.as_deref()).await,
+    };
+    match written {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => failed(&error, "the note could not be saved"),
     }
@@ -1491,6 +1518,85 @@ mod tests {
         assert_eq!(status, StatusCode::NO_CONTENT);
         let (_, body) = get_json(app, "/api/notes").await;
         assert_eq!(body.as_array().unwrap().len(), 0);
+    }
+
+    /// The app against a real database file, as a stand runs it: WAL, a pool
+    /// of connections, and the write lock a note takes shared between them.
+    async fn app_on_file(web: &tempfile::TempDir, content: &tempfile::TempDir, dir: &tempfile::TempDir) -> (Router, SqlitePool) {
+        let url = format!("sqlite://{}?mode=rwc", dir.path().join("reader.db").display());
+        let pool = crate::db::connect(&url).await.expect("the database file should open");
+        (app(web, content, pool.clone()), pool)
+    }
+
+    #[tokio::test]
+    async fn a_note_from_the_train_goes_after_the_note_from_home() {
+        // The note written at home that evening is newer by the clock than
+        // the one typed on the morning train. The train's write says it did
+        // not know there was a note: it is kept, after the home note, rather
+        // than dropped as older or written over the top as newer.
+        let (web, content, dir) = (web_root(), content_root(), tempfile::tempdir().unwrap());
+        let (app, _pool) = app_on_file(&web, &content, &dir).await;
+        let piece = "/api/notes/02-istoriya/god-bez-leta";
+
+        let (status, _) = post(app.clone(), piece, r#"{"body":"written at home","marked_at":"2026-09-02T18:00:00.000Z"}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, _) = post(
+            app.clone(),
+            piece,
+            r#"{"body":"written on the train","marked_at":"2026-09-02T09:00:00.000Z","base":null}"#,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let (_, body) = get_json(app, "/api/notes").await;
+        assert_eq!(body[0]["body"], "written at home\n\nwritten on the train");
+    }
+
+    #[tokio::test]
+    async fn a_note_without_a_base_keeps_the_old_rule() {
+        // An app from before bases is still in a phone's cache somewhere. Its
+        // write is judged by the clock, as it always was: older loses.
+        let (web, content, dir) = (web_root(), content_root(), tempfile::tempdir().unwrap());
+        let (app, _pool) = app_on_file(&web, &content, &dir).await;
+        let piece = "/api/notes/02-istoriya/god-bez-leta";
+
+        post(app.clone(), piece, r#"{"body":"written at home","marked_at":"2026-09-02T18:00:00.000Z"}"#).await;
+        post(app.clone(), piece, r#"{"body":"written on the train","marked_at":"2026-09-02T09:00:00.000Z"}"#).await;
+
+        let (_, body) = get_json(app, "/api/notes").await;
+        assert_eq!(body[0]["body"], "written at home");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn notes_delivered_at_once_each_see_the_last() {
+        // Two phones come home at the same moment, each with a note on the
+        // same piece and no idea of the other. Each write reads the note and
+        // writes it back in one locked step, so neither settles against a
+        // note that is no longer there - both texts survive, and neither
+        // write is turned away as busy.
+        let (web, content, dir) = (web_root(), content_root(), tempfile::tempdir().unwrap());
+        let (app, _pool) = app_on_file(&web, &content, &dir).await;
+        let piece = "/api/notes/02-istoriya/god-bez-leta";
+
+        let writes = (0..16).map(|n| {
+            let app = app.clone();
+            tokio::spawn(async move { post(app, piece, &format!(r#"{{"body":"note {n}","base":null}}"#)).await.0 })
+        });
+        for write in writes.collect::<Vec<_>>() {
+            assert_eq!(write.await.unwrap(), StatusCode::NO_CONTENT, "a note delivered alongside another was refused");
+        }
+
+        let (_, body) = get_json(app, "/api/notes").await;
+        let stored = body[0]["body"].as_str().unwrap();
+        for n in 0..16 {
+            assert!(
+                stored.contains(&format!(
+                    "note {n}
+"
+                )) || stored.ends_with(&format!("note {n}")),
+                "note {n} was lost: {stored:?}"
+            );
+        }
     }
 
     #[tokio::test]

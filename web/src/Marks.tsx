@@ -7,9 +7,10 @@
  */
 
 import { TypoIcon } from '@/Icons'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { Quote } from '@/api'
+import { afterPause, type Pause } from '@/pause'
 import type { MarksStore } from '@/useMarks'
 
 /** Where a selection sits on screen, and what it says. */
@@ -124,31 +125,54 @@ export function KeepBar({
   )
 }
 
-/** The note on a piece, written in the reader's own words. */
+/**
+ * The note on a piece, written in the reader's own words.
+ *
+ * Only what the reader typed is ever saved. The editor used to hold a copy of
+ * the note taken when it opened and save whenever the two differed - so a
+ * note that arrived after the piece did (a slow stand, the worker's copy
+ * read a moment late) differed from the empty copy, and the empty copy was
+ * saved over it. Until the reader types, the editor shows the note as it is
+ * held and has nothing of its own.
+ */
 export function NoteEditor({ pieceId, marks }: { pieceId: string; marks: MarksStore }) {
   const saved = marks.notes.get(pieceId) ?? ''
-  const [body, setBody] = useState(saved)
-  const [open, setOpen] = useState(saved.length > 0)
+  // What the reader has typed; `null` until they type anything.
+  const [draft, setDraft] = useState<string | null>(null)
+  const [opened, setOpened] = useState(false)
+  // The text the typing started from, and after each save the text that save
+  // left: what the next save is an edit of. `null` when the note was not
+  // known, which delivery reads as "keep whatever the stand has".
+  const base = useRef<string | null>(null)
+  const body = draft ?? saved
+  // Open whenever there is something to show: a note that arrives after the
+  // piece is shown as a note, not as "+ Write a note" over the top of it.
+  const open = opened || draft !== null || saved.length > 0
 
   // Saved after a pause rather than on every keystroke: a note is typed in
   // bursts, and one request per character would be a request per thought.
+  // Leaving the piece, or the app going to the background, saves at once
+  // rather than dropping what the pause was waiting on (see `pause.ts`).
   const { setNote } = marks
+  const pause = useRef<Pause | null>(null)
   useEffect(() => {
-    if (body === saved) return undefined
-    const timer = window.setTimeout(() => {
-      setNote(pieceId, body)
+    const saving = afterPause((text) => {
+      setNote(pieceId, text, base.current)
+      base.current = text.trim()
     }, 800)
+    pause.current = saving
     return () => {
-      window.clearTimeout(timer)
+      pause.current = null
+      saving.stop()
     }
-  }, [body, saved, pieceId, setNote])
+  }, [pieceId, setNote])
 
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => {
-          setOpen(true)
+          setOpened(true)
         }}
         className="self-start rounded-lg px-3 py-2 text-sm text-dim transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
@@ -162,7 +186,12 @@ export function NoteEditor({ pieceId, marks }: { pieceId: string; marks: MarksSt
       <textarea
         value={body}
         onChange={(event) => {
-          setBody(event.target.value)
+          // The first keystroke fixes what this edit is an edit of: the note
+          // as shown, or "not known" when the reader's notes never arrived
+          // and an empty box may be hiding one on the stand.
+          if (draft === null) base.current = saved !== '' || marks.known ? saved : null
+          setDraft(event.target.value)
+          pause.current?.typed(event.target.value)
         }}
         rows={4}
         placeholder="What this left you with."

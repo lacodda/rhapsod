@@ -13,8 +13,10 @@ import { QuotesScreen } from '@/Quotes'
 import { RequestsScreen } from '@/Requests'
 import { ReviewsScreen } from '@/Reviews'
 import { ReaderScreen } from '@/Reader'
+import { standalone } from '@/install'
 import { cacheLibrary } from '@/offline'
 import { chosen } from '@/packages'
+import { keep, keepOnce } from '@/storage'
 import { go, useRoute } from '@/routing'
 import { SignInScreen } from '@/SignIn'
 import { useMarks } from '@/useMarks'
@@ -25,7 +27,7 @@ import { useBookmarks } from '@/useBookmarks'
 import { useReactions } from '@/useReactions'
 import { useEdgeSwipe } from '@/useEdgeSwipe'
 import { useSync } from '@/useSync'
-import type { SyncState } from '@/sync'
+import { drain, type SyncState } from '@/sync'
 
 /**
  * The reading app.
@@ -78,6 +80,14 @@ export function App() {
         // "the chosen shelves" means is this device's business and defaults
         // to all of them (see `packages.ts`).
         cacheLibrary(index, chosen())
+        // The moment the device starts keeping shelves is the moment to ask
+        // for them - and for the queue - to be kept. An installed app is where
+        // browsers grant it quietly, so it asks every time; a tab asks once.
+        if (standalone()) {
+          void keep()
+        } else {
+          keepOnce()
+        }
       })
       .catch((cause: unknown) => {
         if (!cancelled) setError(cause instanceof ApiError ? cause.message : 'The library could not be read.')
@@ -99,8 +109,28 @@ export function App() {
   // it is not already open.
   useEdgeSwipe(openMenu, mayRead && library !== null && !menuOpen)
 
+  // A change turned away for want of a session means the session this app
+  // started with has ended - signed out everywhere from another device, or
+  // run out. The changes are held; asking the stand again brings up the
+  // sign-in screen, and signing in delivers them.
+  useEffect(() => {
+    if (!sync.signIn) return undefined
+    let cancelled = false
+    void fetchSession()
+      .then((state) => {
+        if (!cancelled) setSession(state)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [sync.signIn])
+
   const signedIn = useCallback(() => {
     setSession({ open: false, reader: true })
+    // What waited for the sign-in goes now, not at the next change or the
+    // next time the app is opened.
+    void drain()
   }, [])
 
   return (
@@ -279,15 +309,23 @@ function asKind(kind: string | undefined): BookmarkKind | null {
  * only when there is something to know: changes are waiting, or the stand
  * cannot be reached.
  *
- * It says what is true rather than what it fears: "kept on this phone" is the
- * honest description of a change written locally, where "offline" would be
- * about the network and "unsaved" would be wrong - it is saved, just not
- * there yet.
+ * It says what is true rather than what it fears: "kept on this device" is
+ * the honest description of a change written locally, where "offline" would
+ * be about the network and "unsaved" would be wrong - it is saved, just not
+ * there yet. "Device", not "phone": the same words show on a tablet and a
+ * desktop, where "phone" was simply untrue.
  */
 function SyncMark({ sync }: { sync: SyncState }) {
   if (sync.waiting === 0 && sync.reachable) return null
 
-  const label = sync.waiting > 0 ? `${sync.waiting} kept on this phone` : 'the stand is away'
+  // Held only in the page is a different promise from kept on the device,
+  // and the one a reader must not take for the other: closing the page ends it.
+  const label =
+    sync.waiting === 0
+      ? 'the stand is away'
+      : sync.unkept > 0
+        ? `${sync.waiting} held in this page`
+        : `${sync.waiting} kept on this device`
   return (
     <span
       className="px-2 font-mono text-xs text-dim"
@@ -295,7 +333,11 @@ function SyncMark({ sync }: { sync: SyncState }) {
       // browser's data should be able to find out that something is waiting.
       title={
         sync.waiting > 0
-          ? 'Changes made here are kept on this device and sent when the library is in reach.'
+          ? sync.unkept > 0
+            ? 'This browser will not keep changes on this device. They are held while this page is open and sent when the library is in reach; closing the page loses them.'
+            : sync.signIn
+            ? 'Changes made here are kept on this device and sent once you sign in again.'
+            : 'Changes made here are kept on this device and sent when the library is in reach.'
           : 'The library is out of reach. It comes back when you are home.'
       }
     >

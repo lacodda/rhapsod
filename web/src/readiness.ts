@@ -91,7 +91,7 @@ export function readiness(facts: RoadFacts): Readiness {
       detail: facts.worker
         ? 'The part of the app that answers when the stand is out of reach is installed.'
         : facts.secure
-          ? 'This browser has not installed the offline part of the app. Reloading the page once usually installs it; a private window never will.'
+          ? 'This browser has not installed the offline part of the app. Reloading the page once usually installs it. A private window may not keep anything once it is closed.'
           : 'Nothing can be installed until the connection is secure - fix that first.',
     },
     {

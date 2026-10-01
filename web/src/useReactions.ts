@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { clearReaction, fetchReactions, setReaction, type Reaction, type ReactionKind } from '@/api'
+import { replayReactions, withQueue } from '@/replay'
 
 /**
  * What one tap on a kind means, given what the piece already carries.
@@ -41,13 +42,11 @@ export function useReactions(enabled: boolean): ReactionStore {
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void fetchReactions()
-      .then((felt) => {
-        if (!cancelled) setAll(felt)
-      })
-      // A reader who cannot reach the stand still gets to read; what they lose
-      // is what they already said, not the library.
-      .catch(() => undefined)
+    // With the queue laid over it, so what the reader said on the train is
+    // still said when the app is opened again before the stand has heard.
+    void withQueue(fetchReactions).then(({ loaded, queued }) => {
+      if (!cancelled) setAll(replayReactions(loaded ?? [], queued))
+    })
     return () => {
       cancelled = true
     }

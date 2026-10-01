@@ -26,6 +26,20 @@ export interface Change {
   method: 'POST' | 'DELETE'
   /** The body as it will be sent, already carrying its device timestamp. */
   body: unknown
+  /**
+   * What the device knew when the change was made. Kept with the change and
+   * never sent: the stand has no use for it, the device does.
+   */
+  context?: ChangeContext
+}
+
+/** What a change remembers about the moment it was made. */
+export interface ChangeContext {
+  /** For a kept line: when it was kept, so it sorts as it did before. */
+  created_at?: string
+  /** For a request: the topic as it read, so it can be listed before it lands. */
+  title?: string
+  section?: string
 }
 
 /**
@@ -73,17 +87,71 @@ async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStor
   }
 }
 
-/** Adds a change to the end of the queue. */
-export const enqueue = (change: Change): Promise<number> => withStore<number>('readwrite', (store) => store.add(change))
+/**
+ * Changes held in this page because the browser would not keep them.
+ *
+ * A browser that refuses IndexedDB - some private windows, site data blocked
+ * - used to get one attempt at sending each change, and on a train that
+ * attempt failed and the change was gone without a word. Held here, a change
+ * is retried like any other for as long as the page is open, and the screens
+ * say that this is all the keeping it gets.
+ *
+ * Once the store has refused, everything after goes here too, so the order
+ * stays the order the reader made the changes in. The ids are negative so
+ * they never meet the store's own.
+ */
+const memory: Change[] = []
+let refused = false
+let memoryId = 0
+
+/** Adds a change to the end of the queue, in this page if not on the device. */
+export async function enqueue(change: Change): Promise<number> {
+  if (!refused) {
+    try {
+      return await withStore<number>('readwrite', (store) => store.add(change))
+    } catch {
+      refused = true
+    }
+  }
+  memoryId -= 1
+  memory.push({ ...change, id: memoryId })
+  return memoryId
+}
 
 /** Everything waiting, in the order it was made. */
-export const pending = (): Promise<Change[]> => withStore<Change[]>('readonly', (store) => store.getAll())
+export async function pending(): Promise<Change[]> {
+  let stored: Change[] = []
+  try {
+    stored = await withStore<Change[]>('readonly', (store) => store.getAll())
+  } catch {
+    // Nothing on the device to read; what is in the page still counts.
+  }
+  return [...stored, ...memory]
+}
+
+/** How many waiting changes live only in this page, and go when it closes. */
+export const unkept = (): number => memory.length
 
 /** Forgets a change that has been delivered. */
-export const forget = (id: number): Promise<undefined> => withStore<undefined>('readwrite', (store) => store.delete(id))
+export async function forget(id: number): Promise<undefined> {
+  if (id < 0) {
+    const at = memory.findIndex((change) => change.id === id)
+    if (at !== -1) memory.splice(at, 1)
+    return undefined
+  }
+  return withStore<undefined>('readwrite', (store) => store.delete(id))
+}
 
-/** How many changes are waiting. */
-export const waiting = (): Promise<number> => withStore<number>('readonly', (store) => store.count())
+/** How many changes are waiting, on the device and in this page. */
+export async function waiting(): Promise<number> {
+  let stored = 0
+  try {
+    stored = await withStore<number>('readonly', (store) => store.count())
+  } catch {
+    // As in `pending`: the page's own still count.
+  }
+  return stored + memory.length
+}
 
 /** Empties the queue. Used by the tests; the app drains rather than clears. */
 export const clear = (): Promise<undefined> => withStore<undefined>('readwrite', (store) => store.clear())

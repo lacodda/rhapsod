@@ -16,6 +16,7 @@ vi.mock('@/queue', () => ({
     return Promise.resolve(undefined)
   },
   waiting: () => Promise.resolve(store.changes.length),
+  unkept: () => 0,
 }))
 
 const { drain, syncState, sawServer } = await import('@/sync')
@@ -36,15 +37,18 @@ function answering(...statuses: (number | 'unreachable')[]) {
     const answer = statuses[Math.min(at, statuses.length - 1)] ?? 204
     at += 1
     if (answer === 'unreachable') return Promise.reject(new Error('the stand is away'))
-    return Promise.resolve({ status: answer, ok: answer < 400 } as Response)
+    return Promise.resolve(new Response(null, { status: answer }))
   })
   vi.stubGlobal('fetch', fetch)
   return calls
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   store.changes = []
   sawServer(true)
+  // An empty queue has nothing waiting for a sign-in, so a drain of it puts
+  // the state back to where a fresh page starts.
+  await drain()
 })
 
 afterEach(() => {
@@ -104,6 +108,68 @@ describe('drain', () => {
     expect(syncState().reachable).toBe(false)
   })
 
+  it('keeps every change when the device is no longer signed in', async () => {
+    // After "Sign out everywhere", or a session that ran out, every write
+    // answers 401. The queue drains on app open, before the sign-in screen has
+    // drawn - so treating 401 as a refusal threw away a whole journey of
+    // reading the moment the reader came home.
+    store.changes = [change(1, '/progress/a/first'), change(2, '/bookmarks/a/b')]
+    const calls = answering(401)
+
+    await drain()
+
+    expect(store.changes.map((c) => c.id)).toEqual([1, 2])
+    // One knock, not one per change: the rest wait behind the first.
+    expect(calls).toHaveLength(1)
+    expect(syncState().signIn).toBe(true)
+    // The stand answered; it is not away, it wants a sign-in.
+    expect(syncState().reachable).toBe(true)
+  })
+
+  it('delivers what waited for a sign-in once there is one', async () => {
+    store.changes = [change(1, '/progress/a/first'), change(2, '/bookmarks/a/b')]
+    answering(401)
+    await drain()
+
+    const calls = answering(204)
+    await drain()
+
+    expect(calls).toEqual(['/api/progress/a/first', '/api/bookmarks/a/b'])
+    expect(store.changes).toHaveLength(0)
+    expect(syncState().signIn).toBe(false)
+  })
+
+  it('keeps a change the stand refuses for want of permission', async () => {
+    store.changes = [change(1, '/progress/a/first')]
+    answering(403)
+
+    await drain()
+
+    expect(store.changes.map((c) => c.id)).toEqual([1])
+    expect(syncState().signIn).toBe(true)
+  })
+
+  it.each([400, 404, 409, 410, 422])('drops a change the stand refuses outright (%i)', async (status) => {
+    store.changes = [change(1, '/quotes/gone'), change(2, '/progress/a/second')]
+    const calls = answering(status, 204)
+
+    await drain()
+
+    expect(calls).toHaveLength(2)
+    expect(store.changes).toHaveLength(0)
+  })
+
+  it.each([405, 408, 429, 502, 503])('keeps a change on an answer it was not told to drop on (%i)', async (status) => {
+    // Dropping cannot be undone; waiting can. An answer that is not a refusal
+    // of the change itself keeps it.
+    store.changes = [change(1, '/progress/a/first')]
+    answering(status)
+
+    await drain()
+
+    expect(store.changes.map((c) => c.id)).toEqual([1])
+  })
+
   it('runs one drain at a time', async () => {
     // The app asks on focus, on the browser reporting a connection, and after
     // every write. Three drains at once would deliver the same change thrice.
@@ -113,5 +179,34 @@ describe('drain', () => {
     await Promise.all([drain(), drain(), drain()])
 
     expect(calls).toHaveLength(1)
+  })
+})
+
+describe('a note written away from home', () => {
+  it('carries the text its edit started from to the stand', async () => {
+    // The stand decides what to keep - the note it has, the reader's, or
+    // both - and it can only do that if it is told what the reader saw.
+    const sent: unknown[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => {
+        sent.push(typeof init?.body === 'string' ? JSON.parse(init.body) : undefined)
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }),
+    )
+    store.changes = [
+      {
+        id: 1,
+        path: '/notes/02-myths/icarus',
+        method: 'POST',
+        body: { body: 'written on the train', marked_at: '2026-09-02T12:00:00.000Z', base: null },
+      },
+    ]
+
+    await drain()
+
+    // As queued, in one request: no read of the stand's note first.
+    expect(sent).toEqual([{ body: 'written on the train', marked_at: '2026-09-02T12:00:00.000Z', base: null }])
+    expect(store.changes).toHaveLength(0)
   })
 })

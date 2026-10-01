@@ -10,16 +10,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { commentOnQuote, dropQuote, fetchNotes, fetchQuotes, keepQuote, saveNote, type Note, type Quote } from '@/api'
+import { replayNotes, replayQuotes, withQueue } from '@/replay'
 
 export interface MarksStore {
   /** Note body by piece id; a piece missing from it has no note. */
   notes: Map<string, string>
+  /**
+   * Whether the notes were read - from the stand or from the worker's copy.
+   *
+   * When they were not, a piece showing no note may still have one on the
+   * stand, and a note written now has to say so (see `setNote`).
+   */
+  known: boolean
   /** Every quote, newest first. */
   quotes: Quote[]
   /** The quotes of one piece, in the order they appear in it. */
   quotesIn: (pieceId: string) => Quote[]
-  /** Writes the note on a piece; an empty body clears it. */
-  setNote: (pieceId: string, body: string) => void
+  /**
+   * Writes the note on a piece; an empty body clears it. `base` is the text
+   * the edit started from, `null` when the note was not known.
+   */
+  setNote: (pieceId: string, body: string, base: string | null) => void
   /** Keeps a line. */
   keep: (quote: { piece_id: string; paragraph: number; text: string; comment: string | null }) => void
   /** Changes what the reader said about a quote. */
@@ -30,20 +41,23 @@ export interface MarksStore {
 
 export function useMarks(enabled: boolean): MarksStore {
   const [notes, setNotes] = useState<Note[]>([])
+  const [known, setKnown] = useState(false)
   const [quotes, setQuotes] = useState<Quote[]>([])
 
+  // Each read on its own, with the queue laid over it: away from home they
+  // come from the worker's copy, and one that is not held must not take the
+  // other with it. A reader with neither still sees what they did since.
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void Promise.all([fetchNotes(), fetchQuotes()])
-      .then(([loadedNotes, loadedQuotes]) => {
-        if (cancelled) return
-        setNotes(loadedNotes)
-        setQuotes(loadedQuotes)
-      })
-      // A reader who cannot reach the server still gets to read; what they
-      // lose is their own marks, not the library.
-      .catch(() => undefined)
+    void withQueue(fetchNotes).then(({ loaded, queued }) => {
+      if (cancelled) return
+      setNotes(replayNotes(loaded ?? [], queued))
+      setKnown(loaded !== null)
+    })
+    void withQueue(fetchQuotes).then(({ loaded, queued }) => {
+      if (!cancelled) setQuotes(replayQuotes(loaded ?? [], queued))
+    })
     return () => {
       cancelled = true
     }
@@ -67,9 +81,9 @@ export function useMarks(enabled: boolean): MarksStore {
     [quotes],
   )
 
-  const setNote = useCallback((pieceId: string, body: string): void => {
+  const setNote = useCallback((pieceId: string, body: string, base: string | null): void => {
     const trimmed = body.trim()
-    void saveNote(pieceId, trimmed)
+    void saveNote(pieceId, trimmed, base)
     setNotes((held) => {
       const without = held.filter((note) => note.piece_id !== pieceId)
       // An emptied note is no note, here as on the server.
@@ -95,5 +109,5 @@ export function useMarks(enabled: boolean): MarksStore {
     setQuotes((held) => held.filter((quote) => quote.id !== id))
   }, [])
 
-  return { notes: byPiece, quotes, quotesIn, setNote, keep, comment, drop }
+  return { notes: byPiece, known, quotes, quotesIn, setNote, keep, comment, drop }
 }

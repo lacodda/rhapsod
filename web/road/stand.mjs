@@ -70,6 +70,49 @@ const whole = (piece) => ({
 let reachable = true
 
 /**
+ * Whether this stand asks for a password, and whether this browser has one.
+ *
+ * `open` is a stand without a password - what most of the gate runs against.
+ * `live` has a password and a signed-in reader; `ended` is the same stand
+ * after "Sign out everywhere", where every read and write of the reader's
+ * side answers 401 until the reader signs in again.
+ */
+let session = 'open'
+
+/** The note the reader wrote at home, before any test went anywhere. */
+const HOME_NOTE = { piece_id: '02-myths/icarus', body: 'A note written at home.', updated_at: '2026-01-05T10:00:00.000Z' }
+
+/** The reader's notes, by piece. Written to by the app, read back by the gate. */
+let notes = new Map([[HOME_NOTE.piece_id, HOME_NOTE]])
+
+/** Every write the stand accepted, in order, so a test can see what landed. */
+let received = []
+
+/** Pieces the stand fails to give, to play a refresh that falls short. */
+let refused = new Set()
+
+/** Puts the stand back as the gate found it. */
+function reset() {
+  reachable = true
+  session = 'open'
+  notes = new Map([[HOME_NOTE.piece_id, HOME_NOTE]])
+  received = []
+  refused = new Set()
+}
+
+/** Reads a request's JSON body, or `null` when there is none. */
+async function bodyOf(request) {
+  const chunks = []
+  for await (const chunk of request) chunks.push(chunk)
+  if (chunks.length === 0) return null
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } catch {
+    return null
+  }
+}
+
+/**
  * How long a piece takes to arrive.
  *
  * Enough that the library is still filling when the stand screen first draws
@@ -96,6 +139,10 @@ function json(response, body, status = 200) {
 }
 
 const server = createServer((request, response) => {
+  void handle(request, response)
+})
+
+async function handle(request, response) {
   const url = new URL(request.url, `http://localhost:${PORT}`)
   const path = url.pathname
 
@@ -104,6 +151,30 @@ const server = createServer((request, response) => {
   if (path === '/road/reachable') {
     reachable = url.searchParams.get('yes') !== 'no'
     json(response, { reachable })
+    return
+  }
+  if (path === '/road/session') {
+    session = url.searchParams.get('state') ?? 'open'
+    json(response, { session })
+    return
+  }
+  if (path === '/road/refuse') {
+    refused.add(url.searchParams.get('path'))
+    json(response, { refused: [...refused] })
+    return
+  }
+  if (path === '/road/reset') {
+    reset()
+    json(response, { reset: true })
+    return
+  }
+  // What landed, read by the gate rather than by the app.
+  if (path === '/road/received') {
+    json(response, received)
+    return
+  }
+  if (path === '/road/notes') {
+    json(response, [...notes.values()])
     return
   }
 
@@ -119,7 +190,37 @@ const server = createServer((request, response) => {
       return
     }
     if (path === '/api/session') {
-      json(response, { open: true, reader: true })
+      if (request.method === 'POST') {
+        // Any password will do: the gate is about what the app does once it
+        // is let in, not about checking passwords.
+        session = 'live'
+        json(response, { open: false, reader: true })
+        return
+      }
+      json(response, { open: session === 'open', reader: session !== 'ended' })
+      return
+    }
+    // A stand whose sessions were ended answers nothing else until the reader
+    // signs in again - the same 401 the real stand gives every guarded route.
+    if (session === 'ended') {
+      json(response, { error: 'sign in to read' }, 401)
+      return
+    }
+    if (request.method === 'POST' || request.method === 'DELETE') {
+      const body = await bodyOf(request)
+      received.push({ method: request.method, path, body })
+      if (request.method === 'POST' && path.startsWith('/api/notes/')) {
+        const piece = path.slice('/api/notes/'.length)
+        const text = typeof body?.body === 'string' ? body.body.trim() : ''
+        if (text === '') notes.delete(piece)
+        else notes.set(piece, { piece_id: piece, body: text, updated_at: new Date().toISOString() })
+      }
+      response.writeHead(204)
+      response.end()
+      return
+    }
+    if (path === '/api/notes') {
+      json(response, [...notes.values()])
       return
     }
     if (path === '/api/library') {
@@ -130,6 +231,10 @@ const server = createServer((request, response) => {
       json(response, {
         shelves: [{ id: '01-physics', title: 'Physics', topics: [{ id: '01-physics/heat', title: 'Heat', section: '01-physics' }] }],
       })
+      return
+    }
+    if (refused.has(path)) {
+      json(response, { error: 'the stand could not read this piece' }, 500)
       return
     }
     if (path.startsWith('/api/pieces/')) {
@@ -152,8 +257,8 @@ const server = createServer((request, response) => {
     return
   }
 
-  void serve(path, response)
-})
+  await serve(path, response)
+}
 
 /** The built app. Anything that is not a file is the app's own entry point. */
 async function serve(path, response) {

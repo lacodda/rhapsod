@@ -220,7 +220,9 @@ Every change described above is written on the device first and shown as done at
 
 Changes queue in the order they were made and are delivered in that order. That matters more than it sounds: marking a piece read, then unread, then read again is three changes to one piece, and delivering them out of sequence would leave the stand holding the wrong one.
 
-A change the stand **refuses** - a quote on a piece that was renamed in the vault, a comment on one already removed - is dropped rather than retried forever, because everything queued behind it would otherwise be held hostage to a change the reader cannot fix. A change the stand **fails** to accept, because it is having a bad moment, is kept and tried again.
+A change the stand **refuses** - a quote on a piece that was renamed in the vault, a comment on one already removed - is dropped rather than retried forever, because everything queued behind it would otherwise be held hostage to a change the reader cannot fix. A change the stand **fails** to accept, because it is having a bad moment, is kept and tried again - once a minute while the app is open, and whenever it comes back to the screen.
+
+A change the stand turns away because the session has ended - signed out everywhere, or ninety days unused - is not refused: it is the reader's, and it waits until they sign in again, then goes.
 
 ### Whoever wrote last, wins
 
@@ -230,15 +232,17 @@ This is why it is the device's time that travels with a change. A piece marked u
 
 The reading position is the exception, and only ever moves forward, for the reason given [above](#it-only-moves-forward).
 
-A phone with a wrong clock can therefore override a right one. For one reader this is a curiosity rather than a risk, and it is written down here so it is not rediscovered later as a bug.
+A note is the other exception. It is the reader's own prose, and "newer wins" would let a note written on a train - in an app that started away from home and never saw the note written the evening before - replace that note whole. So a note write carries the text the edit started from, and when the stand holds text the reader had not seen, the stand keeps it and puts the new text after it. That is decided by what the two notes say, not by either clock.
+
+For everything but notes, a phone with a wrong clock can therefore override a right one. For one reader this is a curiosity rather than a risk, and it is written down here so it is not rediscovered later as a bug.
 
 ### What the app tells you
 
 Nothing, in the ordinary case. At home, with everything delivered, there is nothing worth saying and a tick on every screen would be noise.
 
-When there is something to know, the header says it: how many changes are **kept on this phone**, or that the stand is away. The wording is deliberate - the changes are saved, just not *there* yet, and "unsaved" would be a lie about work the reader can see on their screen.
+When there is something to know, the header says it: how many changes are **kept on this device**, or that the stand is away. The wording is deliberate - the changes are saved, just not *there* yet, and "unsaved" would be a lie about work the reader can see on their screen.
 
-The one thing worth knowing about it: those changes live in the browser's storage until they are delivered. Clearing the browser's data for the site while something is waiting throws it away. The stand is the durable copy; the queue is a queue.
+The one thing worth knowing about it: those changes live in the browser's storage until they are delivered. Clearing the browser's data for the site while something is waiting throws it away. The app asks the browser to keep that storage rather than clear it when space runs short, and the stand screen's `kept` line says whether the browser agreed. The stand is the durable copy; the queue is a queue.
 
 ## Taking it back out
 

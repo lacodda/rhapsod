@@ -9,6 +9,17 @@ import { useEffect, useState } from 'react'
 
 import { drain, syncState, watch, countWaiting, type SyncState } from '@/sync'
 
+/**
+ * How often a waiting queue is tried again while the app is on screen.
+ *
+ * The other moments to try - the app opening, the browser reporting a
+ * connection, the reader coming back to it - all need something to happen. A
+ * reader who walks in the door with the app already open, and joins the home
+ * Wi-Fi without the browser saying so, is in none of them. A minute is soon
+ * enough not to be noticed and rare enough to cost nothing on a train.
+ */
+const RETRY_MS = 60_000
+
 export function useSync(): SyncState {
   const [state, setState] = useState<SyncState>(syncState)
 
@@ -29,10 +40,17 @@ export function useSync(): SyncState {
     const onVisible = (): void => {
       if (document.visibilityState === 'visible') retry()
     }
+    // And, while something is waiting and the app is in front of the reader,
+    // every so often for no reason at all. Nothing is asked of the stand when
+    // the queue is empty or the app is in the background.
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && syncState().waiting > 0) retry()
+    }, RETRY_MS)
     window.addEventListener('online', retry)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       stop()
+      window.clearInterval(timer)
       window.removeEventListener('online', retry)
       document.removeEventListener('visibilitychange', onVisible)
     }

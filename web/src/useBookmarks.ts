@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { clearBookmark, fetchBookmarks, setBookmark, type Bookmark, type BookmarkKind } from '@/api'
+import { replayBookmarks, withQueue } from '@/replay'
 
 export interface BookmarkStore {
   /** Kind by piece id; a piece missing from it is unmarked. */
@@ -34,13 +35,11 @@ export function useBookmarks(enabled: boolean): BookmarkStore {
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
-    void fetchBookmarks()
-      .then((marked) => {
-        if (!cancelled) setAll(marked)
-      })
-      // A reader who cannot reach the stand still gets to read; what they
-      // lose is the colours, not the library.
-      .catch(() => undefined)
+    // With the queue laid over it, so a mark made away from home survives
+    // the app being opened again before the stand has heard about it.
+    void withQueue(fetchBookmarks).then(({ loaded, queued }) => {
+      if (!cancelled) setAll(replayBookmarks(loaded ?? [], queued))
+    })
     return () => {
       cancelled = true
     }

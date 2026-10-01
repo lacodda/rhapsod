@@ -37,7 +37,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.15.1","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".
@@ -538,9 +538,36 @@ curl -i -X POST http://127.0.0.1:8084/api/notes/19-letters/the-lighthouse-letter
 HTTP/1.1 204 No Content
 ```
 
-The whole note every time, not a diff. It is a few hundred words at most, typed by one person on one device at a time, and a merge algorithm would be more machinery than the problem has. The app saves after a pause in the typing rather than on every keystroke, so this is a request per thought rather than per character.
+The whole note every time, not a diff. It is a few hundred words at most, and the app saves after a pause in the typing rather than on every keystroke, so this is a request per thought rather than per character.
 
-An optional `marked_at` carries the time the device wrote the note, and works exactly as it does for [progress](#post-apiprogresssectionpiece): a note delivered from an offline queue does not overwrite one written later. **Clearing is a write like any other**, so a note emptied on a train and delivered after the same note was rewritten at home is dropped rather than taking the rewrite with it.
+**`base` says what the edit started from.** The app sends the note as it was when the reader started typing, or `null` when the device did not know the note at all - which is what happens when the app is opened away from home with nothing held. The stand compares it with the note it has, in one step, so two deliveries at once cannot both read the same note:
+
+| `base` | What is stored |
+| --- | --- |
+| The note the stand has | `body`. The reader was looking at what is here, and this is their edit of it. |
+| `null`, or any other text | The note the stand has, a blank line, then `body`. Text the reader never saw is kept, and stays first. |
+| Absent | Whichever write is newer by `marked_at`, as below. This is how an app from before `base`, still cached on a phone, is answered. |
+
+```sh
+curl -X POST http://127.0.0.1:8084/api/notes/19-letters/the-lighthouse-letters \
+  -H 'content-type: application/json' \
+  -d '{"body":"Read it again on the train.","marked_at":"2026-09-02T07:40:00.000Z","base":null}'
+curl http://127.0.0.1:8084/api/notes
+```
+
+```json
+[
+  {
+    "piece_id": "19-letters/the-lighthouse-letters",
+    "body": "The letters outlived them both. That is the whole story.\n\nRead it again on the train.",
+    "updated_at": "2026-09-02T19:05:12.481Z"
+  }
+]
+```
+
+**A write with a base is decided by what it says, not by the clock.** The note above was typed in the morning and delivered in the evening, after the one written at home; by `marked_at` it is the older of the two, and it is kept anyway - the clock is what lost it before. The stored note carries the newer of the two times. Emptying a note with a base takes away only the text the reader saw, and a write delivered twice, after a connection dropped mid-delivery, changes nothing the second time.
+
+Without a `base`, an optional `marked_at` carries the time the device wrote the note, and works exactly as it does for [progress](#post-apiprogresssectionpiece): a note delivered from an offline queue does not overwrite one written later. **Clearing is a write like any other**, so a note emptied on a train and delivered after the same note was rewritten at home is dropped rather than taking the rewrite with it.
 
 **An empty body deletes the note:**
 
@@ -1168,7 +1195,7 @@ curl http://127.0.0.1:8084/api/export
 {
   "exported_at": "2026-09-02T22:20:55.648Z",
   "since": null,
-  "version": "0.15.0",
+  "version": "0.15.1",
   "reading": [
     {
       "piece_id": "19-letters/the-lighthouse-letters",
@@ -1301,7 +1328,7 @@ curl 'http://127.0.0.1:8084/api/export?since=2026-09-02T17:52:11.417Z'
 {
   "exported_at": "2026-09-02T17:42:02.010Z",
   "since": "2026-09-02T17:42:02.006Z",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "reading": [],
   "notes": [
     {
