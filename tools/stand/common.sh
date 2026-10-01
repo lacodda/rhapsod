@@ -86,7 +86,10 @@ check_database() {
         return 1
     }
 
-    verdict=$(sqlite3 "file:$file?mode=ro" 'PRAGMA integrity_check;' 2>&1) || {
+    # Opened as an immutable file: a copy is not going to change while it is
+    # looked at, and a plain read-only open of a database in WAL format
+    # leaves a -wal and a -shm beside it that outlive the check.
+    verdict=$(sqlite3 "file:$file?mode=ro&immutable=1" 'PRAGMA integrity_check;' 2>&1) || {
         echo "$_stand_who: $file could not be opened: $verdict" >&2
         return 1
     }
@@ -97,7 +100,7 @@ check_database() {
 
     # The schema, not just the format: this has to be a stand's database and
     # not merely a database.
-    rows=$(sqlite3 "file:$file?mode=ro" 'SELECT count(*) FROM reading_state;' 2>&1) || {
+    rows=$(sqlite3 "file:$file?mode=ro&immutable=1" 'SELECT count(*) FROM reading_state;' 2>&1) || {
         echo "$_stand_who: $file does not hold a $app database: $rows" >&2
         return 1
     }

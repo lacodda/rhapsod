@@ -108,8 +108,10 @@ function Test-StandDatabase($file) {
 
     # A URI with mode=ro, so the check cannot create or migrate what it is
     # checking: a check that made the file it was asked about would turn a
-    # missing backup into a passing one.
-    $uri = "file:///$(($file -replace '\\', '/') -replace '^/*', '')?mode=ro"
+    # missing backup into a passing one. Immutable too: a copy is not going
+    # to change while it is looked at, and a plain read-only open of a
+    # database in WAL format leaves a -wal and a -shm beside it.
+    $uri = "file:///$(($file -replace '\\', '/') -replace '^/*', '')?mode=ro&immutable=1"
     $verdict = & sqlite3 $uri 'PRAGMA integrity_check;' 2>&1
     if ($LASTEXITCODE -ne 0) {
         [Console]::Error.WriteLine("$($script:StandWho): $file could not be opened: $verdict")
