@@ -35,6 +35,16 @@ pub struct Config {
     /// is a reasonable way to run, and demanding a password before there is
     /// anything to protect would only teach the owner to set an empty one.
     pub password_hash: Option<String>,
+    /// Where the host publishes the server, when something between them maps
+    /// the port (`RHAPSOD_HOST_ADDR`).
+    ///
+    /// In a container the server listens on every interface of the container
+    /// and cannot see the host's side of the mapping, so it would describe a
+    /// stand bound to the loopback behind a proxy as open to the network. The
+    /// stand's compose file knows the binding and passes it in. Kept as text:
+    /// it is only ever read back to the person, and a server that refused to
+    /// start over a description of itself would be the wrong way round.
+    pub host_addr: Option<String>,
 }
 
 impl Config {
@@ -63,12 +73,14 @@ impl Config {
             .filter(|path| !path.trim().is_empty())
             .map_or_else(|| PathBuf::from(DEFAULT_WEB_DIR), PathBuf::from);
         let password_hash = lookup("RHAPSOD_PASSWORD_HASH").filter(|hash| !hash.trim().is_empty());
+        let host_addr = lookup("RHAPSOD_HOST_ADDR").map(|addr| addr.trim().to_string()).filter(|addr| !addr.is_empty());
         Ok(Self {
             addr,
             content_dir,
             database_url,
             web_dir,
             password_hash,
+            host_addr,
         })
     }
 }

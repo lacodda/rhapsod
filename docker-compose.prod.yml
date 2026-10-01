@@ -15,7 +15,7 @@
 # of $ and compose expands $VAR in an unquoted value:
 #
 #   RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=...'   # from `rhapsod hash`
-#   RHAPSOD_VERSION=0.14.0                 # the released version to run
+#   RHAPSOD_VERSION=0.15.1                 # the released version to run
 services:
   server:
     # The image the release built, not a build on this machine. A Pi
@@ -36,6 +36,11 @@ services:
       # goes in .env single-quoted: it is full of $, and compose expands $VAR
       # in an unquoted value.
       RHAPSOD_PASSWORD_HASH: ${RHAPSOD_PASSWORD_HASH:-}
+      # Where the host publishes the port, the same two values as `ports:`
+      # below. The server listens on every interface of its container and
+      # cannot see this side of the mapping; `rhapsod doctor` reads it to say
+      # whether the stand is open to the network or only to a proxy.
+      RHAPSOD_HOST_ADDR: ${RHAPSOD_BIND:-0.0.0.0}:${RHAPSOD_PORT:-8084}
     ports:
       # 8084 on the host: the other services on this machine hold the ports
       # below it. The port is the stand's address, so it is not a default to

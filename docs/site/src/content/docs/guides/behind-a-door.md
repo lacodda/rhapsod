@@ -42,6 +42,24 @@ http://reader.example, https://reader.example {
 
 `tls internal` means "issue this from my own authority". The first request creates the authority and the certificate; nothing is fetched from anywhere.
 
+Caddy installed from its Debian package keeps this file at `/etc/caddy/Caddyfile`; after an edit, `sudo systemctl reload caddy` picks it up without dropping connections. `localhost:8084` assumes Caddy runs on the same machine as the stand.
+
+### A name the phone can find
+
+`reader.example` has to resolve to the Pi on the phone, and a phone has no hosts file to edit. The name goes into whatever answers DNS on your network: the router's local names, or a resolver like Pi-hole if one already runs there. Point the name at the Pi's address and check it from the phone's browser over plain `http` first - if that does not open, the certificate is not the problem yet.
+
+### Only through the door
+
+With a proxy in front, the stand's port no longer needs to answer the network. In the stand's `.env`:
+
+```sh
+RHAPSOD_BIND=127.0.0.1
+```
+
+then `docker compose up -d`. The doctor's `door` line turns to `published on 127.0.0.1:8084 - only a proxy on this machine can reach it`.
+
+Everything that used to talk to `http://pi:8084` now goes through the door too, and that includes the publishing and export scripts. Set `RHAPSOD_PUBLISH_URL` to the `http://` name the proxy answers - the plain scheme, which the proxy keeps open, so the scripts do not have to trust the root.
+
 ### Keep plain HTTP alongside
 
 Both schemes are listed above, and the redirect is off, on purpose.
@@ -66,7 +84,9 @@ Copy that one file to each device. Only the root: the certificate for the name i
 - **iOS** - open the file, install the profile, then go to Settings, General, About, *Certificate Trust Settings* and turn the switch on. Both steps are needed: a profile that is installed but not trusted does nothing.
 - **Desktop** - add it to the system or browser certificate store.
 
-Then open the stand over `https` and check the stand screen. **Ready for the road** means the browser accepted all of it: the connection, the worker, the index, and the pieces.
+The authority lives on the Pi's card. A Pi rebuilt from scratch makes a new one, and every device has to trust the new root - unless the `pki` directory above was kept and put back before Caddy first starts.
+
+Then open the stand over `https` and check the stand screen. **Ready for the road.** means the browser accepted all of it: the connection, the worker, the index, and the pieces.
 
 ## Checking without a phone in hand
 

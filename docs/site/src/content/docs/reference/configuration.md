@@ -12,28 +12,53 @@ rhapsod is configured entirely through the environment. There is no configuratio
 | `RHAPSOD_ADDR` | no | `0.0.0.0:8084` | Socket address the HTTP server binds to. |
 | `RHAPSOD_WEB_DIR` | no | `web/dist` | Directory holding the built app, served for every path outside `/api`. |
 | `RHAPSOD_PASSWORD_HASH` | no | - | Argon2id hash of the reading password, from `rhapsod hash`. Unset leaves the stand open. |
+| `RHAPSOD_HOST_ADDR` | no | - | Where the host publishes the server, when the port is mapped (`127.0.0.1:8084`). Only `rhapsod doctor` reads it, to say who can reach the stand; the stand's compose file sets it. |
 | `RUST_LOG` | no | `rhapsod=info,tower_http=info` | Log filter, in `tracing-subscriber` `EnvFilter` syntax. |
 
 A `.env` file in the working directory is read first, so all of these can live there during development. The file is never committed; `.env.example` shows the shape.
 
 ## What the server does not read
 
-Six variables look like server configuration and are not. They are read by the scripts in `tools/`, which run on the machine the library is written on; the server never looks at them.
+Two more sets of `RHAPSOD_*` variables look like server configuration and are not. One lives on the stand and is read by its compose file; the other lives on the machine you write and publish from and is read by the scripts in `tools/`.
+
+### The stand's `.env`
+
+Beside `docker-compose.yml` in the stand's directory on the Pi ([Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/)). Compose reads these and turns them into the container's mounts, port and environment.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RHAPSOD_CONTENT` | - (required) | The library, as a path on the host. Mounted read-only as `/content`, which is the image's `RHAPSOD_CONTENT_DIR`. |
+| `RHAPSOD_VERSION` | `latest` | The released image to run. `tools/stand/update.*` writes it. |
+| `RHAPSOD_PORT` | `8084` | The host port the stand answers on. |
+| `RHAPSOD_BIND` | `0.0.0.0` | The host address that port is bound to; `127.0.0.1` behind a proxy on the same machine. Passed to the server as `RHAPSOD_HOST_ADDR` together with the port. |
+| `RHAPSOD_PASSWORD_HASH` | - | Passed through to the server as above. |
+
+`tools/stand/backup.*` brings a copy of this file to your machine as `rhapsod-stand.env`, and `restore.*` sends it back: it holds the lock, and a stand restored without it comes back open.
+
+### The tools' `.env`
+
+Beside your clone of the repository. The server never looks at these.
 
 | Variable | Read by | Purpose |
 | --- | --- | --- |
 | `RHAPSOD_PUBLISH_SRC` | `publish-content.*` | The local library directory to publish. |
 | `RHAPSOD_PUBLISH_HOST` | `publish-content.*` | The ssh host to publish to. |
-| `RHAPSOD_PUBLISH_DEST` | `publish-content.*` | The directory on that host to publish into. |
-| `RHAPSOD_PUBLISH_URL` | both | Base URL of the stand: reindexed after a publish, asked for the export. |
+| `RHAPSOD_PUBLISH_DEST` | `publish-content.*` | The directory on that host to publish into: the stand's `RHAPSOD_CONTENT`. |
+| `RHAPSOD_PUBLISH_TOPICS` | `publish-content.*` | Optional: a plan of topics, published beside the library as `topics.md`. |
+| `RHAPSOD_PUBLISH_URL` | `publish-content.*`, `export-marks.*` | Base URL of the stand: reindexed after a publish, asked for the export. |
 | `RHAPSOD_EXPORT_TO` | `export-marks.*` | Where to write the export document. Defaults to `./rhapsod-export.json`. |
 | `RHAPSOD_PASSWORD` | `export-marks.*` | The reading password, in plain text, for exporting from a locked stand. |
+| `RHAPSOD_STAND_HOST` | `tools/stand/*` | The ssh host the stand runs on. |
+| `RHAPSOD_STAND_DIR` | `tools/stand/*` | The stand's directory on that host. |
+| `RHAPSOD_BACKUP_TO` | `backup.*` | Where copies land here. Defaults to `./backups`, which git ignores. |
+| `RHAPSOD_BACKUP_KEEP` | `backup.*` | How many copies to keep here. Defaults to 14. |
+| `RHAPSOD_YES` | `restore.*` | `1` answers the scripts' questions, for a run nobody is watching. |
 
-They are documented with the tools that use them, in [Publishing content](/rhapsod/guides/publishing-content/) and [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/).
+They are documented with the tools that use them, in [Publishing content](/rhapsod/guides/publishing-content/), [Taking your marks back to the vault](/rhapsod/guides/exporting-marks/) and [Moving a stand](/rhapsod/guides/moving-a-stand/).
 
-`RHAPSOD_PASSWORD` is worth telling apart from `RHAPSOD_PASSWORD_HASH` above. The hash is what the server reads to decide whether a password is right; this is the password itself, typed by a reader and sent to `POST /api/session`. The hash belongs on the stand, the password belongs on the machine that exports from it, and a stand that read the plaintext would be storing the answer next to the lock.
+`RHAPSOD_PASSWORD` is worth telling apart from `RHAPSOD_PASSWORD_HASH`. The hash is what the server reads to decide whether a password is right; this is the password itself, sent to `POST /api/session`. The hash belongs on the stand, the password on the machine that exports from it, and a stand that read the plaintext would be storing the answer next to the lock.
 
-These share the `.env` file with the table above because a development machine is often both the thing running the server and the thing publishing to a stand, and one file for both halves beats two.
+On a development machine the server's variables and the tools' share one `.env`, because the machine is often both the thing running the server and the thing publishing to a stand.
 
 ## How it is read
 

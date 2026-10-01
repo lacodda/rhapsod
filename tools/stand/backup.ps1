@@ -27,12 +27,6 @@ $ErrorActionPreference = 'Stop'
 # The only lines that differ between products on this Pi. Everything below is
 # the same in every one of them.
 $app = 'rhapsod'
-$volumeData = '/data'
-# The compose file on the stand. A setting, not a constant: how a stand is
-# deployed is a fact about that machine, not something this repository gets
-# to decide.
-$composeFile = $env:RHAPSOD_STAND_COMPOSE
-if (-not $composeFile) { $composeFile = 'docker-compose.yml' }
 $service = 'server'
 
 $here = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -59,7 +53,7 @@ Say "asking $standHost for the newest copy"
 # Docker volume, so this path is inside the running service and does not
 # exist on the host. An `ls` on the host finds nothing and looks exactly
 # like a stand that has taken no backups yet.
-$listing = "cd '$standDir' && docker compose -f '$composeFile' exec -T $service sh -c 'ls -1 $volumeData/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'"
+$listing = "cd '$standDir' && docker compose exec -T $service sh -c 'ls -1 /data/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'"
 $newest = (& ssh $standHost $listing) | Select-Object -Last 1
 if (-not $newest) {
     # The server writes one within the hour of starting. Taking a copy of the
@@ -82,7 +76,7 @@ Say "fetching $name"
 # `cmd /c` with a redirect, because the bytes must land in a file without
 # PowerShell decoding them as text: a pipeline here would turn a database into
 # mojibake and the check below would reject what arrived.
-$remote = "cd '$standDir' && docker compose -f '$composeFile' exec -T $service cat '$newest'"
+$remote = "cd '$standDir' && docker compose exec -T $service cat '$newest'"
 & cmd /c "ssh $standHost `"$remote`" > `"$part`"" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Remove-Item $part -ErrorAction SilentlyContinue
@@ -99,6 +93,20 @@ if (-not (Test-StandDatabase $part)) {
 
 Move-Item -Force $part $landing
 Say "kept $landing ($(Get-ReadableSize $landing))"
+
+# The stand's settings come too: the password that locks it and the paths it
+# runs from exist only in its `.env`, and a stand restored without them comes
+# back open. One file, replaced each time - it describes the stand as it is
+# now, not as it was on the day of each copy.
+$settings = Join-Path $To "$app-stand.env"
+& cmd /c "ssh $standHost `"cd '$standDir' && cat .env`" > `"$settings.part`" 2>nul"
+if ($LASTEXITCODE -eq 0) {
+    Move-Item -Force "$settings.part" $settings
+    Say "kept the stand's settings as $app-stand.env"
+} else {
+    Remove-Item "$settings.part" -ErrorAction SilentlyContinue
+    Say 'the stand has no .env to keep; a restore will give it the default settings'
+}
 
 # Old copies go by the date in the name, the same rule the server prunes by. A
 # file that is not one of these is left alone: this deletes, and a delete that

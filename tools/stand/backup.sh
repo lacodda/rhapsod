@@ -30,12 +30,6 @@ set -euo pipefail
 # the same in every one of them; a sibling takes these scripts by changing
 # this block and nothing else.
 app=rhapsod
-volume_data=/data
-# The compose file on the stand. A setting, not a constant: a stand is a
-# machine somebody set up, and how it is deployed is a fact about that
-# machine rather than something this repository gets to decide. The real one
-# is called docker-compose.yml.
-compose_file=${RHAPSOD_STAND_COMPOSE:-docker-compose.yml}
 service=server
 
 here="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -55,11 +49,11 @@ mkdir -p "$to"
 # a directory copied about arrives stamped today.
 #
 # Listed through the container, not over ssh alone: the database lives in a
-# Docker volume, so `$volume_data` is a path inside the running service and
+# Docker volume, so `/data` is a path inside the running service and
 # does not exist on the host at all. An `ls` on the host finds nothing and
 # looks exactly like a stand that has taken no backups yet.
 say "asking $host for the newest copy"
-newest=$(ssh "$host" "cd '$dir' && docker compose -f '$compose_file' exec -T $service sh -c 'ls -1 $volume_data/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'" </dev/null || true)
+newest=$(on_stand "docker compose exec -T $service sh -c 'ls -1 /data/backups/$app-????-??-??.db 2>/dev/null | sort | tail -n 1'" || true)
 newest=$(printf '%s' "$newest" | tr -d '
 ')
 
@@ -82,7 +76,7 @@ say "fetching $name"
 #
 # Straight to a file here, so nothing is held in memory: a database is tens of
 # megabytes and a shell that buffers it is a shell that fails on a Pi.
-if ! ssh "$host" "cd '$dir' && docker compose -f '$compose_file' exec -T $service cat '$newest'" </dev/null > "$landing.part"; then
+if ! on_stand "docker compose exec -T $service cat '$newest'" > "$landing.part"; then
     rm -f "$landing.part"
     die "the copy could not be read off $host: check that the stand is up (docker compose ps) and that $dir is its directory"
 fi
@@ -97,6 +91,18 @@ fi
 
 mv "$landing.part" "$landing"
 say "kept $landing ($(file_size "$landing"))"
+
+# The stand's settings come too: the password that locks it and the paths it
+# runs from exist only in its `.env`, and a stand restored without them comes
+# back open. One file, replaced each time - it describes the stand as it is
+# now, not as it was on the day of each copy.
+if on_stand "cat .env" > "$to/$app-stand.env.part" 2>/dev/null; then
+    mv "$to/$app-stand.env.part" "$to/$app-stand.env"
+    say "kept the stand's settings as $app-stand.env"
+else
+    rm -f "$to/$app-stand.env.part"
+    say "the stand has no .env to keep; a restore will give it the default settings"
+fi
 
 # Old copies go by the date in the name, the same rule the server prunes by.
 # A file that is not one of these is left alone: this deletes, and a delete

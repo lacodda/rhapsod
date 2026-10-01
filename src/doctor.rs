@@ -370,14 +370,21 @@ fn days_between(from: &str, to: &str) -> Option<u64> {
 /// reach the stand. A stand bound to every interface with no password is
 /// wide open to the house network, which on a home network with one reader
 /// is a choice and not a fault - so it is a thing to watch, not an illness.
+///
+/// In a container the server's own address is the container's, so the host's
+/// side of the port mapping is what answers the question when the compose
+/// file passes it in.
 fn door(config: &Config) -> Check {
-    let loopback = config.addr.ip().is_loopback();
+    let (how, address, loopback) = match &config.host_addr {
+        Some(host) => ("published on", host.clone(), is_loopback(host)),
+        None => ("listening on", config.addr.to_string(), config.addr.ip().is_loopback()),
+    };
     let locked = config.password_hash.is_some();
 
     let where_it_listens = if loopback {
-        format!("listening on {} - only a proxy on this machine can reach it", config.addr)
+        format!("{how} {address} - only a proxy on this machine can reach it")
     } else {
-        format!("listening on {} - anything on the network can reach it", config.addr)
+        format!("{how} {address} - anything on the network can reach it")
     };
     let lock = if locked { "a password is set" } else { "no password: the stand is open" };
 
@@ -386,6 +393,15 @@ fn door(config: &Config) -> Check {
     // network with no password is the combination worth a mark.
     let verdict = if loopback || locked { Verdict::Well } else { Verdict::Watch };
     Check::new("door", verdict, format!("{where_it_listens}; {lock}"))
+}
+
+/// Whether an address written as `host:port` is on the loopback. Anything
+/// that does not read as an address is taken as reachable: the cautious
+/// answer, since this one only ever decides whether to say a word.
+fn is_loopback(address: &str) -> bool {
+    let host = address.rsplit_once(':').map_or(address, |(host, _)| host);
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback()) || host == "localhost"
 }
 
 #[cfg(test)]
@@ -418,6 +434,7 @@ mod tests {
             database_url: format!("sqlite://{}?mode=rwc", dir.path().join("data/rhapsod.db").display()),
             web_dir: web,
             password_hash: None,
+            host_addr: None,
         };
         Stand { _dir: dir, config }
     }
@@ -600,6 +617,32 @@ mod tests {
         };
         let report = examine(&config).await.unwrap();
         assert_eq!(check(&report, "door").verdict, Verdict::Well);
+    }
+
+    #[tokio::test]
+    async fn in_a_container_the_host_side_of_the_port_decides() {
+        // Inside a container the server always listens on every interface;
+        // whether the stand is open to the network is the host's binding.
+        let stand = stand();
+        let behind_a_proxy = Config {
+            addr: "0.0.0.0:8084".parse().unwrap(),
+            host_addr: Some("127.0.0.1:8084".to_string()),
+            ..stand.config.clone()
+        };
+        let report = examine(&behind_a_proxy).await.unwrap();
+        assert_eq!(check(&report, "door").verdict, Verdict::Well);
+        assert!(check(&report, "door").detail.contains("published on 127.0.0.1:8084"));
+
+        let on_the_network = Config {
+            host_addr: Some("0.0.0.0:8084".to_string()),
+            ..behind_a_proxy.clone()
+        };
+        let report = examine(&on_the_network).await.unwrap();
+        assert_eq!(check(&report, "door").verdict, Verdict::Watch);
+
+        for (address, loopback) in [("[::1]:8084", true), ("localhost:8084", true), ("::", false), ("nonsense", false)] {
+            assert_eq!(is_loopback(address), loopback, "{address}");
+        }
     }
 
     #[tokio::test]

@@ -15,6 +15,10 @@
 #   ./tools/stand/update.sh v0.14.0
 #   ./tools/stand/update.sh              # whatever the repository is tagged at
 #
+# The compose file goes with the version: the stand's `docker-compose.yml` is
+# replaced by the one the tag shipped, so a release that changes how the
+# stand runs reaches the stand with the image it was written for.
+#
 # Configuration, from the environment or a `.env` beside the repository:
 #
 #   RHAPSOD_STAND_HOST=pi                    # the ssh host the stand runs on
@@ -23,13 +27,6 @@ set -euo pipefail
 
 # --- What this stand is -----------------------------------------------------
 app=rhapsod
-volume=rhapsod_data
-volume_data=/data
-# The compose file on the stand. A setting, not a constant: a stand is a
-# machine somebody set up, and how it is deployed is a fact about that
-# machine rather than something this repository gets to decide. The real one
-# is called docker-compose.yml.
-compose_file=${RHAPSOD_STAND_COMPOSE:-docker-compose.yml}
 service=server
 # The variable the compose file reads the image tag from. Spelt out rather
 # than derived from `$app`: upper-casing a variable is a bashism, and these
@@ -54,14 +51,18 @@ case "$version" in
     *) version="v$version" ;;
 esac
 
-# The image has to exist before the stand is stopped for it. Checked from
-# here, where there is a network and a docker, rather than discovering it on
-# the Pi with the old container already down.
+# The image has to exist before the stand is stopped for it. Asked of the
+# registry before anything stops, rather than discovered by a pull with the
+# old container already down.
 say "looking for the image for $version"
 image="ghcr.io/lacodda/$app:${version#v}"
 if ! ssh "$host" "docker manifest inspect '$image' >/dev/null 2>&1"; then
     die "there is no image $image yet: the release build may still be running, or the tag was never pushed"
 fi
+# And the compose file of that version has to be here to send, for the same
+# reason: found missing after the stop, it would leave the stand down.
+git -C "$here" cat-file -e "$version:docker-compose.prod.yml" 2>/dev/null ||
+    die "$version is not a tag in this checkout: run \`git fetch --tags\` and try again"
 
 # --- The copy, before anything moves ----------------------------------------
 # Taken from the running stand, and kept on the stand: this is the thing to
@@ -69,45 +70,60 @@ fi
 # happens on. `tools/stand/backup.sh` is what brings copies off the machine;
 # this is the one taken because a version is about to change under it.
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-aside="$volume_data/backups/$app-before-$version-$stamp.db"
+aside="/data/backups/$app-before-$version-$stamp.db"
 say "copying the database aside on $host: $(basename "$aside")"
 
-# Stopped for the copy, and only for the copy. A stopped server has
-# checkpointed its write-ahead log into the one file, so a plain copy is
-# whole - and the stand is about to be stopped for the new image anyway, so
-# this costs nothing extra in downtime.
+# Stopped for the copy, and only for the copy. A server that stops cleanly
+# closes its database, which folds the write-ahead log into the one file, so a
+# plain copy is whole - and the stand is about to be stopped for the new image
+# anyway, so this costs nothing extra in downtime.
 say "stopping the stand for the copy"
-ssh "$host" "cd '$dir' && docker compose -f '$compose_file' stop $service" </dev/null
+on_stand "docker compose stop $service"
 
-if ! ssh "$host" "docker run --rm -v '$volume:$volume_data' alpine sh -c 'mkdir -p $volume_data/backups && cp $volume_data/$app.db $aside'" </dev/null; then
+# A log with something in it means the server was killed rather than stopped,
+# and a copy of the database alone would miss the last things the reader did.
+# Refused rather than copied: a rollback copy that is quietly behind is found
+# out on the day it is needed.
+if ! in_service "test ! -s /data/$app.db-wal"; then
+    on_stand "docker compose up -d"
+    die "the stand did not close its database cleanly (its write-ahead log is not empty); it is running again and nothing was updated"
+fi
+
+# Through the service, so the copy is made as the user the server runs as and
+# lands in the volume the stand actually mounts.
+if ! in_service "mkdir -p /data/backups && cp /data/$app.db $aside"; then
     say "the copy could not be taken; starting the stand again and stopping here"
-    ssh "$host" "cd '$dir' && docker compose -f '$compose_file' up -d" </dev/null
+    on_stand "docker compose up -d"
     die "nothing was updated: a version must not move without something to move back to"
 fi
 say "copied aside; a rollback restores $(basename "$aside")"
 
 # --- The version ------------------------------------------------------------
+say "sending the compose file of $version"
+send_compose "$version"
+
 # Written into `.env` on the stand rather than passed on the command line, so
 # that a later `docker compose up -d` run by hand brings up the same version
 # and not whatever `latest` has become.
 say "setting the version in $dir/.env"
-ssh "$host" "cd '$dir' && touch .env && sed -i '/^$version_var=/d' .env && echo '$version_var=${version#v}' >> .env" </dev/null
+on_stand "touch .env && sed -i '/^$version_var=/d' .env && echo '$version_var=${version#v}' >> .env"
 
 say "pulling $image"
-ssh "$host" "cd '$dir' && docker compose -f '$compose_file' pull" </dev/null
+on_stand "docker compose pull"
 
 say "starting $version"
-ssh "$host" "cd '$dir' && docker compose -f '$compose_file' up -d" </dev/null
+on_stand "docker compose up -d --wait --wait-timeout 60" ||
+    say "the stand did not report healthy - the doctor says why"
 
 # --- Is it the version that was asked for, and is it well? ------------------
 # The doctor rather than a curl: the port answering says the process started,
 # and this says the stand can do its job. Its first line is the version, so
 # one command answers both questions.
 say "asking the stand how it is"
-if ssh "$host" "cd '$dir' && docker compose -f '$compose_file' exec -T $service $app doctor" </dev/null; then
+if on_stand "docker compose exec -T $service $app doctor"; then
     say "the stand is on $version and well."
 else
     say "the stand answered, and the doctor found something - the lines above say what."
-    say "to go back: restore $(basename "$aside") into the volume and set the old version in .env."
+    say "to go back, see \"Rolling back\" in the \"Moving a stand\" guide: $(basename "$aside") and the old version."
     exit 1
 fi

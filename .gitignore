@@ -26,8 +26,10 @@ Thumbs.db
 # the author's vault (ADR 0002) and is not part of this repository.
 /content/
 
-# Staging directory assembled by tools/stage-deploy.sh for a stand upload.
-/deploy/
+# Copies of a stand brought here by tools/stand/backup.*: the reader's
+# database and the stand's settings, with its password hash. The default
+# place for them is inside this checkout, and this repository is public.
+/backups/
 
 # What the road gate leaves behind: traces and screenshots of a failed run.
 # CI uploads them as an artifact; locally they are read and thrown away.

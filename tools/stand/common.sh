@@ -118,9 +118,51 @@ file_size() {
     fi
 }
 
-# Asks the reader before something that cannot be taken back. `-y` on the
-# command line, or a non-interactive shell with `RHAPSOD_YES=1`, answers for
-# them; without either, no answer means no.
+# A file's SHA-256, as hex, from whichever tool this machine has: GNU and Git
+# Bash ship `sha256sum`, macOS ships `shasum`.
+file_hash() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
+# A command run in the stand's directory on its host, where `docker compose`
+# finds the stand's own compose file and `.env` without being told.
+on_stand() {
+    ssh "$host" "cd '$dir' && $1" </dev/null
+}
+
+# A command run inside the stand's own service, with its volume mounted, and
+# without starting the server.
+#
+# The only way any of these scripts touches the volume. Compose names the
+# volume after the directory (`rhapsod_data` in `/srv/rhapsod`, something else
+# anywhere else), and the image runs as its own user rather than root - so a
+# throwaway container naming the volume itself guesses the name, and an
+# `alpine` writing into it leaves a database the server is not allowed to
+# open. The service's own definition answers both.
+in_service() {
+    on_stand "docker compose --progress quiet run --rm --no-deps -T $service sh -c '$1'"
+}
+
+# Puts the compose file of a release on the stand.
+#
+# Taken from the tag rather than the working tree, so a stand runs the compose
+# file its version shipped with, and named `docker-compose.yml` there, so
+# every command on the stand is a plain `docker compose` with no `-f`.
+send_compose() {
+    git -C "$here" cat-file -e "$1:docker-compose.prod.yml" 2>/dev/null ||
+        die "$1 is not a tag in this checkout: run \`git fetch --tags\` and try again"
+    git -C "$here" show "$1:docker-compose.prod.yml" |
+        ssh "$host" "cat > '$dir/docker-compose.yml.part' && mv '$dir/docker-compose.yml.part' '$dir/docker-compose.yml'" ||
+        die "the compose file could not be written to $host:$dir"
+}
+
+# Asks the reader before something that cannot be taken back.
+# `RHAPSOD_YES=1` answers for them, for a run nobody is watching; without it,
+# no answer means no.
 confirm() {
     case "${RHAPSOD_YES:-}" in
         1 | yes | true) return 0 ;;

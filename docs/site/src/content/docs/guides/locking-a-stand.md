@@ -25,7 +25,13 @@ rhapsod hash 'a good passphrase'
 $argon2id$v=19$m=19456,t=2,p=1$wVUyLxTmlnEWzGSHbJINbg$sdR7z5K3zoywehEIBHEqAXDsZILU908I9bQLGkCRYgg
 ```
 
-Omit the password and it is prompted for, so it never reaches your shell history:
+On a stand there is no `rhapsod` binary on the host; the image has one. In the stand's directory:
+
+```sh
+docker compose run --rm server rhapsod hash
+```
+
+Omit the password, as there, and it is prompted for, so it never reaches your shell history:
 
 ```sh
 rhapsod hash
@@ -66,7 +72,7 @@ A blank or whitespace-only value counts as unset. `RHAPSOD_PASSWORD_HASH=` leave
 On the stand this goes in the `.env` next to the compose file, which passes it into the container - see [Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/). The server reads the environment once at startup, so a change takes a restart:
 
 ```sh
-docker compose -f docker-compose.prod.yml up -d
+cd /srv/rhapsod && docker compose up -d
 ```
 
 Check it took: a locked stand says so before anyone types anything.

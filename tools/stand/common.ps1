@@ -7,6 +7,21 @@
 
 $ErrorActionPreference = 'Stop'
 
+# The native programs these scripts drive, judged by their exit code alone.
+#
+# Windows PowerShell turns every line a native program writes to stderr into
+# an error record whenever the script's own output is redirected - as it is
+# under Task Scheduler, or piped into a log - and under `Stop` the first such
+# line ends the script. `docker compose` reports progress on stderr and ssh
+# prints its warnings there, so a scheduled backup would die on "Container
+# created". A function of the same name wins over the program, so every call
+# below comes through here and is read by `$LASTEXITCODE`, as each one already
+# is, rather than by whether anything was said on stderr.
+function ssh { $ErrorActionPreference = 'Continue'; & ssh.exe @args }
+function scp { $ErrorActionPreference = 'Continue'; & scp.exe @args }
+function cmd { $ErrorActionPreference = 'Continue'; & cmd.exe @args }
+function sqlite3 { $ErrorActionPreference = 'Continue'; & sqlite3.exe @args }
+
 # The name of the script that dot-sourced this, for the prefix on every line.
 $script:StandWho = [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.PSCommandPath)
 if (-not $script:StandWho) { $script:StandWho = 'stand' }
@@ -80,7 +95,7 @@ function Test-StandDatabase($file) {
         return $false
     }
 
-    $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
+    $sqlite = Get-Command sqlite3.exe -CommandType Application -ErrorAction SilentlyContinue
     if (-not $sqlite) {
         [Console]::Error.WriteLine("$($script:StandWho): sqlite3 is not installed, so the copy cannot be checked.")
         [Console]::Error.WriteLine("$($script:StandWho): install it (winget install SQLite.SQLite) and run this again.")
@@ -136,4 +151,54 @@ function Confirm-Stand($question) {
 function Invoke-OnStand($standHost, $command, $reason) {
     & ssh $standHost $command
     if ($LASTEXITCODE -ne 0) { Stop-WithReason $reason }
+}
+
+# A file's SHA-256, as lower-case hex - the form `sha256sum` prints on the
+# stand, so the two can be compared as strings.
+function Get-StandHash($file) {
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+}
+
+# A command run inside the stand's own service, with its volume mounted, and
+# without starting the server. Output is returned; `$LASTEXITCODE` says how it
+# went.
+#
+# The only way any of these scripts touches the volume. Compose names the
+# volume after the directory (`rhapsod_data` in `/srv/rhapsod`, something else
+# anywhere else), and the image runs as its own user rather than root - so a
+# throwaway container naming the volume itself guesses the name, and an
+# `alpine` writing into it leaves a database the server is not allowed to
+# open. The service's own definition answers both.
+function Invoke-InService($standHost, $standDir, $service, $command) {
+    return (& ssh $standHost "cd '$standDir' && docker compose --progress quiet run --rm --no-deps -T $service sh -c '$command'")
+}
+
+# Whether git knows an object - a tag, or a file at a tag. Through `cmd /c`:
+# Windows PowerShell turns a native program's stderr into an error, and under
+# `Stop` an answer of "no" would end the script instead of being an answer.
+function Test-GitObject($here, $object) {
+    & cmd /c "git -C `"$here`" cat-file -e $object 2>nul"
+    return ($LASTEXITCODE -eq 0)
+}
+
+# The tag the checkout stands on (`-Exact`), or the newest one behind it;
+# empty when there is none.
+function Get-GitTag($here, [switch]$Exact) {
+    $how = if ($Exact) { '--exact-match' } else { '--abbrev=0' }
+    $tag = & cmd /c "git -C `"$here`" describe --tags $how 2>nul"
+    if ($LASTEXITCODE -ne 0) { return '' }
+    return "$tag".Trim()
+}
+
+# Puts the compose file of a release on the stand.
+#
+# Taken from the tag rather than the working tree, so a stand runs the compose
+# file its version shipped with, and named `docker-compose.yml` there, so
+# every command on the stand is a plain `docker compose` with no `-f`.
+# `cmd /c` for the pipe: Windows PowerShell re-encodes what passes between two
+# native programs and would end every line with CRLF.
+function Send-Compose($here, $standHost, $standDir, $version) {
+    if (-not (Test-GitObject $here "${version}:docker-compose.prod.yml")) { Stop-WithReason "$version is not a tag in this checkout: run ``git fetch --tags`` and try again" }
+    & cmd /c "git -C `"$here`" show ${version}:docker-compose.prod.yml | ssh $standHost `"cat > '$standDir/docker-compose.yml.part' && mv '$standDir/docker-compose.yml.part' '$standDir/docker-compose.yml'`""
+    if ($LASTEXITCODE -ne 0) { Stop-WithReason "the compose file could not be written to ${standHost}:$standDir" }
 }

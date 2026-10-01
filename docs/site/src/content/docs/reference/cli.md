@@ -41,13 +41,13 @@ rhapsod doctor
 ```
 
 ```
-ok version   rhapsod 0.15.0
+ok version   rhapsod 0.15.1
 ok library   62 pieces on 19 shelves in /content
 ok app       built at /app/web
 ok database  whole
 ok reader    48 pieces of reading state, 12 notes, 31 quotes
 ok backups   14 kept, newest from 2026-09-19 (today)
-ok door      listening on 0.0.0.0:8084 - anything on the network can reach it; a password is set
+ok door      published on 0.0.0.0:8084 - anything on the network can reach it; a password is set
 ```
 
 It runs against the same configuration the server runs on. That is the point of it being a command of the product rather than a script beside it: a check with its own idea of where the library and the database are can pass while the server fails, because the two were never looking at the same stand.
@@ -62,12 +62,14 @@ Each line is one of three marks:
 
 The exit code is `1` only if something is marked `XX`, so this can be the last line of a deployment script without failing it over a stand that is merely new. Anything `--` exits `0`.
 
-What it does **not** check is the door itself. The certificate, the name and the secure context belong to the proxy in front of the server ([Behind a door](/rhapsod/guides/behind-a-door/)), and a product grading its own proxy would be guessing. What it can say is where the server listens, and whether there is a password on it.
+What it does **not** check is the door itself. The certificate, the name and the secure context belong to the proxy in front of the server ([Behind a door](/rhapsod/guides/behind-a-door/)), and a product grading its own proxy would be guessing. What it can say is where the stand can be reached, and whether there is a password on it.
 
-In a container, the settings are already in the environment, so it runs with no arguments:
+In a container the server listens on every interface of the container and cannot see how the host maps the port. The stand's compose file passes the host's side in as `RHAPSOD_HOST_ADDR`, and the `door` line reads that: `published on 127.0.0.1:8084` is a stand only a proxy on the same machine can reach. Without it, the line says where the server itself listens.
+
+In a container, the settings are already in the environment, so it runs with no arguments - in the stand's directory:
 
 ```sh
-docker compose -f docker-compose.prod.yml exec server rhapsod doctor
+docker compose exec server rhapsod doctor
 ```
 
 `exec` rather than `run`: the running container is the stand being asked about, and a fresh one would open its own copy of the database and report on that.
@@ -78,6 +80,12 @@ Fills a database from an export document.
 
 ```sh
 rhapsod restore rhapsod-export.json
+```
+
+On a stand the file is on your machine and the database is in the container's volume, so it goes in on standard input - in the stand's directory:
+
+```sh
+docker compose run --rm -T server rhapsod restore /dev/stdin < rhapsod-export.json
 ```
 
 For a stand that was rebuilt. The image is pulled again and the library is republished from the vault, but what the reader did exists nowhere else unless it was carried out. Rows that are already there are left alone, so running this twice changes nothing the second time and running it against a live stand cannot overwrite what has happened since.
@@ -104,7 +112,7 @@ Without the argument it prompts, so the password does not land in the shell's hi
 rhapsod hash
 ```
 
-It needs nothing else - no library, no database - which is why the image on a stand can do it before there is anything else set up. The value it prints is full of `$`, so it is single-quoted in a `.env` file. See [Locking a stand](/rhapsod/guides/locking-a-stand/).
+It needs nothing else - no library, no database - which is why the image on a stand can do it before there is anything else set up: `docker compose run --rm server rhapsod hash`. The value it prints is full of `$`, so it is single-quoted in a `.env` file. See [Locking a stand](/rhapsod/guides/locking-a-stand/).
 
 ## See also
 

@@ -472,3 +472,91 @@ fn the_stand_scripts_come_in_pairs_that_read_the_same_settings() {
         );
     }
 }
+
+/// The stand scripts reach the database only through the stand's own service.
+///
+/// Compose names the volume after the directory the stand runs from, and the
+/// image runs as its own user. A script that names the volume itself guesses
+/// the first, and one that writes through `alpine` gets the second wrong:
+/// restore did both for five releases, and would have stood up a stand whose
+/// server was not allowed to open the database it had just been given. Only
+/// code lines are read - the comments explain exactly these mistakes.
+#[test]
+fn the_stand_scripts_touch_the_volume_only_through_the_service() {
+    const FORBIDDEN: &[(&str, &str)] = &[
+        ("docker run", "a throwaway container names the volume itself and runs as root"),
+        ("docker volume", "the volume's name is compose's to decide, not the script's"),
+        ("alpine", "an image other than the stand's writes files the server cannot open"),
+        ("rhapsod_data", "a hard-coded volume name only matches one directory name"),
+        ("docker compose -f", "the stand's compose file is `docker-compose.yml`, read without `-f`"),
+    ];
+
+    let dir = repo_root().join("tools/stand");
+    let mut found = Vec::new();
+    let mut scripts = 0;
+    for entry in fs::read_dir(&dir).expect("tools/stand should be readable").flatten() {
+        let path = entry.path();
+        if !path.extension().is_some_and(|extension| extension == "sh" || extension == "ps1") {
+            continue;
+        }
+        scripts += 1;
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        for (number, line) in read(&path).lines().enumerate() {
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            for (pattern, why) in FORBIDDEN {
+                if line.contains(pattern) {
+                    found.push(format!("tools/stand/{name}:{}: `{pattern}` - {why}", number + 1));
+                }
+            }
+        }
+    }
+
+    assert!(scripts >= 8, "only {scripts} stand scripts were read; the check is looking in the wrong place");
+    assert!(found.is_empty(), "a stand script goes around the service:\n  {}", found.join("\n  "));
+}
+
+/// The docs tell the reader to run commands on the stand the way the stand
+/// actually has them.
+///
+/// The repository keeps the stand's compose file as `docker-compose.prod.yml`,
+/// beside the one development builds from; on the stand the scripts install it
+/// as `docker-compose.yml`, so a command there is a plain `docker compose`.
+/// Pages that said `-f docker-compose.prod.yml` described a file the stand
+/// does not have.
+#[test]
+fn the_docs_run_compose_on_the_stand_without_naming_a_file() {
+    let mut pages = vec![repo_root().join("README.md")];
+    let mut stack = vec![repo_root().join("docs/site/src/content/docs")];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("the docs directory should be readable").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md" || extension == "mdx") {
+                pages.push(path);
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    for page in &pages {
+        for (number, line) in read(page).lines().enumerate() {
+            if line.contains("compose -f docker-compose.prod.yml") {
+                found.push(format!("{}:{}", page.strip_prefix(repo_root()).unwrap_or(page).display(), number + 1));
+            }
+        }
+    }
+
+    assert!(
+        pages.len() > 10,
+        "only {} pages were read; the check is looking in the wrong place",
+        pages.len()
+    );
+    assert!(
+        found.is_empty(),
+        "these pages run compose against a file the stand does not have (it is docker-compose.yml there):\n  {}",
+        found.join("\n  ")
+    );
+}

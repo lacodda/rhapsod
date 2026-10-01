@@ -21,7 +21,7 @@ You finish it, and say so: finishing is a button, because scrolling to the botto
 
 Evening, at home, on the desktop. The same place, the same marks: what the reader remembers lives in one SQLite file on the stand, which is also the file a backup is a copy of. You pick up a piece you left half-read on the phone, and the position does not jump backwards when the phone catches up - it only ever moves forward. Meanwhile a new piece was published to the library directory; the server indexed it, and it is on the shelf, unread, next in line.
 
-A line stops you, and you keep it: drag across the sentence, tap once, and it is yours - with a thought beside it if you have one. At the foot of the piece you write what it left you with. None of that goes into the markdown; it lives beside it, and one command brings all of it back to the vault when you want it there.
+A line stops you, and you keep it: drag across the sentence, tap once, and it is yours - with a thought beside it if you have one. At the foot of the piece you write what it left you with. None of that goes into the markdown; it lives beside it, and one command exports all of it as a single file, for a script of yours to fold into the vault when you want it there.
 
 Later. The lines worth keeping come back on a schedule - a day, a week, a month - and the whole library rides along on the phone for a train with no signal. The journal says which days you were in it.
 
@@ -46,22 +46,26 @@ Later. The lines worth keeping come back on a schedule - a day, a week, a month 
 
 ## Install
 
-Docker on a Raspberry Pi, and one container is the whole installation:
+Docker on a Raspberry Pi, and one container is the whole installation. The
+stand lives in a directory of its own, holding the compose file of a release,
+its settings and the library:
 
 ```sh
-git clone https://github.com/lacodda/rhapsod && cd rhapsod
-printf 'RHAPSOD_CONTENT=/srv/rhapsod/content
-' > .env    # where the library is published to
-docker compose -f docker-compose.prod.yml up -d
-curl http://pi:8084/api/health
+sudo install -d -o "$USER" /srv/rhapsod && cd /srv/rhapsod && mkdir content
+curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.1/docker-compose.prod.yml
+printf 'RHAPSOD_CONTENT=/srv/rhapsod/content\nRHAPSOD_VERSION=0.15.1\n' > .env
+docker compose up -d
+curl http://localhost:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.0","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.15.1","pieces":0,"indexed_seconds_ago":3}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
-is up, but whether it is serving the library you just published.
+is up, but whether it is serving the library you just published. A fresh stand has
+nothing published yet, so it answers `0`; after your first publish it counts
+the pieces.
 
 A stand set up this way is open - everyone who can reach it is the reader.
 Putting a password on it, publishing content, the environment it reads and the
@@ -70,11 +74,12 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.0, running on a Pi at home and read daily on a phone. Reading and
+v0.15.1, running on a Pi at home and read daily on a phone. Reading and
 progress, notes and highlights, the offline app and the spaced return all work
 today, and a stand backs itself up, stands back up on a new machine and moves
 to a new version by script. Everything the reader leaves - notes, kept lines,
-reactions, typos, the journal - goes back to the vault the library came from.
+reactions, typos, the journal - leaves the stand in one export, written by a
+script shipped here; what a vault does with it is up to you.
 What landed in each version:
 [CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).
 
