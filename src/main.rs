@@ -97,6 +97,9 @@ async fn main() -> Result<()> {
 
             let pool = db::connect(&config.database_url).await?;
             let done = rhapsod::restore::restore(&pool, &export).await?;
+            // Closed before the report, for the same reason the server closes
+            // on the way out: the database is left as one whole file.
+            pool.close().await;
 
             println!(
                 "restored {} pieces of reading state, {} notes, {} quotes, {} schedules, {} bookmarks, {} requests, {} reactions, {} typos, {} openings from an export taken at {}",
@@ -173,18 +176,53 @@ async fn serve(config: &config::Config) -> Result<()> {
 
     axum::serve(
         listener,
-        app::router(pool, &config.web_dir, library, config.content_dir.clone(), config.password_hash.clone()),
+        app::router(pool.clone(), &config.web_dir, library, config.content_dir.clone(), config.password_hash.clone()),
     )
     .with_graceful_shutdown(shutdown_signal())
     .await
     .context("server error")?;
+
+    // Closed rather than dropped with the process: the last connection to
+    // close folds the write-ahead log back into the database file. A stopped
+    // stand is then one whole file, which is what a copy taken after
+    // `docker compose stop` relies on; a stand killed with its log beside it
+    // loses nothing, but a copy of the database alone would.
+    pool.close().await;
+    tracing::info!("database closed");
     Ok(())
 }
 
+/// Ctrl-C at a terminal, or SIGTERM from whatever runs the server.
+///
+/// In a container the server is process 1, and `docker compose stop` sends
+/// SIGTERM, not SIGINT. Listening for Ctrl-C alone meant every stop waited out
+/// Docker's ten seconds and ended in a kill, with the database never closed.
 async fn shutdown_signal() {
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::error!(%error, "failed to install the shutdown signal handler");
-        return;
+    let interrupt = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install the interrupt handler");
+            std::future::pending::<()>().await;
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => {
+                tracing::error!(%error, "failed to install the terminate handler");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = interrupt => {}
+        () = terminate => {}
     }
     tracing::info!("shutting down");
 }
