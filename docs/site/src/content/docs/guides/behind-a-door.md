@@ -48,6 +48,8 @@ Caddy installed from its Debian package keeps this file at `/etc/caddy/Caddyfile
 
 `reader.example` has to resolve to the Pi on the phone, and a phone has no hosts file to edit. The name goes into whatever answers DNS on your network: the router's local names, or a resolver like Pi-hole if one already runs there. Point the name at the Pi's address and check it from the phone's browser over plain `http` first - if that does not open, the certificate is not the problem yet.
 
+Avoid a name ending in `.local`: phones resolve those by multicast and never ask your DNS. And Caddy needs ports 80 and 443 on the Pi to itself - a Pi-hole whose web interface already holds them has to be moved to other ports first.
+
 ### Only through the door
 
 With a proxy in front, the stand's port no longer needs to answer the network. In the stand's `.env`:
@@ -78,13 +80,23 @@ Caddy keeps its root here:
 /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
 ```
 
-Copy that one file to each device. Only the root: the certificate for the name itself is served by the proxy and changes constantly.
+It belongs to the `caddy` user, so take a readable copy first, then carry that one file to each device:
+
+```sh
+sudo cp /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt ~/root.crt && sudo chown $USER ~/root.crt
+```
+
+Only the root: the certificate for the name itself is served by the proxy and changes constantly.
 
 - **Android** - Settings, Security, *Encryption and credentials*, *Install a certificate*, **CA certificate**. The system warns that your network could be monitored; that is the expected warning for an authority you created. Chrome trusts user-installed roots, which is what the reader needs.
 - **iOS** - open the file, install the profile, then go to Settings, General, About, *Certificate Trust Settings* and turn the switch on. Both steps are needed: a profile that is installed but not trusted does nothing.
 - **Desktop** - add it to the system or browser certificate store.
 
-The authority lives on the Pi's card. A Pi rebuilt from scratch makes a new one, and every device has to trust the new root - unless the `pki` directory above was kept and put back before Caddy first starts.
+The authority lives on the Pi's card. A Pi rebuilt from scratch makes a new one, and every device has to trust the new root - unless the authority was kept and put back before Caddy first starts. Keep it beside your other backups; it holds the authority's private key, so treat the file like a password:
+
+```sh
+sudo tar -czf ~/caddy-authority.tgz -C /var/lib/caddy/.local/share/caddy pki
+```
 
 Then open the stand over `https` and check the stand screen. **Ready for the road.** means the browser accepted all of it: the connection, the worker, the index, and the pieces.
 

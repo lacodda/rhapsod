@@ -86,10 +86,14 @@ function Import-StandEnv($file) {
 # pass: a check that quietly says yes when it cannot look is the worst of the
 # three answers.
 function Test-StandDatabase($file) {
-    if (-not (Test-Path $file)) {
+    if (-not (Test-Path -LiteralPath $file)) {
         [Console]::Error.WriteLine("$($script:StandWho): $file is not there")
         return $false
     }
+    # Absolute before it becomes a URI: `file:///./backups/...` is read by
+    # sqlite from the root of the drive, and a relative path fails a copy
+    # that is perfectly whole.
+    $file = (Resolve-Path -LiteralPath $file).Path
     if ((Get-Item $file).Length -eq 0) {
         [Console]::Error.WriteLine("$($script:StandWho): $file is empty")
         return $false

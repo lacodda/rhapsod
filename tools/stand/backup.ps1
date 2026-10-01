@@ -35,7 +35,10 @@ Set-StandName 'backup'
 Import-StandEnv (Join-Path $here '.env')
 
 if (-not $To) { $To = $env:RHAPSOD_BACKUP_TO }
-if (-not $To) { $To = './backups' }
+# The checkout's own backups\ by default, not one relative to wherever the
+# script was started from: under Task Scheduler that is somewhere else
+# entirely, and the copies would land outside the ignored directory.
+if (-not $To) { $To = Join-Path $here 'backups' }
 $keep = $env:RHAPSOD_BACKUP_KEEP
 if (-not $keep) { $keep = 14 }
 $keep = [int]$keep
@@ -44,6 +47,9 @@ $standHost = Get-Required 'RHAPSOD_STAND_HOST' 'name the ssh host the stand runs
 $standDir = Get-Required 'RHAPSOD_STAND_DIR' "name the directory on that host its compose file lives in (e.g. /srv/$app)"
 
 New-Item -ItemType Directory -Force -Path $To | Out-Null
+# Absolute from here on: a relative path turned into a sqlite URI is read
+# from the root of the drive, and every copy would fail its check.
+$To = (Resolve-Path -LiteralPath $To).Path
 
 # The newest daily copy, by the date in its name. The name carries the day the
 # copy is *of*; a modification time is the day the file was last touched, and
@@ -122,4 +128,5 @@ if ($copies.Count -gt $keep) {
 }
 
 $kept = (Get-ChildItem -Path $To -Filter "$app-*.db" | Where-Object { $_.Name -match "^$app-\d{4}-\d{2}-\d{2}\.db$" }).Count
-Say "done: $kept copies in $To"
+$noun = if ($kept -eq 1) { 'copy' } else { 'copies' }
+Say "done: $kept $noun in $To"

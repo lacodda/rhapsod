@@ -108,7 +108,14 @@ catch {
     }
     Stop-WithReason "the export could not be fetched from $url (a locked stand needs RHAPSOD_PASSWORD)"
 }
-
+finally {
+    # The session this run opened is ended with it. Left alone, every export
+    # would add a device to the reader's "Signed in" list for ninety days - a
+    # list they read to find a lost phone.
+    if ($null -ne $session) {
+        try { Invoke-WebRequest -Method Delete -Uri "$url/api/session" -WebSession $session -UseBasicParsing | Out-Null } catch { }
+    }
+}
 # The bytes are decoded as UTF-8 here rather than read off `.Content`. The
 # server sends `content-type: application/json` with no charset - which JSON
 # does not have one, being UTF-8 by definition - and Windows PowerShell 5.1

@@ -21,7 +21,8 @@
 #
 #   RHAPSOD_STAND_HOST=pi                    # the ssh host the stand runs on
 #   RHAPSOD_STAND_DIR=/srv/rhapsod           # where its compose file lives
-#   RHAPSOD_BACKUP_TO=./backups              # where copies land here
+#   RHAPSOD_BACKUP_TO=./backups              # where copies land here;
+#                                            # backups/ in this checkout if unset
 #   RHAPSOD_BACKUP_KEEP=14                   # how many to keep here
 set -euo pipefail
 
@@ -35,7 +36,10 @@ service=server
 here="$(cd "$(dirname "$0")/../.." && pwd)"
 . "$here/tools/stand/common.sh"
 
-to=${1:-${RHAPSOD_BACKUP_TO:-./backups}}
+# The checkout's own backups/ by default, not one relative to wherever the
+# script was started from: under cron or Task Scheduler that is somewhere
+# else entirely, and the copies would land outside the ignored directory.
+to=${1:-${RHAPSOD_BACKUP_TO:-$here/backups}}
 keep=${RHAPSOD_BACKUP_KEEP:-14}
 need RHAPSOD_STAND_HOST "name the ssh host the stand runs on (e.g. pi)"
 need RHAPSOD_STAND_DIR "name the directory on that host its compose file lives in (e.g. /srv/$app)"

@@ -79,6 +79,11 @@ env_text=$(printf '%s\nRHAPSOD_VERSION=%s\n' "$env_text" "${version#v}" | sed '/
 # Asked before anything is written, so a machine that is missing something
 # ends up with nothing on it rather than half a stand.
 say "looking at $host"
+# Reached first, with ssh's own words left on screen: a machine rebuilt under
+# an old name presents a new host key, ssh refuses it, and every check after
+# this would blame something else.
+ssh "$host" true </dev/null ||
+    die "$host cannot be reached over ssh (the lines above say why); a machine rebuilt under the same name needs \`ssh-keygen -R $host\` first"
 ssh "$host" "docker compose version" </dev/null >/dev/null 2>&1 ||
     die "$host has no docker with the compose plugin for this user: install Docker Engine and add the user to the docker group"
 ssh "$host" "mkdir -p '$dir' && test -w '$dir'" </dev/null 2>/dev/null ||

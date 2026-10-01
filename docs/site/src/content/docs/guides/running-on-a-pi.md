@@ -10,10 +10,25 @@ The stand is a Raspberry Pi running Docker. It runs the image the release built 
 On the Pi:
 
 - **A 64-bit system.** Images are published for `arm64` and `amd64`; a 32-bit Raspberry Pi OS cannot run them.
-- **Docker Engine with the compose plugin.** `docker compose version` answers.
-- **An ssh user in the `docker` group,** reachable with a key. Every script in this repository drives the stand as `ssh <host> docker ...`, without `sudo` and without a password prompt. A host alias in `~/.ssh/config` - this guide calls it `pi` - is what `RHAPSOD_STAND_HOST` and `RHAPSOD_PUBLISH_HOST` name.
+- **Docker Engine with the compose plugin.** `docker compose version` answers. Docker's own script installs both: `curl -fsSL https://get.docker.com | sh`.
+- **An ssh user in the `docker` group,** reachable with a key. Every script in this repository drives the stand as `ssh <host> docker ...`, without `sudo` and without a password prompt: `sudo usermod -aG docker $USER`, then log in again.
 
-On the machine you write and publish from:
+On the machine you write and publish from, a key and a name for the Pi. Make the key once with `ssh-keygen -t ed25519`, put its public half on the Pi, and give the Pi a short name in `~/.ssh/config` - this guide calls it `pi`, and it is what `RHAPSOD_STAND_HOST` and `RHAPSOD_PUBLISH_HOST` name:
+
+```
+Host pi
+    HostName 192.0.2.10
+    User pi
+```
+
+```sh
+ssh-copy-id pi                                                        # Linux, macOS
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh pi "cat >> ~/.ssh/authorized_keys"   # Windows
+```
+
+`ssh pi true` answering without a prompt is the test.
+
+Also on that machine:
 
 - **A clone of this repository,** not a downloaded archive. The scripts take the compose file of a release from its tag, so they need the tags: `git fetch --tags`.
 - **`ssh` and `scp`.** Windows has both; `rsync` is used when it is there.

@@ -20,6 +20,7 @@
 #
 #   $env:RHAPSOD_STAND_HOST = 'pi'
 #   $env:RHAPSOD_STAND_DIR = '/srv/rhapsod'
+#   $env:RHAPSOD_BACKUP_TO = './backups'      # where the rollback copy lands here
 param([string]$Version)
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +38,8 @@ Import-StandEnv (Join-Path $here '.env')
 
 $standHost = Get-Required 'RHAPSOD_STAND_HOST' 'name the ssh host the stand runs on (e.g. pi)'
 $standDir = Get-Required 'RHAPSOD_STAND_DIR' "name the directory on that host its compose file lives in (e.g. /srv/$app)"
+$to = $env:RHAPSOD_BACKUP_TO
+if (-not $to) { $to = Join-Path $here 'backups' }
 
 # The tag, or the one this checkout is standing on. Named rather than guessed
 # from the manifest: a version in `Cargo.toml` is a version that is *going* to
@@ -98,6 +101,25 @@ if ($LASTEXITCODE -ne 0) {
     Stop-WithReason 'nothing was updated: a version must not move without something to move back to'
 }
 Say "copied aside; a rollback restores $(Split-Path -Leaf $aside)"
+
+# And brought here, with the stand's settings beside it, while the server is
+# still stopped. A rollback is then `restore` with this file and the old
+# version - run from the machine that drives the stand, with nothing to fish
+# out of a volume by hand. Not a reason to stop the update if it fails: the
+# copy on the stand is the one that counts, and the line says where it is.
+# `cmd /c` with a redirect, so the bytes land in the file undecoded.
+New-Item -ItemType Directory -Force -Path $to | Out-Null
+$to = (Resolve-Path -LiteralPath $to).Path
+$landing = Join-Path $to (Split-Path -Leaf $aside)
+& cmd /c "ssh $standHost `"cd '$standDir' && docker compose --progress quiet run --rm --no-deps -T $service cat $aside`" > `"$landing.part`" 2>nul"
+if ($LASTEXITCODE -eq 0 -and (Test-StandDatabase "$landing.part")) {
+    Move-Item -Force "$landing.part" $landing
+    & cmd /c "ssh $standHost `"cd '$standDir' && cat .env`" > `"$to\$app-stand.env`" 2>nul"
+    Say "kept a copy here as $landing"
+} else {
+    Remove-Item "$landing.part" -ErrorAction SilentlyContinue
+    Say "the rollback copy could not be brought here; it is on the stand as $aside"
+}
 
 # --- The version ------------------------------------------------------------
 Say "sending the compose file of $Version"

@@ -7,7 +7,7 @@ The library goes out to the stand as files. What you made of it - where you got 
 
 **Exporting** is the way back. `tools/export-marks.sh` and `tools/export-marks.ps1` fetch `GET /api/export` and write it to a file. One document carries the whole of it. That file is all this repository ships: folding it into a vault is a ritual of your own, and the sections below describe the author's, as an example of what one can build on the export.
 
-It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is strictly a read: nothing on the stand changes, and running it twice differs only in the file it writes.
+It is the mirror of [publishing](/rhapsod/guides/publishing-content/), and it is a read: on a locked stand it signs in and signs out again, nothing else on the stand changes, and running it twice differs only in the file it writes.
 
 ## Configuration
 

@@ -86,7 +86,13 @@ tmp="$out.partial"
 jar=
 cleanup() {
     rm -f "$tmp"
-    [ -n "$jar" ] && rm -f "$jar"
+    if [ -n "$jar" ]; then
+        # The session this run opened is ended with it. Left alone, every
+        # export would add a device to the reader's "Signed in" list for
+        # ninety days - a list they read to find a lost phone.
+        curl -fsS -X DELETE "$url/api/session" -b "$jar" >/dev/null 2>&1 || true
+        rm -f "$jar"
+    fi
     return 0
 }
 trap cleanup EXIT

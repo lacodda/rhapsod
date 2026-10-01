@@ -11,7 +11,7 @@ This page is for the person reading, not the person running the stand. The short
 
 The address is the stand's `https` address - in these pages, `https://reader.example`. Keep to that one address: the browser holds the offline copy per address, so the same stand opened by another name, or over plain `http`, starts from nothing.
 
-Plain `http` works at home only: browsers keep offline storage for secure pages alone, so such a stand needs [a door](/rhapsod/guides/behind-a-door/) first.
+Plain `http` works at home only: browsers keep offline storage for secure pages alone, so such a stand needs [a door](/rhapsod/guides/behind-a-door/) first. A door made with your own certificate authority needs its root trusted once on each device - a new phone included - before the `https` address opens without a warning; the steps for Android and iOS are in [Trusting the root](/rhapsod/guides/behind-a-door/#trusting-the-root-once-per-device).
 
 On a locked stand the first screen is one field, **The password for this library**, and a **Read** button. A session ends only after ninety days unused, so you are rarely asked twice. An open stand never asks; see [Locking a stand](/rhapsod/guides/locking-a-stand/).
 

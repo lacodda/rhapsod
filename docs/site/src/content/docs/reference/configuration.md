@@ -37,7 +37,7 @@ Beside `docker-compose.yml` in the stand's directory on the Pi ([Running on a Ra
 
 ### The tools' `.env`
 
-Beside your clone of the repository. The server never looks at these.
+In the root of your clone of this repository, where the scripts look for it whatever directory they are started from. The server never looks at these.
 
 | Variable | Read by | Purpose |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ Beside your clone of the repository. The server never looks at these.
 | `RHAPSOD_PASSWORD` | `export-marks.*` | The reading password, in plain text, for exporting from a locked stand. |
 | `RHAPSOD_STAND_HOST` | `tools/stand/*` | The ssh host the stand runs on. |
 | `RHAPSOD_STAND_DIR` | `tools/stand/*` | The stand's directory on that host. |
-| `RHAPSOD_BACKUP_TO` | `backup.*` | Where copies land here. Defaults to `./backups`, which git ignores. |
+| `RHAPSOD_BACKUP_TO` | `backup.*`, `update.*` | Where copies land here. Defaults to `backups/` in the clone, which git ignores. |
 | `RHAPSOD_BACKUP_KEEP` | `backup.*` | How many copies to keep here. Defaults to 14. |
 | `RHAPSOD_YES` | `restore.*` | `1` answers the scripts' questions, for a run nobody is watching. |
 

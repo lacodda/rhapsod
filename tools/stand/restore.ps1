@@ -82,6 +82,13 @@ $lines += "RHAPSOD_VERSION=$number"
 # Asked before anything is written, so a machine that is missing something
 # ends up with nothing on it rather than half a stand.
 Say "looking at $standHost"
+# Reached first, with ssh's own words left on screen: a machine rebuilt under
+# an old name presents a new host key, ssh refuses it, and every check after
+# this would blame something else.
+& ssh $standHost true
+if ($LASTEXITCODE -ne 0) {
+    Stop-WithReason "$standHost cannot be reached over ssh (the lines above say why); a machine rebuilt under the same name needs ``ssh-keygen -R $standHost`` first"
+}
 & cmd /c "ssh $standHost `"docker compose version`" >nul 2>nul"
 if ($LASTEXITCODE -ne 0) {
     Stop-WithReason "$standHost has no docker with the compose plugin for this user: install Docker Engine and add the user to the docker group"

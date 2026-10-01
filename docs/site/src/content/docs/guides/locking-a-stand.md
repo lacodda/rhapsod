@@ -75,10 +75,10 @@ On the stand this goes in the `.env` next to the compose file, which passes it i
 cd /srv/rhapsod && docker compose up -d
 ```
 
-Check it took: a locked stand says so before anyone types anything.
+Check it took, on the Pi: a locked stand says so before anyone types anything.
 
 ```sh
-curl http://pi:8084/api/session
+curl http://localhost:8084/api/session
 ```
 
 ```json

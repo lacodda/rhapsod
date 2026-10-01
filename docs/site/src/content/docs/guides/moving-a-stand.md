@@ -27,16 +27,16 @@ So all of this is really about two files. The rest is a fresh install pointed at
 
 ## Settings
 
-All three read the same two values, from the environment or from a `.env` beside the repository on the machine you run them from:
+All three read the same two values, from the environment or from a `.env` in the root of your clone of this repository:
 
 ```sh
 RHAPSOD_STAND_HOST=pi              # the ssh host the stand runs on
 RHAPSOD_STAND_DIR=/srv/rhapsod     # the stand's directory on that host
 ```
 
-This `.env` is the one beside your clone, holding the tools' settings. It is not the stand's `.env`, which lives on the Pi and is never sent from here.
+This `.env` holds the tools' settings. It is not the stand's `.env`, which lives on the Pi and travels only as `rhapsod-stand.env` in the backups.
 
-`backup` takes two more, both optional: `RHAPSOD_BACKUP_TO` (default `./backups`, which git ignores) and `RHAPSOD_BACKUP_KEEP` (default 14). `RHAPSOD_YES=1` answers the scripts' questions for a run nobody is watching; without it, no answer means no.
+`backup` and `update` take `RHAPSOD_BACKUP_TO` - where copies land here; `backups/` in your clone if unset, which git ignores - and `backup` takes `RHAPSOD_BACKUP_KEEP` (default 14). `RHAPSOD_YES=1` answers the scripts' questions for a run nobody is watching; without it, no answer means no.
 
 ## Backups
 
@@ -61,7 +61,19 @@ It opens the copy again on arrival. That is not the same check twice: the server
 
 `rhapsod-stand.env` is the stand's `.env` as it is now, one file replaced on every run. It carries the password hash, so the backups directory is as private as the stand.
 
-Nothing on the stand is changed and the server is not stopped. Run it on a schedule - a weekly Task Scheduler entry for `backup.ps1`, or a cron line for `backup.sh` - so the copy that matters is never older than a week.
+Nothing on the stand is changed and the server is not stopped. Run it on a schedule, so the copy that matters is never older than a week. On Windows, a weekly task - PowerShell does not run scripts by default, hence the policy flag:
+
+```powershell
+schtasks /create /tn "rhapsod backup" /sc weekly /d SUN /st 03:00 /tr "powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\rhapsod\tools\stand\backup.ps1"
+```
+
+On Linux or macOS, a cron line:
+
+```
+0 3 * * 0  /path/to/rhapsod/tools/stand/backup.sh
+```
+
+Both find the clone's `.env` and its `backups/` wherever they are started from. A scheduled run has nobody to type a passphrase, so the ssh key it uses must work without one.
 
 This is not the export. The [export](/rhapsod/guides/exporting-marks/) produces something readable without any of this software; run it too, and for the same reason people keep two kinds of backup.
 
@@ -108,10 +120,11 @@ Then `docker compose exec server rhapsod doctor` again; no line should say `XX`.
 
 ### If all that survived is an export
 
-Copying the database is the way to move a stand, because it carries everything exactly as it was. When that is not possible - the old machine is gone, the file is corrupt - a stand can be filled from an export instead. In the stand's directory:
+Copying the database is the way to move a stand, because it carries everything exactly as it was. When that is not possible - the old machine is gone, the file is corrupt - a stand can be filled from an export instead. Stand up an empty one first ([Running on a Raspberry Pi](/rhapsod/guides/running-on-a-pi/#bringing-it-up)), copy the export into its directory, and read it in there:
 
 ```sh
-docker compose run --rm -T server rhapsod restore /dev/stdin < rhapsod-export.json
+scp rhapsod-export.json pi:/srv/rhapsod/
+ssh pi 'cd /srv/rhapsod && docker compose run --rm -T server rhapsod restore /dev/stdin < rhapsod-export.json'
 ```
 
 This is a weaker recovery, and it is worth knowing why. The export carries what the reader made: progress, notes, kept lines, review schedules. It does not carry sessions, so every device signs in again.
@@ -158,15 +171,25 @@ What it is careful about, all of it learnt the hard way:
 
 ## Rolling back
 
-When the doctor is unhappy after an update, the copy taken aside is the way back. Bring it here, then restore it with the version it came from:
+When the doctor is unhappy after an update, the copy taken aside is the way back. `update` has already brought it here, into `backups/` beside the stand's settings as they were at that moment:
+
+```
+update: kept a copy here as backups/rhapsod-before-v0.15.1-20261001T120000Z.db
+```
+
+Restore it with the version it came from:
 
 ```sh
-ssh pi 'cd /srv/rhapsod && docker compose exec -T server cat /data/backups/rhapsod-before-v0.15.1-20261001T120000Z.db' > before.db
-cp backups/rhapsod-stand.env .     # the settings, beside the copy
-./tools/stand/restore.sh before.db v0.15.0
+./tools/stand/restore.sh backups/rhapsod-before-v0.15.1-20261001T120000Z.db v0.15.0
 ```
 
 `restore` finds the stand already there, asks, stops it, and puts the old database back with the old version's compose file and image. Anything the reader did between the update and the rollback is in the newer database, not this one; export it first if it matters.
+
+If the copy could not be brought here, `update` says so and names it on the stand, in the volume's `backups/`. Fetch it through the service, which works even while a bad release keeps restarting - with `cmd /c` from PowerShell, whose own `>` would write the database as text:
+
+```sh
+ssh pi 'cd /srv/rhapsod && docker compose run --rm --no-deps -T server cat /data/backups/rhapsod-before-v0.15.1-20261001T120000Z.db' > backups/rhapsod-before-v0.15.1-20261001T120000Z.db
+```
 
 ## Asking how a stand is, at any time
 
@@ -183,6 +206,8 @@ The library, the database, the backups, the app, the door - in one answer, again
 ## If the new machine has a different address
 
 The stand's address lives in whatever publishes to it and whatever exports from it, not in the server. Update `RHAPSOD_PUBLISH_URL`, `RHAPSOD_PUBLISH_HOST` and `RHAPSOD_STAND_HOST` where you keep them, and re-run the publishing script once against the new address.
+
+A new machine under the old name or address presents a new host key, and ssh refuses it until the old one is forgotten: `ssh-keygen -R pi`. `restore` stops at that step and says so.
 
 The app on a phone remembers the stand it was installed from. Installing it again from the new address is the whole of the migration on that side; anything queued and undelivered on the old install stays there, so drain it - open the app at home while the old stand is still up - before switching. See [Reading on the road](/rhapsod/guides/reading-on-the-road/).
 

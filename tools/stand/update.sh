@@ -23,6 +23,8 @@
 #
 #   RHAPSOD_STAND_HOST=pi                    # the ssh host the stand runs on
 #   RHAPSOD_STAND_DIR=/srv/rhapsod           # where its compose file lives
+#   RHAPSOD_BACKUP_TO=./backups              # where the rollback copy lands here;
+#                                            # backups/ in this checkout if unset
 set -euo pipefail
 
 # --- What this stand is -----------------------------------------------------
@@ -40,6 +42,7 @@ need RHAPSOD_STAND_HOST "name the ssh host the stand runs on (e.g. pi)"
 need RHAPSOD_STAND_DIR "name the directory on that host its compose file lives in (e.g. /srv/$app)"
 host=$RHAPSOD_STAND_HOST
 dir=$RHAPSOD_STAND_DIR
+to=${RHAPSOD_BACKUP_TO:-$here/backups}
 
 # The tag, or the one this checkout is standing on. Named rather than guessed
 # from the manifest: a version in `Cargo.toml` is a version that is *going* to
@@ -97,6 +100,22 @@ if ! in_service "mkdir -p /data/backups && cp /data/$app.db $aside"; then
     die "nothing was updated: a version must not move without something to move back to"
 fi
 say "copied aside; a rollback restores $(basename "$aside")"
+
+# And brought here, with the stand's settings beside it, while the server is
+# still stopped. A rollback is then `restore` with this file and the old
+# version - run from the machine that drives the stand, with nothing to fish
+# out of a volume by hand. Not a reason to stop the update if it fails: the
+# copy on the stand is the one that counts, and the line says where it is.
+mkdir -p "$to"
+landing="$to/$(basename "$aside")"
+if in_service "cat $aside" > "$landing.part" && check_database "$landing.part" "$(basename "$aside")"; then
+    mv "$landing.part" "$landing"
+    on_stand "cat .env" > "$to/$app-stand.env" 2>/dev/null || true
+    say "kept a copy here as $landing"
+else
+    rm -f "$landing.part"
+    say "the rollback copy could not be brought here; it is on the stand as $aside"
+fi
 
 # --- The version ------------------------------------------------------------
 say "sending the compose file of $version"
