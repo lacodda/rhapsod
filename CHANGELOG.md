@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.1] - 2026-10-01
+
+### Bug Fixes
+- Close the database when the stand is stopped
+- Restore and update through the stand's own service
+- Keep what the reader did away from home
+- Bring the rollback copy home and back up from anywhere
+
+### Dependencies
+- Update the toolchain and dependencies
+
+### Documentation
+- Make the pages say what the code does
+- Add the reader's own page, reading on the road
+
 ## [0.15.0] - 2026-09-23
 
 ### Documentation
