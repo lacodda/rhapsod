@@ -115,7 +115,8 @@ mod tests {
         assert_eq!(asked[0].section, "01 — Парадоксы и эффекты");
 
         assert!(withdraw(&pool, &topic().id).await.unwrap());
-        assert!(all(&pool, None).await.unwrap().is_empty());
+        let left = all(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]

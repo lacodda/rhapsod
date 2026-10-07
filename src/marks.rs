@@ -321,7 +321,8 @@ mod tests {
         let pool = pool().await;
         set_note(&pool, "a/b", "something", None).await.unwrap();
         set_note(&pool, "a/b", "   ", None).await.unwrap();
-        assert!(notes(&pool, None).await.unwrap().is_empty());
+        let left = notes(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -448,7 +449,8 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        assert!(quotes(&pool, Some("2020-06-01T00:00:00.000Z")).await.unwrap().is_empty());
+        let left = quotes(&pool, Some("2020-06-01T00:00:00.000Z")).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
 
         // Editing the comment brings it back into range.
         comment_on(&pool, &quote.id, Some("a thought")).await.unwrap();
@@ -571,7 +573,8 @@ mod tests {
 
         // And emptied by someone who saw it, it is gone.
         settle_note(&pool, "a/b", "", None, Some("the note, edited")).await.unwrap();
-        assert!(notes(&pool, None).await.unwrap().is_empty());
+        let left = notes(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -617,6 +620,7 @@ written on the train"
         let pool = pool().await;
         let quote = add_quote(&pool, "q-9", "a/b", 0, "text", None).await.unwrap();
         assert!(remove_quote(&pool, &quote.id).await.unwrap());
-        assert!(quotes(&pool, None).await.unwrap().is_empty());
+        let left = quotes(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 }

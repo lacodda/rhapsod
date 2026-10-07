@@ -347,7 +347,8 @@ mod tests {
         // The third status is the absence of a row; nothing has to keep it in
         // sync with the other two.
         let pool = pool().await;
-        assert!(all(&pool, None).await.unwrap().is_empty());
+        let left = all(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
         assert!(continue_with(&pool).await.unwrap().is_none());
     }
 

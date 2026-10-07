@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(report.read, 0);
         assert_eq!(report.unfinished, 0);
         assert_eq!(report.untouched, 2, "the untouched count did not see the library");
-        assert!(report.abandoned.is_empty());
+        assert!(report.abandoned.is_empty(), "expected nothing, got {:?}", report.abandoned);
     }
 
     #[tokio::test]

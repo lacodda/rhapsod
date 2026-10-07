@@ -193,7 +193,8 @@ mod tests {
         assert_eq!(felt[0].kind, "struck");
 
         assert!(unreact(&pool, "01-paradoksy/kot").await.unwrap());
-        assert!(reactions(&pool, None).await.unwrap().is_empty());
+        let left = reactions(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -216,7 +217,8 @@ mod tests {
         // short.
         let pool = pool().await;
         assert!(react(&pool, "01-paradoksy/kot", "meh", None).await.is_err());
-        assert!(reactions(&pool, None).await.unwrap().is_empty());
+        let left = reactions(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -249,7 +251,8 @@ mod tests {
     async fn a_typo_without_words_is_refused() {
         let pool = pool().await;
         assert!(report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "   ").await.is_err());
-        assert!(typos(&pool, None).await.unwrap().is_empty());
+        let left = typos(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -270,7 +273,8 @@ mod tests {
         report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
 
         assert!(drop_typo(&pool, "t-1").await.unwrap());
-        assert!(typos(&pool, None).await.unwrap().is_empty());
+        let left = typos(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
         assert!(!drop_typo(&pool, "t-1").await.unwrap(), "withdrawing nothing said it withdrew something");
     }
 
@@ -289,8 +293,10 @@ mod tests {
             .unwrap();
 
         let bound = Some("2020-06-01T00:00:00.000Z");
-        assert!(reactions(&pool, bound).await.unwrap().is_empty());
-        assert!(typos(&pool, bound).await.unwrap().is_empty());
+        let left = reactions(&pool, bound).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
+        let left = typos(&pool, bound).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
         assert_eq!(reactions(&pool, None).await.unwrap().len(), 1, "a full export lost the reaction");
         assert_eq!(typos(&pool, None).await.unwrap().len(), 1, "a full export lost the typo");
     }

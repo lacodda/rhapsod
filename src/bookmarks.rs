@@ -117,7 +117,8 @@ mod tests {
         assert_eq!(marked[0].kind, "loved");
 
         assert!(unmark(&pool, "a/b").await.unwrap());
-        assert!(all(&pool, None).await.unwrap().is_empty());
+        let left = all(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]
@@ -147,7 +148,8 @@ mod tests {
         let pool = pool().await;
         let error = mark(&pool, "a/b", "favourite", None).await.unwrap_err();
         assert!(error.to_string().contains("favourite"), "{error}");
-        assert!(all(&pool, None).await.unwrap().is_empty());
+        let left = all(&pool, None).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[tokio::test]

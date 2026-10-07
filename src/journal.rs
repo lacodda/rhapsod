@@ -245,8 +245,8 @@ mod tests {
         let pool = pool().await;
         let (_dir, lib) = library();
         let journal = read(&pool, &lib, 0).await.unwrap();
-        assert!(journal.months.is_empty());
-        assert!(journal.history.is_empty());
+        assert!(journal.months.is_empty(), "expected nothing, got {:?}", journal.months);
+        assert!(journal.history.is_empty(), "expected nothing, got {:?}", journal.history);
         assert_eq!(journal.scheduled, 0);
         assert_eq!(journal.recalled, 0);
     }
