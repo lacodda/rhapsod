@@ -426,3 +426,25 @@ async function postWhenReady(
 
 /** How long to wait for a freshly activated worker to claim this page. */
 const CLAIM_WAIT_MS = 5_000
+
+/** The cache of the reader's own state; see `public/sw.js`. */
+const READER_CACHE = 'rhapsod-reader'
+
+/**
+ * Drops what this device holds for the reader: the library and the reader's
+ * own state.
+ *
+ * For signing this device out. The worker forgets a held read when the stand
+ * refuses it, but a device signed out does not ask again until it is signed in
+ * - and away from home it opened the library and the notes from its copy as
+ * if nothing had happened. The queue is not here: what is still waiting is the
+ * reader's work, and it is delivered after the next sign-in.
+ */
+export async function forgetHeld(): Promise<void> {
+  if (typeof caches === 'undefined') return
+  try {
+    await Promise.all([caches.delete(LIBRARY_CACHE), caches.delete(READER_CACHE)])
+  } catch {
+    // A browser that will not open its caches holds nothing to forget.
+  }
+}

@@ -73,9 +73,13 @@ The library and the waiting changes are site data. The app asks the browser to k
 
 The library comes back on the next visit home. Only undelivered changes are lost.
 
+## Sign out this device
+
+On a locked stand, **The stand** lists what is **Signed in** - each device, when it signed in and was last used, with **this device** marked. **Sign out this device** delivers what is waiting first, then ends this device's session and removes the library and your marks from it. Anything the stand could not take stays on the device and goes after the next sign-in here.
+
 ## If a device is lost
 
-On a locked stand, **The stand** lists what is **Signed in** - each device, when it signed in and was last used, with **this device** marked. **Sign out everywhere** asks once more - **Sign out all** with the count, or **Keep them** - then ends every session, this one included. This device asks for the password at once, the others when they next reach the stand.
+**Sign out everywhere**, under **Signed in**, asks once more - **Sign out all** with the count, or **Keep them** - then ends every session, this one included. This device asks for the password at once and drops its copy of the library and your marks; the others ask when they next reach the stand.
 
 Changes still waiting on the devices you hold are not lost: they wait until you sign in on each, then go.
 

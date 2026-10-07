@@ -18,6 +18,7 @@ import {
   fetchDevices,
   fetchHealth,
   fetchLibrary,
+  signOut,
   signOutEverywhere,
   type Device,
   type Health,
@@ -29,6 +30,7 @@ import {
   arrival,
   cacheLibrary,
   fillStatus,
+  forgetHeld,
   held,
   installed,
   lastFill,
@@ -47,7 +49,7 @@ import { install, offerable, standalone, watchOffer } from '@/install'
 import { choose, chosen, holds, wanted, type Chosen } from '@/packages'
 import { keep, persisted } from '@/storage'
 import { ago, since, size } from '@/units'
-import type { SyncState } from '@/sync'
+import { drain, type SyncState } from '@/sync'
 
 /**
  * How many of the pieces the road needs are on the device.
@@ -402,7 +404,7 @@ export function StandScreen({
       {/* Who is signed in. Only on a locked stand: an open one has no
           sessions, and a section saying "no devices" on a stand that never
           asks for a password would be answering a question nobody has. */}
-      {session !== null && !session.open ? <Devices /> : null}
+      {session !== null && !session.open ? <Devices waiting={sync.waiting} /> : null}
 
       {/* The one thing to press. Not a setting: a reader who knows a piece
           was edited in the vault asks for the copy on this device to be
@@ -449,7 +451,7 @@ export function StandScreen({
  * somewhere, the reader at a machine that is not theirs - where sparing "this
  * one" spares exactly the session that has to die.
  */
-function Devices() {
+function Devices({ waiting }: { waiting: number }) {
   // `undefined` is "not asked yet"; `null` is "asked, and it did not answer".
   const [devices, setDevices] = useState<Device[] | null | undefined>(undefined)
   const [signingOut, setSigningOut] = useState(false)
@@ -473,10 +475,32 @@ function Devices() {
     setSigningOut(true)
     try {
       await signOutEverywhere()
+      await forgetHeld()
     } finally {
       // Whatever happened, this device is signed out or the stand is out of
       // reach; either way the app has to ask again rather than carry on
       // showing a library it may no longer be allowed to read.
+      window.location.reload()
+    }
+  }
+
+  /**
+   * Signs this device out, and only this one.
+   *
+   * What is waiting goes first: the stand is within reach at this moment, and
+   * after the sign-out it would refuse the delivery. Then the device forgets
+   * what it holds of the library and of the reader - signed out, it does not
+   * ask the stand again, and away from home it went on opening both from its
+   * copy. Anything that still could not be delivered stays queued for the
+   * next sign-in here: it is the reader's work, not the device's.
+   */
+  const endThis = async (): Promise<void> => {
+    setSigningOut(true)
+    try {
+      await drain()
+      await signOut()
+      await forgetHeld()
+    } finally {
       window.location.reload()
     }
   }
@@ -536,20 +560,35 @@ function Devices() {
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setAsked(true)
-                }}
-                className="self-start rounded-lg border border-line px-3 py-1.5 text-sm text-text transition-colors hover:border-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                Sign out everywhere
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void endThis()
+                  }}
+                  disabled={signingOut}
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm text-text transition-colors hover:border-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:text-dim"
+                >
+                  {signingOut ? 'Signing out…' : 'Sign out this device'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAsked(true)
+                  }}
+                  disabled={signingOut}
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm text-text transition-colors hover:border-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:text-dim"
+                >
+                  Sign out everywhere
+                </button>
+              </div>
             )}
             <p className="text-xs leading-relaxed text-dim">
               {asked
                 ? 'Every device signs in again, this one included - there is no way to spare it, because the reason to press this is usually a device you are not holding.'
-                : 'Ends every session on the stand, including this device. For a phone left somewhere, or a browser signed in on a machine that is not yours.'}
+                : `This device: what is waiting is delivered first${
+                    waiting > 0 ? ` (${waiting} ${waiting === 1 ? 'change' : 'changes'} now)` : ''
+                  }, then the library and your marks leave it. Everywhere: every session on the stand ends, this one included - for a phone left somewhere, or a browser signed in on a machine that is not yours.`}
             </p>
           </div>
         </>
