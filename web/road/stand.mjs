@@ -39,15 +39,15 @@ const summary = (piece) => ({ ...piece, one_liner: `One line about ${piece.title
 /**
  * What an untouched reader's side looks like, per endpoint.
  *
- * Not one shape: `/api/reviews` answers `{due}`, `/api/progress` answers a
+ * Not one shape: `/api/reviews` answers `{cards}`, `/api/progress` answers a
  * record with statistics, and the rest answer bare lists. Handing back `[]`
- * for all of them let the app read `.due.length` of undefined and die before
+ * for all of them let the app read `.cards` of undefined and die before
  * anything rendered - which every test then reported as its own locator
  * timing out, a long way from the cause.
  */
 const EMPTY = {
   '/api/progress': { pieces: [], stats: { read: 0, words: 0, streak: 0 }, continue_with: null },
-  '/api/reviews': { due: [] },
+  '/api/reviews': { cards: [] },
   '/api/report': { read: 0, unfinished: 0, untouched: 0, good: 0, struck: 0, typos: 0, abandoned: [] },
   '/api/journal': { months: [], scheduled: 0, recalled: 0, history: [] },
 }

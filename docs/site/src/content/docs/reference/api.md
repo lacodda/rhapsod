@@ -1118,7 +1118,7 @@ Openings of one piece on one day are one line. A reader who put the phone down t
 
 ## `GET /api/reviews`
 
-What is worth recalling today. Answers a list of cards, newest schedules last.
+The schedule of returns: every card still to come, soonest first, each with the day it is due.
 
 ```sh
 curl http://127.0.0.1:8084/api/reviews
@@ -1126,8 +1126,9 @@ curl http://127.0.0.1:8084/api/reviews
 
 ```json
 {
-  "due": [
+  "cards": [
     {
+      "due_on": "2026-09-08",
       "one_liner": "The lamp was for ships. She lit it for him.",
       "piece_id": "19-letters/the-lighthouse-letters",
       "step": 1,
@@ -1139,7 +1140,9 @@ curl http://127.0.0.1:8084/api/reviews
 
 A card is the piece's title and the line it wants remembered - never its text. Every novella ends with the line its author wrote for exactly this purpose, and a card showing the prose would answer its own question ([ADR 0004](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0004-fixed-review-schedule.md)).
 
-`step` is which return this is, of three. What comes back is everything due **today or earlier**, so a reader who was away for a week finds the backlog rather than an empty screen that quietly dropped six days.
+`step` is which return this is, of three. `due_on` is a calendar date, set by the stand's clock in UTC when the piece was finished or last answered. A schedule carried through its third return has no day left and is not listed.
+
+**Which cards are due today is the app's to say.** It shows every card due **today or earlier** by the device's own calendar, so a reader who was away for a week finds the backlog rather than an empty screen that quietly dropped six days. The whole schedule is sent, not today's part of it, because a phone keeps this answer for the road: when the stand picked the day, a phone three days into a trip offered the cards of the morning it left.
 
 A piece renamed in the vault is skipped rather than drawn as a card with no text. The row survives and the export still carries it.
 
@@ -1155,7 +1158,7 @@ curl -i -X POST http://127.0.0.1:8084/api/reviews/02-history/the-salt-road   -H 
 HTTP/1.1 204 No Content
 ```
 
-The card is then off today's list:
+The card then moves to its next return, a week on:
 
 ```sh
 curl http://127.0.0.1:8084/api/reviews
@@ -1163,7 +1166,15 @@ curl http://127.0.0.1:8084/api/reviews
 
 ```json
 {
-  "due": []
+  "cards": [
+    {
+      "due_on": "2026-09-15",
+      "one_liner": "The salt was the road.",
+      "piece_id": "02-history/the-salt-road",
+      "step": 2,
+      "title": "The Salt Road"
+    }
+  ]
 }
 ```
 

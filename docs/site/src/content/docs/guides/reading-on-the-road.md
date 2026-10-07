@@ -49,7 +49,7 @@ A piece you do not keep is still listed, but away from home it answers *The libr
 
 Away from the stand, every kept piece opens, and so do **Keep this line** and **Report a misspelling** on a selection, **+ Write a note**, **How it landed**, **Keep this one**, **Mark as read**, and your place in the piece. Each is saved on the device and shown as done at once. **The reading**, the **Journal** and the stand's details need the stand.
 
-Your own marks - read pieces, notes, kept lines, bookmarks, today's cards - come from the stand when the app starts at home, and the device keeps the last of them. Started away from home, the app shows that copy with everything you have done since laid over it. Today's cards are the ones that were due on your last visit home.
+Your own marks - read pieces, notes, kept lines, bookmarks, today's cards - come from the stand when the app starts at home, and the device keeps the last of them. Started away from home, the app shows that copy with everything you have done since laid over it. Today's cards are worked out on the device, by its own calendar, from the schedule it brought from home - a card that comes due on the third day of a trip shows up on the third day. A card you answer away from home stays off the list until the stand hears the answer.
 
 A note written away from home never replaces the one the piece already had. The stand keeps any text you had not seen and puts yours after it.
 

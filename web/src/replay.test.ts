@@ -4,7 +4,7 @@ import type { Note, Progress, Quote } from '@/api'
 import type { Change } from '@/queue'
 import {
   replayBookmarks,
-  replayDue,
+  replaySchedule,
   replayNotes,
   replayProgress,
   replayQuotes,
@@ -118,12 +118,12 @@ describe('the rest of the reader state', () => {
     expect(replayRequests(asked, [queued('/requests/01-physics/heat', 'DELETE', {})])).toEqual([])
   })
 
-  it('takes answered cards off today', () => {
+  it('takes answered cards off the schedule', () => {
     const cards = [
-      { piece_id: '02-myths/icarus', title: 'Icarus', one_liner: null, step: 1 },
-      { piece_id: '01-physics/light', title: 'Light', one_liner: null, step: 2 },
+      { piece_id: '02-myths/icarus', title: 'Icarus', one_liner: null, step: 1, due_on: '2026-09-07' },
+      { piece_id: '01-physics/light', title: 'Light', one_liner: null, step: 2, due_on: '2026-09-07' },
     ]
-    const due = replayDue(cards, [queued('/reviews/02-myths/icarus', 'POST', { again: false })])
+    const due = replaySchedule(cards, [queued('/reviews/02-myths/icarus', 'POST', { again: false })])
     expect(due.map((card) => card.piece_id)).toEqual(['01-physics/light'])
   })
 

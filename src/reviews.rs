@@ -33,9 +33,9 @@ pub struct Review {
     pub last_seen: Option<String>,
 }
 
-/// A piece waiting to be recalled today.
+/// A piece in the schedule: what its card shows, and the day it is due.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct Due {
+pub struct Card {
     pub piece_id: String,
     pub title: String,
     /// The line the piece wants remembered: the whole of the card's front.
@@ -43,6 +43,8 @@ pub struct Due {
     /// Which return this is, 1 to 3, so a reader can see how far through a
     /// piece's schedule they are.
     pub step: i64,
+    /// The day the card is worth showing, `YYYY-MM-DD`.
+    pub due_on: String,
 }
 
 /// Puts a finished piece into the schedule, or takes an unfinished one out.
@@ -167,37 +169,43 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
     Ok(true)
 }
 
-/// What is worth recalling today.
+/// Every card still to come, soonest first, each with the day it is due.
 ///
-/// Everything due on or before today, not only today: a reader who was away
-/// for a week comes back to what accumulated rather than to an empty screen
-/// that quietly dropped six days of returns.
+/// The whole schedule rather than today's part of it, because "today" is the
+/// device's to say. A phone holds this answer for the road, and when the
+/// stand picked today's cards, the phone carried the day of its last visit
+/// home: three days into a trip it offered the cards of the morning it left,
+/// and none of the ones that came due since. Holding the schedule, the app
+/// works out what is due by its own calendar - and what is due includes
+/// everything earlier than today, so a week away comes back as a backlog
+/// rather than as six days quietly dropped.
 ///
 /// # Errors
 ///
 /// Fails when the database cannot be read.
-pub async fn due(pool: &SqlitePool, library: &Library) -> Result<Vec<Due>> {
-    let rows: Vec<Review> = sqlx::query_as(
-        "SELECT piece_id, done, due_on, last_seen
+pub async fn cards(pool: &SqlitePool, library: &Library) -> Result<Vec<Card>> {
+    let rows: Vec<(String, i64, String)> = sqlx::query_as(
+        "SELECT piece_id, done, due_on
            FROM reviews
-          WHERE due_on IS NOT NULL AND due_on <= date('now')
+          WHERE due_on IS NOT NULL
           ORDER BY due_on, piece_id",
     )
     .fetch_all(pool)
     .await
-    .context("failed to read what is due")?;
+    .context("failed to read the schedule")?;
 
     // A piece renamed in the vault leaves a row pointing at nothing. It is
     // skipped rather than drawn as a card with no text; the export still
     // carries the row, so nothing is lost by not showing it.
     Ok(rows
         .into_iter()
-        .filter_map(|row| {
-            library.piece(&row.piece_id).map(|piece| Due {
-                piece_id: row.piece_id,
+        .filter_map(|(piece_id, done, due_on)| {
+            library.piece(&piece_id).map(|piece| Card {
+                piece_id,
                 title: piece.title.clone(),
                 one_liner: piece.one_liner.clone(),
-                step: row.done + 1,
+                step: done + 1,
+                due_on,
             })
         })
         .collect())
@@ -352,7 +360,8 @@ mod tests {
             .unwrap();
 
         let bound = Some("2020-06-01T00:00:00.000Z");
-        assert!(all(&pool, bound).await.unwrap().is_empty());
+        let left = all(&pool, bound).await.unwrap();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
         assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the schedule");
 
         // Answering moves it back into range.

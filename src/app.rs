@@ -1028,11 +1028,12 @@ async fn read_journal(_: Reader, State(state): State<AppState>, axum::extract::Q
     }
 }
 
-/// What is worth recalling today.
+/// The schedule of returns: every card still to come, with its day.
 ///
 /// The card is the piece title and the line it wants remembered; the text is
 /// not sent, because a card that shows the piece is not a card. The app fetches
-/// this once per visit to the library screen.
+/// this once per visit and shows the cards due by its own calendar (see
+/// `reviews::cards`).
 async fn read_due(_: Reader, State(state): State<AppState>) -> Response {
     // The library is cloned out of the lock rather than held across the query:
     // a read lock held over an await would block a reindex for as long as the
@@ -1044,9 +1045,9 @@ async fn read_due(_: Reader, State(state): State<AppState>) -> Response {
         held.clone()
     };
 
-    match reviews::due(&state.pool, &library).await {
-        Ok(cards) => Json(json!({ "due": cards })).into_response(),
-        Err(error) => failed(&error, "what is due could not be read"),
+    match reviews::cards(&state.pool, &library).await {
+        Ok(cards) => Json(json!({ "cards": cards })).into_response(),
+        Err(error) => failed(&error, "the schedule could not be read"),
     }
 }
 
@@ -1673,16 +1674,18 @@ mod tests {
         // The schedule follows from having read something; nothing asks the
         // reader to enrol a piece as a second act.
         let (web, content) = (web_root(), content_root());
-        let app = app(&web, &content, pool().await);
+        let pool = pool().await;
+        let app = app(&web, &content, pool.clone());
 
         post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
 
-        // Not due yet: the first return is tomorrow, and a card that appeared
-        // the moment you finished would be asking you to recall what you just
-        // put down.
+        // In the schedule, and due tomorrow: a card that came due the moment
+        // you finished would be asking you to recall what you just put down.
         let (status, body) = get_json(app.clone(), "/api/reviews").await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["due"].as_array().unwrap().len(), 0);
+        let tomorrow: String = sqlx::query_scalar("SELECT date('now', '+1 day')").fetch_one(&pool).await.unwrap();
+        assert_eq!(body["cards"].as_array().unwrap().len(), 1);
+        assert_eq!(body["cards"][0]["due_on"], tomorrow.as_str());
 
         // The export carries the schedule, so the vault gets it back.
         let (_, body) = get_json(app, "/api/export").await;
@@ -1703,7 +1706,7 @@ mod tests {
 
         let (status, body) = get_json(app, "/api/reviews").await;
         assert_eq!(status, StatusCode::OK);
-        let card = &body["due"][0];
+        let card = &body["cards"][0];
         assert_eq!(card["piece_id"], "02-istoriya/god-bez-leta");
         assert_eq!(card["title"], "Год без лета");
         assert_eq!(card["one_liner"], "Строка.");
@@ -1712,7 +1715,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn answering_a_card_moves_it_along_and_takes_it_off_today() {
+    async fn answering_a_card_moves_it_along_to_its_next_day() {
         let (web, content) = (web_root(), content_root());
         let pool = pool().await;
         let app = app(&web, &content, pool.clone());
@@ -1723,12 +1726,35 @@ mod tests {
         let (status, _) = post(app.clone(), "/api/reviews/02-istoriya/god-bez-leta", r#"{"again":false}"#).await;
         assert_eq!(status, StatusCode::NO_CONTENT);
 
+        // Still in the schedule, a week on: the card leaves today by its day
+        // moving, which is what lets a phone away from home tell the two apart.
         let (_, body) = get_json(app, "/api/reviews").await;
-        assert_eq!(body["due"].as_array().unwrap().len(), 0, "an answered card was still due today");
+        let week: String = sqlx::query_scalar("SELECT date('now', '+7 days')").fetch_one(&pool).await.unwrap();
+        assert_eq!(body["cards"][0]["due_on"], week.as_str(), "an answered card did not move to its next return");
+        assert_eq!(body["cards"][0]["step"], 2);
 
         let (done, due): (i64, Option<String>) = sqlx::query_as("SELECT done, due_on FROM reviews").fetch_one(&pool).await.unwrap();
         assert_eq!(done, 1);
         assert!(due.is_some(), "the piece has another return to come");
+    }
+
+    #[tokio::test]
+    async fn the_schedule_carries_every_card_still_to_come_and_none_that_is_finished() {
+        // The phone holds this answer for the road and works out "today" by
+        // its own calendar, so a card due next week has to be in it - and a
+        // schedule carried through to its end has no day left to be due on.
+        let (web, content) = (web_root(), content_root());
+        let pool = pool().await;
+        let app = app(&web, &content, pool.clone());
+
+        post(app.clone(), "/api/progress/02-istoriya/god-bez-leta", r#"{"read":true}"#).await;
+        sqlx::query("UPDATE reviews SET due_on = date('now', '+30 days')").execute(&pool).await.unwrap();
+        let (_, body) = get_json(app.clone(), "/api/reviews").await;
+        assert_eq!(body["cards"].as_array().unwrap().len(), 1, "a card a month away left the schedule");
+
+        sqlx::query("UPDATE reviews SET done = 3, due_on = NULL").execute(&pool).await.unwrap();
+        let (_, body) = get_json(app, "/api/reviews").await;
+        assert_eq!(body["cards"].as_array().unwrap().len(), 0, "a finished schedule was offered as a card");
     }
 
     #[tokio::test]

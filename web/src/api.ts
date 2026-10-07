@@ -180,7 +180,7 @@ export interface Bookmark {
   marked_at: string
 }
 
-/** A piece waiting to be recalled today. */
+/** A piece in the schedule of returns. */
 export interface Card {
   piece_id: string
   title: string
@@ -188,6 +188,8 @@ export interface Card {
   one_liner: string | null
   /** Which return this is, 1 to 3. */
   step: number
+  /** The day the card is worth showing, `YYYY-MM-DD`. */
+  due_on: string
 }
 
 /** Whether this browser may read, and whether it has to prove anything. */
@@ -405,7 +407,11 @@ export const setBookmark = (pieceId: string, kind: BookmarkKind): Promise<void> 
 export const clearBookmark = (pieceId: string): Promise<void> =>
   queue({ path: `/bookmarks/${pieceId}`, method: 'DELETE', body: {} })
 
-export const fetchDue = (): Promise<{ due: Card[] }> => get<{ due: Card[] }>('/reviews')
+/**
+ * Every card still to come, soonest first. Which of them are due today is the
+ * device's to say (see `useReviews.ts`).
+ */
+export const fetchSchedule = (): Promise<{ cards: Card[] }> => get<{ cards: Card[] }>('/reviews')
 
 /**
  * Answers a card.

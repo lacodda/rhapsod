@@ -190,8 +190,14 @@ export function replayRequests(requests: Request[], changes: Change[]): Request[
   return held
 }
 
-/** Today's cards, without the ones answered since. */
-export function replayDue(cards: Card[], changes: Change[]): Card[] {
+/**
+ * The schedule, without the cards answered since.
+ *
+ * Taken off rather than moved to their next day: the next day is the stand's
+ * arithmetic, and a card answered on a trip waits until the stand has heard
+ * rather than coming back on a date worked out twice.
+ */
+export function replaySchedule(cards: Card[], changes: Change[]): Card[] {
   const answered = new Set(
     changes.filter((change) => change.method === 'POST').map((change) => under(change, '/reviews/')),
   )
