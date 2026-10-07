@@ -49,16 +49,16 @@ A rock off the coast, 1888.
 
 She writes to him from the mainland, once a month, whatever the sea allows.
 
-## Соседи
+## Neighbours
 
 - The Clockmaker's Bet — another kind of waiting.
 - The Salt Road — distance measured in a different unit.
 
-## Одной строкой
+## In one line
 
 **"The lamp was for ships. She lit it for him."**
 
-## Для песни
+## Song seed
 
 - **Situation:** she keeps the light going past the point of duty.
 - **Image:** the harbour master's lamp, still burning at dawn.
@@ -89,14 +89,14 @@ Paragraphs stay a list rather than becoming one blob of markdown, because readin
 
 ### The four trailing blocks
 
-Four headings are known by name and lifted out of the prose, so the reading app can set them apart from the text. The parser matches them exactly, as `## ` followed by the words below, and only the Russian spellings are recognised; there is no English alternative yet. This is a current limitation: an English `## Neighbours` stays in the prose as an ordinary heading. The example piece above uses the real headings for that reason.
+Four headings are known by name and lifted out of the prose, so the reading app can set them apart from the text. Each is `## ` followed by one of the names below, in English or in Russian, in any case - `## In One Line` is the same block as `## In one line`. The English names are the ones the app shows above each block.
 
 | Heading | Becomes | What it is |
 | --- | --- | --- |
-| `## Соседи` | `neighbours` | Related pieces, as free text. It may name a piece that does not exist yet. |
-| `## Одной строкой` | `one_liner` | The line meant to be remembered - what a repetition card shows. The bold markers, the quotation marks and the trailing full stop are normalised away. |
-| `## Для песни` | `song` | The song seed: the author's own workbench, kept whole and shown apart from the read. |
-| `## Справка` | `reference` | The reference block: what the piece is about, stated plainly - what the thing is, its field, its dating, whether it is documented or a legend, where it is now. Shown in a frame of its own, because it deliberately drops the voice of the story. |
+| `## Neighbours`, `## Neighbors`, `## Соседи` | `neighbours` | Related pieces, as free text. It may name a piece that does not exist yet. |
+| `## In one line`, `## Одной строкой` | `one_liner` | The line meant to be remembered - what a repetition card shows. The bold markers and the quotation marks around it are dropped, and it ends in a full stop unless it ends in a question or an exclamation: `**"The lamp was for ships."**` and `**«The lamp was for ships».**` both become `The lamp was for ships.` |
+| `## Song seed`, `## Для песни` | `song` | The song seed: the author's own workbench, kept whole and shown apart from the read. |
+| `## Reference`, `## Справка` | `reference` | The reference block: what the piece is about, stated plainly - what the thing is, its field, its dating, whether it is documented or a legend, where it is now. Shown in a frame of its own, because it deliberately drops the voice of the story. |
 
 Any other heading stays in the prose. A piece that invents its own section should keep it rather than lose it.
 

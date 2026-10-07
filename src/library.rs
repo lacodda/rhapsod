@@ -25,10 +25,51 @@ const SECTION_SEPARATOR: &str = " — ";
 /// A heading that is not on this list stays in the prose, which is what makes
 /// adding one to the format a change here and not a silent regression: an
 /// unknown heading used to be swallowed by whichever block came before it.
-const NEIGHBOURS_HEADING: &str = "Соседи";
-const ONE_LINER_HEADING: &str = "Одной строкой";
-const SONG_HEADING: &str = "Для песни";
-const REFERENCE_HEADING: &str = "Справка";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tail {
+    Neighbours,
+    OneLiner,
+    Song,
+    Reference,
+}
+
+/// Every way a trailing block's heading is written, and the block it opens.
+///
+/// One table for every language a library is written in: the format was born
+/// in Russian, and an English library writing `## Neighbours` kept the block
+/// in its prose. The English names are the ones the reading app shows above
+/// each block, so a piece reads the same in the file and on the screen.
+/// Matched without regard to case, because `## In One Line` is the same
+/// heading to whoever wrote it.
+const TAIL_HEADINGS: &[(&str, Tail)] = &[
+    ("Соседи", Tail::Neighbours),
+    ("Neighbours", Tail::Neighbours),
+    ("Neighbors", Tail::Neighbours),
+    ("Одной строкой", Tail::OneLiner),
+    ("In one line", Tail::OneLiner),
+    ("Для песни", Tail::Song),
+    ("Song seed", Tail::Song),
+    ("Справка", Tail::Reference),
+    ("Reference", Tail::Reference),
+];
+
+/// The trailing block a `## ` heading opens, if it is one of the four.
+fn tail(heading: &str) -> Option<Tail> {
+    let heading = heading.trim().to_lowercase();
+    TAIL_HEADINGS.iter().find(|(name, _)| name.to_lowercase() == heading).map(|&(_, block)| block)
+}
+
+/// The quotation marks a one-liner may be written in, as opening and closing
+/// pairs. A pair, not a set of characters to trim: an apostrophe that ends a
+/// line is part of a word, and only a line that opens with a quote closes one.
+const QUOTES: &[(char, char)] = &[
+    ('«', '»'),
+    ('"', '"'),
+    ('\u{201c}', '\u{201d}'),
+    ('\u{201e}', '\u{201c}'),
+    ('\u{2018}', '\u{2019}'),
+    ('\'', '\''),
+];
 
 /// One piece of the library, as the API returns it.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -348,7 +389,7 @@ fn split_body(body: &str) -> Blocks {
     let mut one_liner = None;
     let mut song = Vec::new();
     let mut reference = Vec::new();
-    let mut current: Option<&str> = None;
+    let mut current: Option<Tail> = None;
 
     for block in body.split("\n\n") {
         let block = block.trim();
@@ -364,24 +405,16 @@ fn split_body(body: &str) -> Blocks {
             continue;
         }
 
-        if let Some(heading) = block.strip_prefix("## ") {
-            let heading = heading.trim();
-            if matches!(heading, NEIGHBOURS_HEADING | ONE_LINER_HEADING | SONG_HEADING | REFERENCE_HEADING) {
-                current = Some(match heading {
-                    NEIGHBOURS_HEADING => NEIGHBOURS_HEADING,
-                    ONE_LINER_HEADING => ONE_LINER_HEADING,
-                    SONG_HEADING => SONG_HEADING,
-                    _ => REFERENCE_HEADING,
-                });
-                continue;
-            }
+        if let Some(opened) = block.strip_prefix("## ").and_then(tail) {
+            current = Some(opened);
+            continue;
         }
 
         match current {
-            Some(NEIGHBOURS_HEADING) => neighbours.extend(list_items(block)),
-            Some(ONE_LINER_HEADING) => one_liner = Some(strip_emphasis(block)),
-            Some(SONG_HEADING) => song.extend(list_items(block)),
-            Some(REFERENCE_HEADING) => reference.extend(list_items(block)),
+            Some(Tail::Neighbours) => neighbours.extend(list_items(block)),
+            Some(Tail::OneLiner) => one_liner = Some(strip_emphasis(block)),
+            Some(Tail::Song) => song.extend(list_items(block)),
+            Some(Tail::Reference) => reference.extend(list_items(block)),
             // The title heading is the file's own name, already carried in
             // `title`; repeating it above the text would be an empty line of
             // display in every piece.
@@ -408,17 +441,40 @@ fn list_items(block: &str) -> Vec<String> {
         .collect()
 }
 
-/// Drops the bold markers and the quotation marks the one-liner is written in.
+/// Drops the bold markers and the quotation marks the one-liner is written in,
+/// and ends it the way a sentence ends.
 ///
-/// The closing quote is not the last character: the format writes
-/// `**«...».**`, so the sentence's full stop sits outside the quotation. A
-/// trim from the ends alone leaves `»` in the middle of the line, which is
-/// what a repetition card would then show.
+/// The closing quote is not always the last character: the Russian format
+/// writes `**«...».**`, so the sentence's full stop sits outside the
+/// quotation, while English puts it inside - `**"...."**`. A trim from the
+/// ends alone leaves `»` in the middle of the line, which is what a
+/// repetition card would then show.
+///
+/// A line that ends in a question or an exclamation keeps its own mark: a
+/// full stop after it would be a second ending.
 fn strip_emphasis(block: &str) -> String {
     let line = block.trim().trim_matches('*').trim();
     let line = line.strip_suffix('.').unwrap_or(line);
-    let line = line.trim_matches(['«', '»']);
-    format!("{}.", line.trim_end_matches(['.', ' ']))
+    let line = unquote(line).trim_end_matches(['.', ' ']);
+    if line.ends_with(['?', '!', '\u{2026}']) {
+        line.to_string()
+    } else {
+        format!("{line}.")
+    }
+}
+
+/// A line without the quotation marks around it, when it is quoted whole.
+fn unquote(line: &str) -> &str {
+    QUOTES
+        .iter()
+        .find_map(|&(open, close)| {
+            let inner = line.strip_prefix(open)?.strip_suffix(close)?;
+            // `"Yes" and "no"` opens and closes with a quote without being one
+            // quotation; with the same mark on both sides, a third one inside
+            // is the tell.
+            (open != close || !inner.contains(close)).then_some(inner)
+        })
+        .map_or(line, str::trim)
 }
 
 /// The first `# ` heading of a body, if it has one.
@@ -636,6 +692,85 @@ mod tests {
         );
     }
 
+    /// A piece written in English, the way the format reads in that language.
+    fn english_piece(headings: [&str; 4]) -> tempfile::TempDir {
+        let [neighbours, one_liner, song, reference] = headings;
+        let dir = tempfile::tempdir().unwrap();
+        let section = dir.path().join("19 — Letters");
+        std::fs::create_dir_all(&section).unwrap();
+        std::fs::write(
+            section.join("The Lighthouse Letters.md"),
+            format!(
+                "---\ntype: novella\ntopic: The Lighthouse Letters\n---\n\n# The Lighthouse Letters\n\nA rock off the coast, 1888.\n\n## {neighbours}\n\n- The Salt Road — distance in another unit.\n\n## {one_liner}\n\n**\"The lamp was for ships. She lit it for him.\"**\n\n## {song}\n\n- **Image:** the lamp at dawn.\n\n## {reference}\n\n- **What it is:** an invented keeper.\n"
+            ),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_trailing_blocks_are_known_by_their_english_names_too() {
+        // The product is English and the format was born Russian: an English
+        // library's `## Neighbours` stayed in the prose as an ordinary
+        // heading, and its one-liner never reached a repetition card.
+        let dir = english_piece(["Neighbours", "In one line", "Song seed", "Reference"]);
+        let lib = Library::load(dir.path()).unwrap();
+        let piece = lib.piece("19-letters/the-lighthouse-letters").expect("the piece should be indexed");
+
+        assert_eq!(piece.paragraphs, ["A rock off the coast, 1888."], "a trailing block leaked into the prose");
+        assert_eq!(piece.neighbours, ["The Salt Road — distance in another unit."]);
+        assert_eq!(piece.one_liner.as_deref(), Some("The lamp was for ships. She lit it for him."));
+        assert_eq!(piece.song, ["**Image:** the lamp at dawn."]);
+        assert_eq!(piece.reference, ["**What it is:** an invented keeper."]);
+    }
+
+    #[test]
+    fn a_trailing_heading_is_matched_whatever_its_case_or_spelling() {
+        // Title case is how English writes a heading, and American spelling
+        // drops a letter; neither is a different block.
+        let dir = english_piece(["Neighbors", "In One Line", "SONG SEED", "reference"]);
+        let lib = Library::load(dir.path()).unwrap();
+        let piece = lib.piece("19-letters/the-lighthouse-letters").unwrap();
+
+        assert_eq!(piece.paragraphs.len(), 1, "a heading in another case stayed in the prose");
+        assert_eq!(piece.neighbours.len(), 1);
+        assert!(piece.one_liner.is_some());
+        assert_eq!(piece.song.len(), 1);
+        assert_eq!(piece.reference.len(), 1);
+    }
+
+    #[test]
+    fn a_one_liner_loses_its_quotation_marks_in_any_language() {
+        // Russian puts the full stop outside the quotation, English inside;
+        // a card showing a stray quote mark or two full stops is what either
+        // left behind when only one of them was known.
+        assert_eq!(strip_emphasis("**«Ради него, а не ради Бога».**"), "Ради него, а не ради Бога.");
+        assert_eq!(strip_emphasis("**\"The lamp was for ships.\"**"), "The lamp was for ships.");
+        assert_eq!(strip_emphasis("**\u{201c}The lamp was for ships.\u{201d}**"), "The lamp was for ships.");
+        assert_eq!(strip_emphasis("**\u{2018}The lamp was for ships\u{2019}.**"), "The lamp was for ships.");
+        assert_eq!(strip_emphasis("**The lamp was for ships**"), "The lamp was for ships.");
+    }
+
+    #[test]
+    fn a_one_liner_that_asks_keeps_its_question_mark() {
+        // A full stop after a question is a second ending to one sentence.
+        assert_eq!(strip_emphasis("**«Кто зажёг лампу?»**"), "Кто зажёг лампу?");
+        assert_eq!(strip_emphasis("**\"Who lit the lamp?\"**"), "Who lit the lamp?");
+        assert_eq!(strip_emphasis("**«Не гаси!»**"), "Не гаси!");
+    }
+
+    #[test]
+    fn an_apostrophe_at_the_end_of_a_line_is_part_of_a_word() {
+        // Only a line that opens with a quote closes one; the keepers' lamp
+        // is not a quotation.
+        assert_eq!(strip_emphasis("**It was the keepers\u{2019}**"), "It was the keepers\u{2019}.");
+    }
+
+    #[test]
+    fn two_quotations_on_one_line_are_not_one() {
+        assert_eq!(strip_emphasis("**\"Yes\" and \"no\"**"), "\"Yes\" and \"no\".");
+    }
+
     #[test]
     fn a_horizontal_rule_is_not_a_paragraph() {
         // The format separates the moves of a piece with `---`; those are
@@ -704,7 +839,8 @@ topic: Тема
         let dir = tempfile::tempdir().unwrap();
         let lib = Library::load(dir.path()).expect("an empty directory is a valid library");
         assert!(lib.is_empty());
-        assert!(lib.sections().is_empty());
+        let left = lib.sections();
+        assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
 
     #[test]
