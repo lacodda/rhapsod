@@ -12,13 +12,26 @@
  * wants the conclusion (see `readiness.ts`).
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { fetchDevices, fetchHealth, fetchLibrary, signOutEverywhere, type Device, type Health, type LibraryIndex, type Section, type Session } from '@/api'
 import {
+  fetchDevices,
+  fetchHealth,
+  fetchLibrary,
+  signOutEverywhere,
+  type Device,
+  type Health,
+  type LibraryIndex,
+  type Section,
+  type Session,
+} from '@/api'
+import {
+  arrival,
   cacheLibrary,
+  fillStatus,
   held,
   installed,
+  lastFill,
   paths,
   refreshLibrary,
   secure,
@@ -47,7 +60,12 @@ function countHeld(kept: Held, index: LibraryIndex, shelves: Chosen): number {
   return wanted(index.pieces, shelves).filter((piece) => kept.ids.has(piece.id)).length
 }
 
-/** How long a refresh is watched for before the screen stops waiting. */
+/**
+ * How long a refresh is watched for when there is no worker to say whether it
+ * is still running. With one, the watch ends on the worker's word and not on
+ * a clock: the clock let a second refresh start over a first that was still
+ * working its way through the library.
+ */
 const REFRESH_WATCH_MS = 45_000
 const REFRESH_POLL_MS = 1_500
 
@@ -88,6 +106,13 @@ export function StandScreen({
   const [keeping, setKeeping] = useState<Chosen>(() => chosen())
   /** Whether the browser has an install offer waiting to be raised. */
   const [offer, setOffer] = useState(() => offerable())
+  /**
+   * Whether the worker is filling the library; `null` until it has said, and
+   * where it cannot - which counts as fetching (see `arrival`).
+   */
+  const [busy, setBusy] = useState<boolean | null>(null)
+  /** How the last fill ended, as the worker reported it. */
+  const [filled, setFilled] = useState<Filled | null>(() => lastFill())
   const mounted = useRef(true)
 
   /** How many pieces the road needs: the whole library, or the chosen shelves. */
@@ -99,6 +124,29 @@ export function StandScreen({
       mounted.current = false
     }
   }, [])
+
+  /** Asks the worker where its fills stand, and shows the answer. */
+  const askWorker = useCallback(async (): Promise<void> => {
+    const status = await fillStatus()
+    if (!mounted.current) return
+    setBusy(status?.busy ?? null)
+    if (status?.last) setFilled(status.last)
+  }, [])
+
+  // Every report, for as long as the screen is open: the fill the app makes
+  // at start, a widened shelf, a refresh. Each ends with a count worth taking
+  // again and a reason worth showing.
+  useEffect(
+    () =>
+      watchFills((report) => {
+        setFilled(report)
+        void held().then((now) => {
+          if (mounted.current) setHolding(now)
+        })
+        void askWorker()
+      }),
+    [askWorker],
+  )
 
   // The browser may make its offer after this screen is open, and it is
   // spent the moment it is used.
@@ -145,18 +193,30 @@ export function StandScreen({
       // The count is watched while the worker works, so the reader sees it
       // move. The watch ends on the worker's report - not on every piece
       // being held, which on a refresh they all are from the first second -
-      // or when the time is up.
+      // or on the worker saying nothing is running any more, which is all a
+      // worker the browser stopped part way can say.
       const until = Date.now() + REFRESH_WATCH_MS
-      while (mounted.current && Date.now() < until && report.filled === null) {
+      while (mounted.current && report.filled === null) {
         await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS))
         const now = await held()
         if (!mounted.current) return
         setHolding(now)
+        const status = await fillStatus()
+        if (!mounted.current) return
+        if (status !== null && !status.busy) {
+          // Fills run one at a time and this button waits for them, so the
+          // last one the worker finished is this refresh.
+          if (status.last?.refresh) report.filled = status.last
+          break
+        }
+        // Without a worker to say, the clock is all there is.
+        if (status === null && Date.now() >= until) break
       }
     } finally {
       stop()
     }
     if (!mounted.current) return
+    void askWorker()
     const fell = report.filled ? shortfall(report.filled, paths(fresh, shelves)) : null
     setShort(fell)
     setRefresh(fell ? 'short' : 'idle')
@@ -183,6 +243,11 @@ export function StandScreen({
     })
     void installed().then((yes) => {
       if (!cancelled) setWorker(yes)
+    })
+    void fillStatus().then((status) => {
+      if (cancelled) return
+      setBusy(status?.busy ?? null)
+      if (status?.last) setFilled(status.last)
     })
     void persisted().then((yes) => {
       if (!cancelled) setKept(yes)
@@ -211,21 +276,26 @@ export function StandScreen({
    * opened again. Seen on the stand with all 62 pieces already held.
    *
    * The watch stops as soon as everything wanted is there, so a screen left
-   * open on a ready device is not polling a cache that will not change.
+   * open on a ready device is not polling a cache that will not change - and
+   * as soon as the worker says nothing is fetching, because then the count
+   * will not move either. The reason is on the screen; a report, a widened
+   * shelf or a refresh starts the watch again.
    */
   useEffect(() => {
     if (refresh === 'running') return undefined
     if (holding === null) return undefined
     if (holding !== undefined && holding.index && countHeld(holding, index, keeping) >= want) return undefined
+    if (busy === false) return undefined
     const timer = setInterval(() => {
       void held().then((kept) => {
         if (mounted.current) setHolding(kept)
       })
+      void askWorker()
     }, FILL_POLL_MS)
     return () => {
       clearInterval(timer)
     }
-  }, [holding, index, keeping, want, refresh])
+  }, [holding, index, keeping, want, refresh, busy, askWorker])
 
   return (
     <div className="flex flex-col gap-8">
@@ -243,6 +313,9 @@ export function StandScreen({
           index: holding === undefined ? null : holding === null ? false : holding.index,
           held: holding === undefined ? null : holding === null ? 0 : countHeld(holding, index, keeping),
           total: want,
+          // A refresh the reader is watching is fetching, whatever the worker
+          // said before it was asked.
+          arrival: refresh === 'running' ? 'fetching' : arrival(busy, filled),
         })}
       />
 
@@ -317,6 +390,8 @@ export function StandScreen({
             // missing. Narrowing only frees the space at the next refresh,
             // which the line under the button says.
             cacheLibrary(index, next)
+            // Not known yet: the worker is asked again on the next count.
+            setBusy(null)
             // Choosing what rides along is choosing to keep it here, and it
             // is a tap: the moment a browser that asks will ask.
             askToKeep()

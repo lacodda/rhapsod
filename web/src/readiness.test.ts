@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { readiness, verdict, type RoadFacts } from '@/readiness'
 
 /** A device that is ready: every check passes. */
-const READY: RoadFacts = { secure: true, worker: true, index: true, held: 62, total: 62 }
+const READY: RoadFacts = { secure: true, worker: true, index: true, held: 62, total: 62, arrival: 'stopped' }
 
 const facts = (patch: Partial<RoadFacts>): RoadFacts => ({ ...READY, ...patch })
 
@@ -41,10 +41,30 @@ describe('readiness', () => {
   })
 
   it('is not ready while pieces are still being fetched', () => {
-    const state = readiness(facts({ held: 40, total: 62 }))
+    const state = readiness(facts({ held: 40, total: 62, arrival: 'fetching' }))
     expect(state.ready).toBe(false)
     expect(state.blocker?.id).toBe('pieces')
     expect(state.blocker?.detail).toContain('40 of 62')
+    expect(state.blocker?.detail).toContain('being fetched')
+  })
+
+  it('does not say the rest are being fetched once the stand has gone', () => {
+    // The defect this exists for: on a train the screen told the reader to
+    // stay on the page while the stand was reachable - the stand being at
+    // home, and nothing fetching anything.
+    const away = readiness(facts({ held: 40, total: 62, arrival: 'away' })).blocker?.detail ?? ''
+    expect(away).not.toContain('being fetched')
+    expect(away).toContain('out of reach')
+
+    const stopped = readiness(facts({ held: 40, total: 62, arrival: 'stopped' })).blocker?.detail ?? ''
+    expect(stopped).not.toContain('being fetched')
+    expect(stopped).toContain('Fetch the library again')
+  })
+
+  it('says the stand refused, rather than went away, when it was there', () => {
+    const refused = readiness(facts({ held: 40, total: 62, arrival: 'refused' })).blocker?.detail ?? ''
+    expect(refused).toContain('did not give')
+    expect(refused).not.toContain('out of reach')
   })
 
   it('counts an empty library as held, not as missing', () => {

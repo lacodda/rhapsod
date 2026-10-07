@@ -44,9 +44,10 @@ function cacheStorage() {
 
 /**
  * The worker, running. `network` answers what the worker fetches; returning
- * `null` plays the stand being out of reach.
+ * `null` plays the stand being out of reach, and a promise a stand that takes
+ * its time.
  */
-function worker(network: (path: string) => Response | null) {
+function worker(network: (path: string) => Response | null | Promise<Response | null>) {
   const handlers = new Map<string, Handler>()
   const caches = cacheStorage()
   const scope = {
@@ -59,8 +60,7 @@ function worker(network: (path: string) => Response | null) {
   }
   const fetch = (input: string | Request): Promise<Response> => {
     const path = new URL(typeof input === 'string' ? input : input.url, ORIGIN).pathname
-    const answer = network(path)
-    return answer ? Promise.resolve(answer) : Promise.reject(new TypeError('Failed to fetch'))
+    return Promise.resolve(network(path)).then((answer) => answer ?? Promise.reject(new TypeError('Failed to fetch')))
   }
   // The worker's globals are its parameters here; nothing leaks into the
   // test's own scope.
@@ -81,17 +81,37 @@ function worker(network: (path: string) => Response | null) {
     },
     /** Posts a message to the worker and resolves with what it posts back. */
     async post(data: unknown): Promise<unknown[]> {
+      const sent = this.send(data)
+      await sent.done
+      return sent.replies
+    },
+    /** Posts a message without waiting: the replies fill in as the work ends. */
+    send(data: unknown): { replies: unknown[]; done: Promise<unknown> } {
       const replies: unknown[] = []
-      let work: Promise<unknown> = Promise.resolve()
+      let done: Promise<unknown> = Promise.resolve()
       handlers.get('message')?.({
         data,
         source: { postMessage: (reply: unknown) => replies.push(reply) },
         waitUntil: (promise: Promise<unknown>) => {
-          work = promise
+          done = promise
         },
       })
-      await work
-      return replies
+      return { replies, done }
+    },
+    /** Asks the worker something on a port of its own, as the page does. */
+    ask(data: unknown): unknown {
+      let answer: unknown
+      handlers.get('message')?.({
+        data,
+        ports: [
+          {
+            postMessage: (reply: unknown) => {
+              answer = reply
+            },
+          },
+        ],
+      })
+      return answer
     },
   }
 }
@@ -202,5 +222,56 @@ describe('filling the library', () => {
     await sw.post({ type: 'refresh-library', paths })
 
     expect(sw.caches.held('rhapsod-library')).toEqual(['/api/pieces/old/one'])
+  })
+
+  it('runs one fill at a time, however many are asked for', async () => {
+    // A second press of "Fetch the library again" while the first was still
+    // running started a second pass over every piece, and a refresh deleting
+    // what it did not list raced a background fill putting pieces back.
+    let fetching = 0
+    let most = 0
+    const sw = worker(async (path) => {
+      fetching += 1
+      most = Math.max(most, fetching)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      fetching -= 1
+      return json({ path })
+    })
+
+    const first = sw.send({ type: 'refresh-library', paths })
+    const second = sw.send({ type: 'refresh-library', paths })
+    await Promise.all([first.done, second.done])
+
+    expect(most).toBe(1)
+    expect(first.replies).toHaveLength(1)
+    expect(second.replies).toHaveLength(1)
+  })
+
+  it('says whether a fill is under way', async () => {
+    // Asked of the worker because only it knows: one stopped by the browser
+    // part way through comes back with nothing running, and a page counting
+    // for itself would wait for a report that is never sent.
+    let release: () => void = () => undefined
+    const stand = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const sw = worker(async (path) => {
+      await stand
+      return json({ path })
+    })
+
+    expect(sw.ask({ type: 'fill-status' })).toEqual({ type: 'fill-status', busy: false, last: null })
+    const fill = sw.send({ type: 'cache-library', paths })
+    expect(sw.ask({ type: 'fill-status' })).toEqual({ type: 'fill-status', busy: true, last: null })
+
+    release()
+    await fill.done
+    // With the report, too: it travels apart from this answer, and a page
+    // told "nothing is running" must not have to wait for it to say why.
+    expect(sw.ask({ type: 'fill-status' })).toEqual({
+      type: 'fill-status',
+      busy: false,
+      last: { type: 'library-filled', refresh: false, reached: true, missed: [] },
+    })
   })
 })

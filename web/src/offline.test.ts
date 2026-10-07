@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LibraryIndex } from '@/api'
-import { paths, shortfall, staleBy } from '@/offline'
+import { arrival, paths, shortfall, staleBy } from '@/offline'
 
 const LIBRARY: LibraryIndex = {
   sections: [
@@ -66,5 +66,33 @@ describe('staleBy', () => {
 
   it('names nothing for a change the worker holds nothing of', () => {
     expect(staleBy('/typos')).toBeNull()
+  })
+})
+
+describe('arrival', () => {
+  const filled = (reached: boolean, missed: string[]) => ({ type: 'library-filled' as const, refresh: false, reached, missed })
+
+  it('is fetching while the worker says a fill is under way, whatever the last one said', () => {
+    expect(arrival(true, filled(false, ['/api/pieces/a/two']))).toBe('fetching')
+  })
+
+  it('is fetching while there is no worker to ask yet', () => {
+    // A first visit: the app's fill waits for the worker to take the page.
+    expect(arrival(null, null)).toBe('fetching')
+  })
+
+  it('is away when the last fill lost the stand', () => {
+    expect(arrival(false, filled(false, ['/api/pieces/a/two']))).toBe('away')
+  })
+
+  it('is refused when the stand was there and kept pieces back', () => {
+    expect(arrival(false, filled(true, ['/api/pieces/a/two']))).toBe('refused')
+  })
+
+  it('is stopped when nothing runs and nothing said why', () => {
+    // A worker the browser stopped part way sends no report at all; the plan
+    // missing is not a piece missing.
+    expect(arrival(false, null)).toBe('stopped')
+    expect(arrival(false, filled(true, ['/api/topics']))).toBe('stopped')
   })
 })

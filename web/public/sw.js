@@ -229,17 +229,55 @@ async function cacheLibrary(paths, { refresh = false } = {}) {
   return { type: 'library-filled', refresh, reached, missed }
 }
 
+/**
+ * The fills, one after another.
+ *
+ * Two at once fought over one cache: a refresh deleting what it did not list
+ * while a background fill put pieces back, and a reader who pressed "Fetch the
+ * library again" a second time, with the first still running, started a
+ * second pass over every piece. Each fill now waits for the one before it.
+ */
+let fills = Promise.resolve()
+
+/** Fills asked for and not yet finished, the running one included. */
+let busy = 0
+
+/**
+ * How the last fill ended, for a page asking after the report went past it.
+ * Gone when the browser stops an idle worker, which is why the page keeps
+ * the reports it heard as well.
+ */
+let reported = null
+
 self.addEventListener('message', (event) => {
+  // Whether a fill is under way, asked by the stand screen. Answered here
+  // because only the worker knows: a worker the browser stopped part way
+  // through a fill comes back with nothing running and no report to send,
+  // and a page keeping its own count would wait for that report forever.
+  if (event.data?.type === 'fill-status') {
+    event.ports?.[0]?.postMessage({ type: 'fill-status', busy: busy > 0, last: reported })
+    return
+  }
   if (!Array.isArray(event.data?.paths)) return
   // Asked for by the reader, from the stand screen, a refresh fetches every
   // piece again whether or not a copy is held, so an edit published to the
   // vault reaches a device that has not opened the piece since.
   const refresh = event.data.type === 'refresh-library'
   if (event.data.type !== 'cache-library' && !refresh) return
+  const { paths } = event.data
+  busy += 1
+  const fill = fills.then(() => cacheLibrary(paths, { refresh }))
+  // A fill that failed outright must not stop the ones queued behind it.
+  fills = fill.catch(() => undefined)
   event.waitUntil(
-    cacheLibrary(event.data.paths, { refresh }).then((filled) => {
-      // To the page that asked: it is the one watching the count.
-      event.source?.postMessage(filled)
-    }),
+    fill
+      .then((filled) => {
+        reported = filled
+        // To the page that asked: it is the one watching the count.
+        event.source?.postMessage(filled)
+      })
+      .finally(() => {
+        busy -= 1
+      }),
   )
 })

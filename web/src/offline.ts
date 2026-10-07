@@ -21,6 +21,10 @@ import { wanted, type Chosen } from '@/packages'
  */
 export function registerWorker(): void {
   if (!('serviceWorker' in navigator)) return
+  // Before anything is sent: the fill the app asks for at start reports while
+  // the library screen is up, and the stand screen opened later still has to
+  // know how it ended.
+  listen()
   // After load, so the worker's install does not compete with the first paint
   // for the connection - on a phone that is the difference between the text
   // appearing now and appearing after a few hundred requests.
@@ -144,21 +148,121 @@ export interface Filled {
   missed: string[]
 }
 
-/** Listens for the worker reporting a finished fill. Returns the unsubscribe. */
-export function watchFills(listener: (filled: Filled) => void): () => void {
-  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return () => undefined
+/** The last fill the worker reported to this page, if any has. */
+let last: Filled | null = null
+
+const fillListeners = new Set<(filled: Filled) => void>()
+
+let listening = false
+
+/**
+ * Hears the worker's reports for the life of the page.
+ *
+ * One listener for the page rather than one per screen: the stand screen used
+ * to listen only while a refresh it started was running, so the report of the
+ * fill the app makes at start - the one that says the stand went away part way
+ * - reached nobody, and the screen went on saying the rest was "still being
+ * fetched" with nothing fetching it.
+ */
+function listen(): void {
+  if (listening || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  listening = true
   const container = navigator.serviceWorker
-  const onMessage = (event: MessageEvent): void => {
+  container.addEventListener('message', (event: MessageEvent) => {
     const data = event.data as Partial<Filled> | null
-    if (data?.type === 'library-filled') listener(data as Filled)
-  }
-  container.addEventListener('message', onMessage)
+    if (data?.type !== 'library-filled') return
+    last = data as Filled
+    for (const listener of fillListeners) listener(last)
+  })
   // A listener added this way does not start the message queue the way
   // `onmessage` does; without this a report sent early could wait unread.
   container.startMessages()
+}
+
+/** The last fill reported to this page: how the library last arrived, or did not. */
+export const lastFill = (): Filled | null => last
+
+/** Listens for the worker reporting a finished fill. Returns the unsubscribe. */
+export function watchFills(listener: (filled: Filled) => void): () => void {
+  listen()
+  fillListeners.add(listener)
   return () => {
-    container.removeEventListener('message', onMessage)
+    fillListeners.delete(listener)
   }
+}
+
+/** What the worker says about its fills. */
+export interface FillStatus {
+  /** Whether a fill is under way, or waiting behind one that is. */
+  busy: boolean
+  /**
+   * How its last fill ended - or the last this page heard of, when the
+   * worker has been stopped and started since and remembers none.
+   */
+  last: Filled | null
+}
+
+/**
+ * Whether the worker is filling the library now, and how its last fill ended;
+ * `null` where there is no worker to ask, or it does not answer.
+ *
+ * Asked rather than counted here. A page that counted the fills it sent and
+ * the reports it got back waited forever on a worker the browser stopped part
+ * way through - that worker comes back with nothing running and nothing to
+ * report, and only it can say so. The last report rides along because it
+ * travels apart from this answer: told "nothing is running", the page must not
+ * have to wait for the message that says why.
+ */
+export async function fillStatus(): Promise<FillStatus | null> {
+  const worker = typeof navigator === 'undefined' ? null : navigator.serviceWorker?.controller
+  if (!worker) return null
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    const done = (answer: FillStatus | null): void => {
+      clearTimeout(timer)
+      channel.port1.close()
+      resolve(answer)
+    }
+    // A worker from before this question was asked does not answer it; the
+    // page is then no better informed than without a worker.
+    const timer = setTimeout(() => {
+      done(null)
+    }, STATUS_WAIT_MS)
+    channel.port1.onmessage = (event: MessageEvent) => {
+      const data = event.data as { busy?: unknown; last?: Filled | null } | null
+      done({ busy: data?.busy === true, last: data?.last ?? last })
+    }
+    worker.postMessage({ type: 'fill-status' }, [channel.port2])
+  })
+}
+
+/** How long the worker is given to say whether it is filling. */
+const STATUS_WAIT_MS = 2_000
+
+/**
+ * Why the pieces this device lacks are not here, as far as it can tell.
+ *
+ * - `fetching`: a fill is under way, or about to be.
+ * - `away`: the last fill lost the stand part way through.
+ * - `refused`: the stand was there and would not give some of them.
+ * - `stopped`: nothing is fetching them, and nothing said why it ended short.
+ */
+export type Arrival = 'fetching' | 'away' | 'refused' | 'stopped'
+
+/**
+ * The arrival a screen should show, from what the worker says now and how the
+ * last fill ended.
+ *
+ * `null` from the worker - none to ask yet - counts as fetching: on a first
+ * visit the app's fill is waiting for the worker to take the page, and saying
+ * "stopped" for those few seconds would send the reader to a button for
+ * nothing.
+ */
+export function arrival(busy: boolean | null, filled: Filled | null): Arrival {
+  if (busy !== false) return 'fetching'
+  if (filled === null) return 'stopped'
+  if (!filled.reached) return 'away'
+  return filled.missed.some((path) => path.startsWith(PIECE_PREFIX)) ? 'refused' : 'stopped'
 }
 
 /** How a refresh fell short, in pieces - the unit the screen counts in. */

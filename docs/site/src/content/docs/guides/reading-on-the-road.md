@@ -33,7 +33,7 @@ On iPhone and iPad the Home Screen app keeps its own storage, apart from Safari'
 - **the list of what is on the shelves** - without it the app cannot start away from home.
 - **the pieces themselves** - every piece on the shelves you keep.
 
-The first time, pieces arrive one by one in the background while the app is open at home; leave early and the next visit carries on.
+The first time, pieces arrive one by one in the background while the app is open at home; leave early and the next visit carries on. While pieces are missing, the line under the checks says why: they are being fetched, the stand went out of reach part way, or the stand would not give them.
 
 Under **On this device**, `library` says what is held - `20 of 20 pieces held on 2 of 3 shelves` - and `waiting` how many of your changes have not reached the stand.
 
@@ -41,7 +41,7 @@ Under **On this device**, `library` says what is held - `20 of 20 pieces held on
 
 **Kept on this device** has a box per shelf. **All of them** is the default and includes shelves added later. Untick it and choose, say, `02 — History` and `19 — Letters`, leaving `01 — Paradoxes` at home; a shelf published later then waits until you tick it. The choice stays on this device.
 
-Shelves you add are fetched in the background. Shelves you remove stay until you press **Fetch the library again**, which refetches every kept piece and drops the rest. Press it before a trip if a piece was edited: away, you read the copy last fetched.
+Shelves you add are fetched in the background. Shelves you remove stay until you press **Fetch the library again**, which refetches every kept piece and drops the rest. Press it before a trip if a piece was edited: away, you read the copy last fetched. The button waits until the device says the refresh is done; a second press cannot start another over it.
 
 A piece you do not keep is still listed, but away from home it answers *The library is out of reach. It comes back when you are home.*
 

@@ -14,6 +14,8 @@
  * the queue are facts about the stand, not about the road, and stay facts.
  */
 
+import type { Arrival } from '@/offline'
+
 /** What the road needs, in the order it breaks. */
 export type CheckId = 'secure' | 'worker' | 'index' | 'pieces'
 
@@ -64,6 +66,32 @@ export interface RoadFacts {
    * otherwise would make the choice useless.
    */
   total: number
+  /**
+   * Why the pieces not held are not held yet. Only read when some are
+   * missing: it is what the reader is told to do about it.
+   */
+  arrival: Arrival
+}
+
+/**
+ * What the reader is told about the pieces still missing, by why they are.
+ *
+ * "Still being fetched" was the only sentence, and it was said with the stand
+ * long gone and nothing fetching anything: a reader on a train was told to
+ * stay on the page and wait for the stand that was at home.
+ */
+function missing(held: number, total: number, arrival: Arrival): string {
+  const counted = `${held} of ${total} pieces are held.`
+  switch (arrival) {
+    case 'fetching':
+      return `${counted} The rest are being fetched - staying on this page while the stand is reachable finishes the job.`
+    case 'away':
+      return `${counted} The stand went out of reach before the rest arrived; they come the next time this app is open within reach of it.`
+    case 'refused':
+      return `${counted} The stand did not give the rest when they were asked for. Fetch the library again below; if they are still missing, the stand's log names them.`
+    case 'stopped':
+      return `${counted} Nothing is fetching the rest now. Fetch the library again below while the stand is reachable.`
+  }
 }
 
 /**
@@ -120,7 +148,7 @@ export function readiness(facts: RoadFacts): Readiness {
             ? 'There is nothing on the shelves yet.'
             : facts.held >= facts.total
               ? `All ${facts.total} pieces of the shelves you keep are on this device.`
-              : `${facts.held} of ${facts.total} pieces are held. The rest are still being fetched - staying on this page while the stand is reachable finishes the job.`,
+              : missing(facts.held, facts.total, facts.arrival),
     },
   ]
 
