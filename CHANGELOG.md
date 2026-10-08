@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.2] - 2026-10-07
+
+### Bug Fixes
+- Check a copy without leaving a log beside it
+- Know the trailing blocks by their English names
+- Let the device say which cards are due today
+- Say why pieces are missing, and fill one at a time
+- Sign this device out without ending every session
+
+### Testing
+- Show what was left when a check for nothing fails
+
 ## [0.15.1] - 2026-10-01
 
 ### Bug Fixes

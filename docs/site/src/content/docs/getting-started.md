@@ -50,7 +50,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.1","pieces":1,"indexed_seconds_ago":2}
+{"status":"ok","version":"0.15.2","pieces":1,"indexed_seconds_ago":2}
 ```
 
 `pieces` is 1 because the library holds one shelf with one piece. `indexed_seconds_ago` is small because the server indexed the directory a moment ago, when it started.
