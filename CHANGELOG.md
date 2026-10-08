@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Let the device say which cards are due today
 - Say why pieces are missing, and fill one at a time
 - Sign this device out without ending every session
+- Check a copy in the checkout's own backups from Git Bash
 
 ### Testing
 - Show what was left when a check for nothing fails
