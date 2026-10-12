@@ -219,7 +219,7 @@ async fn requests(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
     let mut count = 0;
     for request in &export.requests {
         let done = sqlx::query(
-            "INSERT INTO requests (topic_id, title, section, asked_at, changed_at) VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO requests (topic_id, title, section, asked_at, changed_at, heard_at) VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT (topic_id) DO NOTHING",
         )
         .bind(&request.topic_id)
@@ -227,6 +227,7 @@ async fn requests(tx: &mut Tx<'_>, export: &Export) -> Result<usize> {
         .bind(&request.section)
         .bind(&request.asked_at)
         .bind(&request.asked_at)
+        .bind(&request.heard_at)
         .execute(&mut **tx)
         .await
         .with_context(|| format!("failed to restore the request for {}", request.topic_id))?;
@@ -341,6 +342,7 @@ mod tests {
                 title: "A topic".into(),
                 section: "01 — Shelf".into(),
                 asked_at: "2026-08-01T14:00:00.000Z".into(),
+                heard_at: Some("2026-08-02T14:00:00.000Z".into()),
             }],
             reactions: vec![feedback::Reaction {
                 piece_id: "a/b".into(),
@@ -408,6 +410,28 @@ mod tests {
         let asked = requests::all(&pool, None).await.unwrap();
         assert_eq!(asked.len(), 1, "the restore lost the request");
         assert_eq!(asked[0].title, "A topic", "a restored request lost its words");
+        // A request the author already had would otherwise reach them again
+        // from the rebuilt stand.
+        assert_eq!(
+            asked[0].heard_at.as_deref(),
+            Some("2026-08-02T14:00:00.000Z"),
+            "a restored request forgot it was heard"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_export_from_before_hearing_restores_its_requests_unheard() {
+        // The vault holds exports taken before a request could be heard; one
+        // of them is what a dead Pi is rebuilt from.
+        let export: Export = serde_json::from_str(
+            r#"{"exported_at":"2026-09-16T15:00:00.000Z","requests":[
+                {"topic_id":"01-shelf/a-topic","title":"A topic","section":"01 — Shelf","asked_at":"2026-09-16T14:00:00.000Z"}
+            ]}"#,
+        )
+        .unwrap();
+        let pool = pool().await;
+        assert_eq!(restore(&pool, &export).await.unwrap().requests, 1);
+        assert_eq!(requests::all(&pool, None).await.unwrap()[0].heard_at, None);
     }
 
     #[tokio::test]

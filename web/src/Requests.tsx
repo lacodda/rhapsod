@@ -59,6 +59,7 @@ export function RequestsScreen({ requests }: { requests: RequestStore }) {
         <p className="text-sm text-dim">
           {total.toLocaleString('en-US')} topics the author could write
           {requests.asked.length > 0 ? ` · ${requests.asked.length} asked for` : ''}
+          {requests.heard.size > 0 ? `, ${requests.heard.size} heard` : ''}
         </p>
         <input
           type="search"
@@ -80,6 +81,7 @@ export function RequestsScreen({ requests }: { requests: RequestStore }) {
                 <Row
                   topic={{ id: request.topic_id, title: request.title, section: request.section }}
                   wanted
+                  heard={requests.heard.has(request.topic_id)}
                   onToggle={requests.toggle}
                   showShelf
                 />
@@ -97,7 +99,13 @@ export function RequestsScreen({ requests }: { requests: RequestStore }) {
           <ul className="flex flex-col gap-1">
             {found.map((topic) => (
               <li key={topic.id}>
-                <Row topic={topic} wanted={requests.wanted.has(topic.id)} onToggle={requests.toggle} showShelf />
+                <Row
+                  topic={topic}
+                  wanted={requests.wanted.has(topic.id)}
+                  heard={requests.heard.has(topic.id)}
+                  onToggle={requests.toggle}
+                  showShelf
+                />
               </li>
             ))}
           </ul>
@@ -159,7 +167,12 @@ function Shelf({
         <ul className="flex flex-col gap-1 pb-2 pl-3">
           {shelf.topics.map((topic) => (
             <li key={topic.id}>
-              <Row topic={topic} wanted={requests.wanted.has(topic.id)} onToggle={requests.toggle} />
+              <Row
+                topic={topic}
+                wanted={requests.wanted.has(topic.id)}
+                heard={requests.heard.has(topic.id)}
+                onToggle={requests.toggle}
+              />
             </li>
           ))}
         </ul>
@@ -168,15 +181,21 @@ function Shelf({
   )
 }
 
-/** One topic, and whether it has been asked for. */
+/** One topic, and whether it has been asked for - and heard. */
 function Row({
   topic,
   wanted,
+  heard,
   onToggle,
   showShelf = false,
 }: {
   topic: Topic
   wanted: boolean
+  /**
+   * The author has it in hand. Said on the row rather than left implied: a
+   * request that sits as "asked" for a month reads as lost.
+   */
+  heard: boolean
   onToggle: (topic: Topic) => void
   /** In a search or in the asked-for list, the shelf is worth naming. */
   showShelf?: boolean
@@ -199,7 +218,7 @@ function Row({
         aria-hidden
       >
         {wanted ? <CheckIcon size={13} /> : null}
-        {wanted ? 'asked' : 'ask'}
+        {heard ? 'heard' : wanted ? 'asked' : 'ask'}
       </span>
     </button>
   )

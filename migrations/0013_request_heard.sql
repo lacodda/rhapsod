@@ -1,0 +1,12 @@
+-- Whether the author has the request in hand.
+--
+-- A request had two states, asked and gone, and the one between them lived
+-- nowhere: the author has it and has not written it yet. The vault side kept
+-- that in its inbox of wishes, which is emptied whenever it is sorted, so every
+-- merge brought the same requests back as new. The stand keeps it instead: one
+-- truth, and the reader can see that a request reached the author.
+--
+-- Set once, by whatever delivers the request to the author; the first hearing
+-- stays. Asking again leaves it alone - asking twice is asking once - while a
+-- request taken back and asked anew is a new request and starts unheard.
+ALTER TABLE requests ADD COLUMN heard_at TEXT;

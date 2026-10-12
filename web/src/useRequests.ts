@@ -22,6 +22,8 @@ export interface RequestStore {
   asked: Request[]
   /** Topic ids that have been asked for, for marking the list. */
   wanted: Set<string>
+  /** Of those, the ones the author already has in hand. */
+  heard: Set<string>
   /** Asks, or takes the request back - whichever the tap means. */
   toggle: (topic: Topic) => void
 }
@@ -55,6 +57,10 @@ export function useRequests(enabled: boolean): RequestStore {
   }, [enabled])
 
   const wanted = useMemo(() => new Set(asked.map((request) => request.topic_id)), [asked])
+  const heard = useMemo(
+    () => new Set(asked.filter((request) => request.heard_at).map((request) => request.topic_id)),
+    [asked],
+  )
 
   /**
    * One tap on a topic.
@@ -79,5 +85,5 @@ export function useRequests(enabled: boolean): RequestStore {
     [],
   )
 
-  return { plan, asked, wanted, toggle }
+  return { plan, asked, wanted, heard, toggle }
 }

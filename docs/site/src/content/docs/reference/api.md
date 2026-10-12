@@ -14,7 +14,7 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 | `GET /api/library`, `/sections`, `/sections/{section}`, `/pieces/...` | Needs a session. |
 | `GET /api/progress`, `POST /api/progress/...`, `GET /api/next` | Needs a session. |
 | `GET /api/notes`, `POST /api/notes/...`, `/quotes`, `/quotes/{id}` | Needs a session. |
-| `GET /api/topics`, `GET /api/requests`, `POST`/`DELETE /api/requests/...` | Needs a session. |
+| `GET /api/topics`, `GET /api/requests`, `POST`/`DELETE /api/requests/...`, `POST /api/requests/.../heard` | Needs a session. |
 | `GET /api/bookmarks`, `POST`/`DELETE /api/bookmarks/...` | Needs a session. |
 | `GET /api/reactions`, `POST`/`DELETE /api/reactions/...` | Needs a session. |
 | `GET /api/typos`, `POST /api/typos`, `DELETE /api/typos/{id}` | Needs a session. |
@@ -818,12 +818,15 @@ curl http://127.0.0.1:8084/api/requests
     "topic_id": "01-paradoxes/the-unfinished-map",
     "title": "The Unfinished Map",
     "section": "01 — Paradoxes",
-    "asked_at": "2026-09-02T22:20:55.585Z"
+    "asked_at": "2026-09-02T22:20:55.585Z",
+    "heard_at": null
   }
 ]
 ```
 
 Each request carries the **words** of the topic as well as its id. A topic that gets written leaves the plan, taking its title with it; a request that outlived its topic would otherwise be an id nobody can read - including in the export the author reads.
+
+`heard_at` is when the author first had the request in hand, or `null` while it is only asked for - see [`POST /api/requests/{shelf}/{topic}/heard`](#post-apirequestsshelftopicheard). A request lives in three states: **asked**, **heard**, and gone once it is written or taken back.
 
 ## `POST /api/requests/{shelf}/{topic}`
 
@@ -856,6 +859,28 @@ That matters more than it looks: a request the author cannot act on would sit in
 ## `DELETE /api/requests/{shelf}/{topic}`
 
 Takes a request back. Answers `204`, or `404` when there was nothing to take back - which is how an app with a stale list finds out.
+
+A request taken back and asked for again is a new request: it starts unheard.
+
+## `POST /api/requests/{shelf}/{topic}/heard`
+
+Records that the author has a request in hand. Answers `204`, or `404` when there is no such request.
+
+```sh
+curl -i -X POST http://127.0.0.1:8084/api/requests/01-paradoxes/the-unfinished-map/heard
+```
+
+```
+HTTP/1.1 204 No Content
+```
+
+Called by whatever carries requests to the author - the merge that writes them into the vault - once it has delivered one. The next delivery passes over a heard request, and the reader's list says **heard** instead of **asked**.
+
+Without it a request had two states, asked and gone, and the one between them lived nowhere: the author has it and has not written it yet. Kept on the author's side, in a list of things to write that gets sorted and emptied, every merge brought the same requests back as new.
+
+**The first hearing stays.** A delivery is rerun whenever the merge is, and the day a request first reached the author is the one that means something. A repeat is not a change, so it does not bring the request back into an [incremental export](#only-what-changed) either.
+
+Asking again for a heard topic leaves it heard - asking twice is asking once.
 
 ## `GET /api/bookmarks`
 

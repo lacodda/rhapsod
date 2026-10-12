@@ -8,6 +8,11 @@
 //! A request carries the topic's words as well as its id. A topic that gets
 //! written leaves the plan (it is a novella now), and a request that outlived
 //! its topic would otherwise be an id nobody can read.
+//!
+//! A request lives in three states: asked, heard - the author has it in hand -
+//! and gone, once it is written or taken back. Hearing is what keeps a request
+//! from reaching the author twice: whatever carries requests to the vault
+//! marks the ones it delivered and passes over them the next time.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -24,6 +29,10 @@ pub struct Request {
     /// The shelf of the plan it came from.
     pub section: String,
     pub asked_at: String,
+    /// When the author first had it, or nothing while it is only asked for.
+    /// Absent from exports taken before requests could be heard.
+    #[serde(default)]
+    pub heard_at: Option<String>,
 }
 
 /// Records that the reader wants a topic written.
@@ -68,6 +77,33 @@ pub async fn withdraw(pool: &SqlitePool, topic_id: &str) -> Result<bool> {
     Ok(removed.rows_affected() > 0)
 }
 
+/// Records that the author has a request in hand, saying whether there was one.
+///
+/// The first hearing stays: delivering a request is done again whenever the
+/// delivery is rerun, and the day it first reached the author is the one that
+/// means something. A repeat is not a change either, so it leaves `changed_at`
+/// alone and an incremental export does not report it again.
+///
+/// # Errors
+///
+/// Fails when the database rejects the write.
+pub async fn hear(pool: &SqlitePool, topic_id: &str) -> Result<bool> {
+    // SET reads the row as it was, so both lines test the old heard_at.
+    let heard = sqlx::query(
+        "UPDATE requests
+            SET heard_at   = coalesce(heard_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                changed_at = CASE WHEN heard_at IS NULL
+                                  THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                                  ELSE changed_at END
+          WHERE topic_id = ?",
+    )
+    .bind(topic_id)
+    .execute(pool)
+    .await
+    .context("failed to record that the request was heard")?;
+    Ok(heard.rows_affected() > 0)
+}
+
 /// Everything the reader has asked for, newest first.
 ///
 /// # Errors
@@ -75,7 +111,7 @@ pub async fn withdraw(pool: &SqlitePool, topic_id: &str) -> Result<bool> {
 /// Fails when the database cannot be read.
 pub async fn all(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Request>> {
     sqlx::query_as::<_, Request>(
-        "SELECT topic_id, title, section, asked_at
+        "SELECT topic_id, title, section, asked_at, heard_at
            FROM requests
           WHERE coalesce(changed_at, asked_at) > coalesce(?, '')
           ORDER BY asked_at DESC, topic_id",
@@ -127,6 +163,83 @@ mod tests {
         ask(&pool, &topic(), None).await.unwrap();
         ask(&pool, &topic(), None).await.unwrap();
         assert_eq!(all(&pool, None).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_request_is_heard_once_and_keeps_the_first_hearing() {
+        let pool = pool().await;
+        ask(&pool, &topic(), None).await.unwrap();
+        assert_eq!(all(&pool, None).await.unwrap()[0].heard_at, None, "a fresh request came out heard");
+
+        assert!(hear(&pool, &topic().id).await.unwrap());
+        let first = all(&pool, None).await.unwrap()[0].heard_at.clone();
+        assert!(first.is_some(), "hearing a request left it unheard");
+
+        // A rerun delivery hears it again; the day it first reached the
+        // author is the one that stays.
+        sqlx::query("UPDATE requests SET heard_at = '2026-09-16T14:30:00.000Z' WHERE topic_id = ?")
+            .bind(&topic().id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(hear(&pool, &topic().id).await.unwrap());
+        assert_eq!(
+            all(&pool, None).await.unwrap()[0].heard_at.as_deref(),
+            Some("2026-09-16T14:30:00.000Z"),
+            "a second hearing moved the first"
+        );
+    }
+
+    #[tokio::test]
+    async fn asking_again_does_not_unhear_a_request() {
+        // Asking twice is asking once - the reader tapping a heard request's
+        // topic in the plan must not send it to the author a second time.
+        let pool = pool().await;
+        ask(&pool, &topic(), None).await.unwrap();
+        hear(&pool, &topic().id).await.unwrap();
+        ask(&pool, &topic(), Some("2999-01-01T00:00:00.000Z")).await.unwrap();
+        assert!(all(&pool, None).await.unwrap()[0].heard_at.is_some(), "asking again forgot the hearing");
+    }
+
+    #[tokio::test]
+    async fn a_request_taken_back_and_asked_anew_starts_unheard() {
+        let pool = pool().await;
+        ask(&pool, &topic(), None).await.unwrap();
+        hear(&pool, &topic().id).await.unwrap();
+        withdraw(&pool, &topic().id).await.unwrap();
+        ask(&pool, &topic(), None).await.unwrap();
+        assert_eq!(all(&pool, None).await.unwrap()[0].heard_at, None, "a new request inherited an old hearing");
+    }
+
+    #[tokio::test]
+    async fn hearing_something_never_asked_for_says_so() {
+        let pool = pool().await;
+        assert!(!hear(&pool, "nothing/here").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn an_incremental_export_reports_a_hearing_once() {
+        let pool = pool().await;
+        ask(&pool, &topic(), None).await.unwrap();
+        sqlx::query("UPDATE requests SET asked_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z' WHERE topic_id = ?")
+            .bind(&topic().id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let bound = Some("2025-01-01T00:00:00.000Z");
+
+        hear(&pool, &topic().id).await.unwrap();
+        assert_eq!(all(&pool, bound).await.unwrap().len(), 1, "a hearing did not reach an incremental export");
+
+        // A repeat hearing is not news.
+        sqlx::query("UPDATE requests SET changed_at = '2020-01-01T00:00:00.000Z' WHERE topic_id = ?")
+            .bind(&topic().id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        hear(&pool, &topic().id).await.unwrap();
+        let left = all(&pool, bound).await.unwrap();
+        assert!(left.is_empty(), "a repeat hearing was reported as a change, got {left:?}");
     }
 
     #[tokio::test]

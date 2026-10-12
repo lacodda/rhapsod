@@ -174,6 +174,8 @@ The plan is a **pool, not a queue**: any topic can be taken at any time, and a t
 
 A request for something the plan does not offer is refused rather than stored. It would sit in the export looking exactly like one the author could act on.
 
+Once the author has a request in hand, the list says **heard** instead of **asked**. A request that sat as "asked" for a month would read as lost; heard says it arrived, and it stays heard until it is written - when it leaves the list for the library - or taken back.
+
 ## Telling the author, smaller than a note
 
 A note is a paragraph you sit down to write, and most of what is worth saying never reaches that size. Two gestures do.

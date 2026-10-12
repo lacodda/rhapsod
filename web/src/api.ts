@@ -121,6 +121,11 @@ export interface Request {
   title: string
   section: string
   asked_at: string
+  /**
+   * When the author first had it in hand; absent or null while it is only
+   * asked for. Lists held from before the stand knew this have no field.
+   */
+  heard_at?: string | null
 }
 
 /** The kinds a reaction can be. The server refuses anything else. */

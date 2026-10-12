@@ -87,7 +87,7 @@ Every kind the export carries is listed here with the place it belongs once it i
 | `reviews` | One row per piece in the review schedule. `done` is how many of the three returns you have answered; `due_on` is the day of the next one, and **null when the schedule is finished**. | The piece's companion file: how far through, and when next. |
 | `bookmarks` | One row per marked piece, newest first. `kind` is one of `loved`, `return`, `song`, `reread`; a piece carries at most one. | The piece's companion file. |
 | `reactions` | One row per piece reacted to, newest first. `kind` is `good` or `struck`; a piece carries at most one. | The piece's companion file, one line. |
-| `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made. | Appended to wherever the author keeps what to write next - see [Requests](#requests). |
+| `requests` | One row per topic the reader asked to be written, newest first. Carries the topic's title and shelf as they read when the request was made, and `heard_at` once the author has it. | Appended to wherever the author keeps what to write next - see [Requests](#requests). |
 | `typos` | One row per misspelling reported and not withdrawn. `quoted` is the words as selected; `paragraph` is where they were when spotted, and may have moved since. | A patch file of was / now pairs, applied to the piece on one confirmation - see [Typos](#typos). |
 | `openings` | One row per opening of a piece, oldest first - the log the journal is built from. | Only the off-site copy. Nothing in the vault wants them beside a piece; they are there so that a stand rebuilt from the copy keeps its journal. |
 
@@ -138,10 +138,12 @@ A merge that **rewrites** a file from what the export says must ask for the whol
 
 A **request** does not belong beside a piece - it names something that has not been written, so there is no file to sit next to. It belongs wherever the author keeps what to write next.
 
-- **A request already written down is not written again.** The merge is run often and a request lives on the stand until it is withdrawn, so every run would otherwise add the same line.
+- **A delivered request is marked heard.** Once a request is written into the file, the merge tells the stand - [`POST /api/requests/{shelf}/{topic}/heard`](/rhapsod/reference/api/#post-apirequestsshelftopicheard) - and passes over heard requests from then on. The file is not the record of what was delivered: the author sorts it and empties it, and a merge that looked only there would bring the same requests back every run.
+- **A request already in the file is not written again** - it is only marked heard. That covers a merge that wrote the file and stopped before telling the stand.
+- **A trial run marks nothing.** Hearing is a write to the stand, and a run that only shows what it would do must leave the stand as it found it.
 - **What is already in the file survives.** The author's own notes share that file; a merge that rewrites it wholesale trades a small convenience for the thing it was meant to protect.
 
-The request is withdrawn from the stand - `DELETE /api/requests/{shelf}/{topic}` - by whoever writes the piece, not by the merge. Only the author knows it has been done.
+The request is withdrawn from the stand - `DELETE /api/requests/{shelf}/{topic}` - by whoever writes the piece, not by the merge. Only the author knows it has been done. Until then it stays on the stand as heard: what the author has in hand and has not written yet is `GET /api/requests`, every entry with a `heard_at`.
 
 ## Typos
 

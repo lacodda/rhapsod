@@ -98,6 +98,7 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
         .route("/topics", get(read_topics))
         .route("/requests", get(read_requests))
         .route("/requests/{shelf}/{topic}", post(ask_for).delete(withdraw_request))
+        .route("/requests/{shelf}/{topic}/heard", post(hear_request))
         .route("/bookmarks", get(read_bookmarks))
         .route("/bookmarks/{section}/{piece}", post(set_bookmark).delete(clear_bookmark))
         .route("/reactions", get(read_reactions))
@@ -813,6 +814,19 @@ async fn withdraw_request(_: Reader, State(state): State<AppState>, UrlPath((she
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => not_found("no such request"),
         Err(error) => failed(&error, "the request could not be withdrawn"),
+    }
+}
+
+/// Records that the author has a request in hand.
+///
+/// Called by whatever carries requests to the vault, once it has delivered
+/// one: the next delivery passes over it, and the reader sees it was heard.
+async fn hear_request(_: Reader, State(state): State<AppState>, UrlPath((shelf, topic)): UrlPath<(String, String)>) -> Response {
+    let id = format!("{shelf}/{topic}");
+    match requests::hear(&state.pool, &id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => not_found("no such request"),
+        Err(error) => failed(&error, "the request could not be marked as heard"),
     }
 }
 
@@ -1829,6 +1843,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_heard_request_says_so_in_the_list_and_the_export() {
+        let (web, content) = (web_root(), content_root());
+        write_plan(content.path());
+        let app = app(&web, &content, pool().await);
+
+        let (_, plan) = get_json(app.clone(), "/api/topics").await;
+        let id = plan["shelves"][0]["topics"][0]["id"].as_str().expect("a topic id").to_string();
+        post(app.clone(), &format!("/api/requests/{id}"), "{}").await;
+
+        let (_, asked) = get_json(app.clone(), "/api/requests").await;
+        assert!(asked[0]["heard_at"].is_null(), "a request nobody delivered came out heard");
+
+        let (status, _) = post(app.clone(), &format!("/api/requests/{id}/heard"), "{}").await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        // The reader's list says it reached the author, and the export says
+        // so to the next delivery, which then passes over it.
+        let (_, asked) = get_json(app.clone(), "/api/requests").await;
+        assert!(asked[0]["heard_at"].is_string(), "the reader's list did not show the hearing");
+        let (_, body) = get_json(app.clone(), "/api/export").await;
+        assert!(body["requests"][0]["heard_at"].is_string(), "the export did not carry the hearing");
+
+        // Hearing what nobody asked for is not a success.
+        let (status, body) = post(app, "/api/requests/01-paradoksy-i-effekty/nothing-like-this/heard", "{}").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "no such request");
+    }
+
+    #[tokio::test]
     async fn asking_for_something_the_plan_does_not_offer_is_refused() {
         // A request for a topic nobody published would leave a row the author
         // cannot act on - and would look, in the export, exactly like one they
@@ -2129,6 +2172,7 @@ mod tests {
             ("DELETE", "/api/quotes/some-id"),
             ("POST", "/api/requests/01-shelf/topic"),
             ("DELETE", "/api/requests/01-shelf/topic"),
+            ("POST", "/api/requests/01-shelf/topic/heard"),
             ("POST", "/api/bookmarks/02-istoriya/god-bez-leta"),
             ("DELETE", "/api/bookmarks/02-istoriya/god-bez-leta"),
             ("POST", "/api/reactions/02-istoriya/god-bez-leta"),
