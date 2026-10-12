@@ -212,6 +212,9 @@ function Row({
       <span className="flex flex-col gap-0.5">
         <span className={`text-sm leading-snug ${wanted ? 'text-text' : 'text-dim'}`}>{topic.title}</span>
         {showShelf ? <span className="font-mono text-2xs text-faint">{topic.section}</span> : null}
+        {/* Pressed already says "asked" to a screen reader; heard is a state
+            it cannot tell, so it is said in words. */}
+        {heard ? <span className="sr-only">heard by the author</span> : null}
       </span>
       <span
         className={`flex shrink-0 items-center gap-1 font-mono text-xs ${wanted ? 'text-accent' : 'text-faint'}`}
