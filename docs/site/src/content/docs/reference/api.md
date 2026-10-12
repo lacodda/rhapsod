@@ -37,7 +37,7 @@ curl http://127.0.0.1:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.2","pieces":2,"indexed_seconds_ago":1450}
+{"status":"ok","version":"0.15.3","pieces":2,"indexed_seconds_ago":1450}
 ```
 
 `pieces` answers the question a deploy actually raises: not "is the server up" but "is it serving the library I just published".

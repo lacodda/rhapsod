@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.3] - 2026-10-12
+
+### Bug Fixes
+- Strip a one-liner's quotes only when they enclose it
+- Let a delivered request be heard, not delivered again
+- Tell a screen reader that a request was heard
+
+### Dependencies
+- Update the dependencies and install before every script
+
+### Testing
+- Hold the README's Status to the version being shipped
+
 ## [0.15.2] - 2026-10-07
 
 ### Bug Fixes
