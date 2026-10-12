@@ -464,17 +464,51 @@ fn strip_emphasis(block: &str) -> String {
 }
 
 /// A line without the quotation marks around it, when it is quoted whole.
+///
+/// Only a line that is one quotation loses its marks. `„и“ и „или“` opens and
+/// closes with a quote without being one, and stripping its outer pair leaves
+/// `и“ и „или`. When in doubt the marks stay: a card that shows them is right,
+/// one that shows half of them is not.
 fn unquote(line: &str) -> &str {
     QUOTES
         .iter()
         .find_map(|&(open, close)| {
             let inner = line.strip_prefix(open)?.strip_suffix(close)?;
-            // `"Yes" and "no"` opens and closes with a quote without being one
-            // quotation; with the same mark on both sides, a third one inside
-            // is the tell.
-            (open != close || !inner.contains(close)).then_some(inner)
+            encloses(inner, open, close).then_some(inner)
         })
         .map_or(line, str::trim)
+}
+
+/// Whether everything between an opening and a closing mark is inside them.
+fn encloses(inner: &str, open: char, close: char) -> bool {
+    // `"Yes" and "no"`: with the same mark on both sides there is no telling
+    // an opening from a closing, and a third one inside is the tell.
+    if open == close {
+        return !inner.contains(close);
+    }
+    // With a pair, the marks inside have to nest: a closing mark with nothing
+    // open ends the outer quotation before the line does.
+    let chars: Vec<char> = inner.chars().collect();
+    let mut depth = 0usize;
+    for (at, &ch) in chars.iter().enumerate() {
+        if ch == open {
+            depth += 1;
+        } else if ch == close && !inside_a_word(&chars, at) {
+            let Some(left) = depth.checked_sub(1) else {
+                return false;
+            };
+            depth = left;
+        }
+    }
+    depth == 0
+}
+
+/// Whether the mark at `at` sits between two letters: `don’t` uses the
+/// closing single quote as an apostrophe, and a word does not close a quotation.
+fn inside_a_word(chars: &[char], at: usize) -> bool {
+    let before = at.checked_sub(1).and_then(|i| chars.get(i));
+    let after = chars.get(at + 1);
+    before.is_some_and(|c| c.is_alphabetic()) && after.is_some_and(|c| c.is_alphabetic())
 }
 
 /// The first `# ` heading of a body, if it has one.
@@ -769,6 +803,27 @@ mod tests {
     #[test]
     fn two_quotations_on_one_line_are_not_one() {
         assert_eq!(strip_emphasis("**\"Yes\" and \"no\"**"), "\"Yes\" and \"no\".");
+        // With a pair of marks the line still opens and closes with a quote;
+        // stripping that pair would leave `и“ и „или`.
+        assert_eq!(strip_emphasis("**„и“ и „или“**"), "„и“ и „или“.");
+        assert_eq!(strip_emphasis("**«Да» и «нет»**"), "«Да» и «нет».");
+    }
+
+    #[test]
+    fn a_quotation_inside_a_quotation_keeps_its_own_marks() {
+        assert_eq!(strip_emphasis("**«Слово „лампа“ — не про свет»**"), "Слово „лампа“ — не про свет.");
+        assert_eq!(strip_emphasis("**«Он сказал «нет»»**"), "Он сказал «нет».");
+    }
+
+    #[test]
+    fn an_apostrophe_inside_a_quotation_does_not_close_it() {
+        assert_eq!(strip_emphasis("**\u{2018}Don\u{2019}t put it out\u{2019}**"), "Don\u{2019}t put it out.");
+        // `keepers’ lamp` cannot be told from a closing quote, and when in
+        // doubt the marks stay.
+        assert_eq!(
+            strip_emphasis("**\u{2018}The keepers\u{2019} lamp\u{2019}**"),
+            "\u{2018}The keepers\u{2019} lamp\u{2019}."
+        );
     }
 
     #[test]
