@@ -74,7 +74,7 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.1, running on a Pi at home and read daily on a phone. Reading and
+v0.15.2, running on a Pi at home and read on a phone. Reading and
 progress, notes and highlights, the offline app and the spaced return all work
 today, and a stand backs itself up, stands back up on a new machine and moves
 to a new version by script. Everything the reader leaves - notes, kept lines,

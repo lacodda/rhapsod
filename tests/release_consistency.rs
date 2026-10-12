@@ -277,6 +277,31 @@ fn captured_output_shows_the_version_being_shipped() {
     );
 }
 
+/// The shopfront's Status names the version being shipped.
+///
+/// The paragraph opens with a version and is edited by hand, so it falls behind
+/// the way a transcript does: v0.15.2 shipped with a README that still said
+/// v0.15.1. The first `vX.Y.Z` after the heading is the one a visitor reads as
+/// "where it stands"; a later mention of an older version is history.
+#[test]
+fn the_readme_status_names_the_version_being_shipped() {
+    let version = cargo_field("version");
+    let readme = read("README.md");
+    let status = readme
+        .split_once("\n## Status\n")
+        .map(|(_, rest)| rest.split("\n## ").next().unwrap_or(rest))
+        .expect("the README has a Status section");
+    let named = status
+        .split(|c: char| c.is_whitespace() || c == ',')
+        .find(|word| {
+            word.starts_with('v')
+                && word[1..].split('.').count() == 3
+                && word[1..].split('.').all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .expect("the Status section names a version");
+    assert_eq!(named, format!("v{version}"), "the README's Status still names an older version");
+}
+
 /// Every place a colour is written down as a literal.
 ///
 /// The theme is dowel's, where `--bg` is computed from tokens, and a manifest
