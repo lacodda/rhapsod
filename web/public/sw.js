@@ -17,7 +17,17 @@
 
 const VERSION = '__APP_VERSION__'
 const SHELL = `rhapsod-shell-${VERSION}`
-const LIBRARY = 'rhapsod-library'
+/**
+ * The library, named by the shape of what it holds rather than by the app's
+ * version: an app update must not cost the reader the library they carry, but
+ * a piece cached in a shape the app no longer reads is worse than none. The
+ * number moves only when a piece's JSON changes shape - 2 is paragraphs as
+ * runs of text (v0.15.4) - and the old copy is dropped when this worker takes
+ * over, at home, where the update arrived and the library refills.
+ *
+ * Named again in `src/offline.ts` as `LIBRARY_CACHE`.
+ */
+const LIBRARY = 'rhapsod-library-2'
 
 /**
  * The reader's own state, as the stand last answered it.
@@ -60,8 +70,15 @@ self.addEventListener('activate', (event) => {
       .keys()
       .then((names) =>
         Promise.all(
-          // Old shells go; the library cache is not versioned and stays.
-          names.filter((name) => name.startsWith('rhapsod-shell-') && name !== SHELL).map((name) => caches.delete(name)),
+          // Old shells go, and a library in a shape this app no longer reads.
+          // The library in the current shape stays across every app update.
+          names
+            .filter(
+              (name) =>
+                (name.startsWith('rhapsod-shell-') && name !== SHELL) ||
+                (name.startsWith('rhapsod-library') && name !== LIBRARY),
+            )
+            .map((name) => caches.delete(name)),
         ),
       )
       .then(() => self.clients.claim()),

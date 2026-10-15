@@ -68,7 +68,7 @@ async fn a_published_file_can_be_read_through_the_api() {
     let piece = json(app, "/api/pieces/02-istoriya/god-bez-leta").await;
     assert_eq!(piece["title"], "Год без лета");
     assert!(
-        piece["paragraphs"][0].as_str().unwrap().starts_with("Июнь 1816 года"),
+        piece["paragraphs"][0][0]["text"].as_str().unwrap().starts_with("Июнь 1816 года"),
         "the prose did not survive the round trip"
     );
     assert_eq!(piece["one_liner"], "Письмо шло год и пришло без обратного адреса.");

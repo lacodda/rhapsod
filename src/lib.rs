@@ -12,6 +12,7 @@ pub mod config;
 pub mod db;
 pub mod doctor;
 pub mod feedback;
+pub mod inline;
 pub mod journal;
 pub mod library;
 pub mod marks;

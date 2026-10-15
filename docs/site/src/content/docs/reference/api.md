@@ -155,21 +155,48 @@ curl http://127.0.0.1:8084/api/pieces/19-letters/the-lighthouse-letters
   "title": "The Lighthouse Letters",
   "written": "2026-09-01",
   "words": 1012,
-  "paragraphs": ["A rock off the coast, 1888.", "She writes to him from the mainland, once a month, whatever the sea allows."],
-  "neighbours": ["The Clockmaker's Bet — another kind of waiting.", "The Salt Road — distance measured in a different unit."],
+  "paragraphs": [
+    [{ "text": "A rock off the coast, 1888." }],
+    [
+      { "text": "She writes to him from the mainland, " },
+      { "text": "once a month", "strong": true },
+      { "text": ", whatever the sea allows - in *the* " },
+      { "text": "keeper's hand", "em": true },
+      { "text": "." }
+    ]
+  ],
+  "neighbours": [
+    [{ "text": "The Clockmaker's Bet", "link": "19 — Letters/The Clockmaker's Bet" }, { "text": " — another kind of waiting." }],
+    [{ "text": "The Salt Road — distance measured in a different unit." }]
+  ],
   "one_liner": "The lamp was for ships. She lit it for him.",
-  "song": ["**Situation:** she keeps the light going past the point of duty.", "**Image:** the harbour master's lamp, still burning at dawn."],
-  "reference": ["**What this is:** a fictional keeper and a correspondence.", "**Field:** invented for this example."]
+  "song": [[{ "text": "Situation:", "strong": true }, { "text": " she keeps the light going past the point of duty." }]],
+  "reference": [[{ "text": "What this is:", "strong": true }, { "text": " a fictional keeper and a correspondence." }]]
 }
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `paragraphs` | The prose, one string per paragraph. A list rather than one blob of markdown because reading position is an index into it. |
-| `neighbours` | Related pieces, as the author wrote them: free text, which may name a piece that does not exist yet. |
+| `paragraphs` | The prose, one entry per paragraph, each a list of [runs](#runs-of-text). A list rather than one blob of markdown because reading position is an index into it, counted from zero. |
+| `neighbours` | Related pieces, as the author wrote them: free text, which may name a piece that does not exist yet. One list of runs per line. |
 | `one_liner` | The line meant to be remembered, normalised to end in a full stop. This is what a repetition card shows. `null` when the piece has none. |
-| `song` | The song seed - the author's own workbench, kept whole and shown apart from the prose. |
-| `reference` | The reference block: what the piece is about, stated plainly - area, dating, whether the thing is documented or a legend, where it is now. Empty for a piece written before the format grew this block. |
+| `song` | The song seed - the author's own workbench, kept whole and shown apart from the prose. One list of runs per line. |
+| `reference` | The reference block: what the piece is about, stated plainly - area, dating, whether the thing is documented or a legend, where it is now. One list of runs per line; empty for a piece written before the format grew this block. |
+
+### Runs of text
+
+The server reads the light markdown the format uses inside a line and sends what a reader sees: a block is a list of runs, each `{"text": ...}` with `strong`, `em` or `link` when it is bold, emphasised or a wiki link. A flag that is off is left out.
+
+| Written | Sent |
+| --- | --- |
+| `**once a month**` | `{"text": "once a month", "strong": true}` |
+| `*keeper's hand*` | `{"text": "keeper's hand", "em": true}` |
+| `[[19 — Letters/The Clockmaker's Bet\|the bet]]` | `{"text": "the bet", "link": "19 — Letters/The Clockmaker's Bet"}` |
+| `[[19 — Letters/The Clockmaker's Bet]]` | the same, with the last segment of the path as the text |
+
+A marker that is not closed is text, as is an asterisk that is arithmetic (`2 * 3`) or inside a word. `link` is the path exactly as written: whether it leads to a piece is for the client to decide against the [library index](#get-apilibrary) it holds, so a piece published later turns an old caption into a link without the paragraph being fetched again.
+
+Joining the `text` of a block's runs gives what a reader can select - which is what a [kept line](#post-apiquotes) and a [typo report](#post-apitypos) carry, and what [`GET /api/typos`](#get-apitypos) matches them against.
 
 The id is two path segments rather than one escaped string: it is a shelf and a piece on it, and a URL that shows that is one a person can edit by hand.
 
@@ -1017,10 +1044,22 @@ curl http://127.0.0.1:8084/api/typos
     "piece_id": "02-history/the-salt-road",
     "quoted": "the carvan's ledger",
     "paragraph": 1,
-    "spotted_at": "2026-09-06T23:15:00.878Z"
+    "spotted_at": "2026-09-06T23:15:00.878Z",
+    "found": [
+      { "paragraph": 1, "source": "By spring **the carvan's ledger** was the only record left of the route." }
+    ]
   }
 ]
 ```
+
+| Field | Meaning |
+| --- | --- |
+| `quoted` | The words as the reader selected them - the visible text, with no markers. |
+| `paragraph` | Where they were when the reader saw them, counted from zero. A hint. |
+| `spotted_at` | When the device saw it. |
+| `found` | Every paragraph of the piece as it is published now whose visible text holds the words, with `source`: that paragraph as written in the file, markers and all. Whitespace is compared collapsed, the way a browser draws it. |
+
+**`found` is what the author searches the vault for.** The reader selects rendered text and the file holds markdown, so `the carvan's ledger` selected across a bold word is not in the file as typed; the paragraph it was found in is. One entry is the ordinary case. **None**: the words are not in the published text any more - corrected and published since - or the selection ran across two paragraphs. **More than one**: the words alone do not say which, and `paragraph` is the tiebreak for the eye.
 
 **`quoted` is the report; `paragraph` is a hint.** A position alone would send the author hunting: paragraphs shift whenever a piece is edited, and by the time a report is read the number may point at different words. The words themselves are findable by search in the file no matter how the piece moved since.
 

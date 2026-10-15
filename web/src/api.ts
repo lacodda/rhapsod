@@ -32,13 +32,32 @@ export interface PieceSummary {
   one_liner: string | null
 }
 
+/**
+ * A run of text that looks one way.
+ *
+ * The stand reads the format's light markdown - `**strong**`, `*emphasis*`,
+ * `[[path|caption]]` - and sends what a reader sees, so this app draws text
+ * rather than parsing it (see `src/inline.rs`). A link carries the path as
+ * written; whether it leads anywhere is this device's to say, from the library
+ * it holds.
+ */
+export interface Span {
+  text: string
+  strong?: boolean
+  em?: boolean
+  link?: string
+}
+
+/** A block of text - a paragraph, a list item - as its runs. */
+export type Runs = Span[]
+
 /** A piece with its text. */
 export interface Piece extends PieceSummary {
-  paragraphs: string[]
-  neighbours: string[]
-  song: string[]
+  paragraphs: Runs[]
+  neighbours: Runs[]
+  song: Runs[]
   /** The reference block: what the piece is about, stated plainly. */
-  reference: string[]
+  reference: Runs[]
 }
 
 /** The index: the shelves and everything on them. */

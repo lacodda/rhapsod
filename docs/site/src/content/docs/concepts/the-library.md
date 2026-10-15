@@ -87,6 +87,8 @@ Everything before the first named heading is prose, split into paragraphs. Two t
 
 Paragraphs stay a list rather than becoming one blob of markdown, because reading position is an index into that list.
 
+Inside a paragraph the format uses three things - `**strong**`, `*emphasis*` and wiki links, `[[path|caption]]` or `[[path]]` - and the server reads them, not the app: a paragraph goes out as [runs of text](/rhapsod/reference/api/#runs-of-text), what a reader sees. One reading of the format means a line kept across a bold word is found again, and a misspelling selected across one is found in the file. A marker that is not closed stays as typed. Why the server and not the app: [ADR 0006](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0006-inline-markup-is-read-on-the-server.md).
+
 ### The four trailing blocks
 
 Four headings are known by name and lifted out of the prose, so the reading app can set them apart from the text. Each is `## ` followed by one of the names below, in English or in Russian, in any case - `## In One Line` is the same block as `## In one line`. The English names are the ones the app shows above each block.

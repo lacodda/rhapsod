@@ -52,9 +52,18 @@ const EMPTY = {
   '/api/journal': { months: [], scheduled: 0, recalled: 0, history: [] },
 }
 
+/**
+ * A piece with its text, in the shape the real stand sends: each paragraph
+ * as runs of text (`src/inline.rs`). The second paragraph has a bold run in
+ * the middle, because a line kept across one is what the reader keeps and
+ * what used to be lost.
+ */
 const whole = (piece) => ({
   ...summary(piece),
-  paragraphs: [`${piece.title} begins here.`, 'And carries on for a paragraph or two.'],
+  paragraphs: [
+    [{ text: `${piece.title} begins here.` }],
+    [{ text: 'And carries on ' }, { text: 'for a paragraph', strong: true }, { text: ' or two.' }],
+  ],
   neighbours: [],
   song: [],
   reference: [],

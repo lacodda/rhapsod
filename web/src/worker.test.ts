@@ -35,7 +35,13 @@ function cacheStorage() {
     return cacheOf(store)
   }
   return {
-    api: { open: (name: string) => Promise.resolve(open(name)) },
+    api: {
+      open: (name: string) => Promise.resolve(open(name)),
+      keys: () => Promise.resolve([...stores.keys()]),
+      delete: (name: string) => Promise.resolve(stores.delete(name)),
+    },
+    /** The cache names there are. */
+    names: () => [...stores.keys()].sort(),
     /** The paths held under one cache name. */
     held: (name: string) => [...(stores.get(name)?.keys() ?? [])].map((url) => new URL(url).pathname).sort(),
     put: (name: string, path: string, body: unknown) => open(name).put(path, Response.json(body)),
@@ -79,6 +85,16 @@ function worker(network: (path: string) => Response | null | Promise<Response | 
       })
       return answer
     },
+    /** Lets the worker take over, as a new version does once installed. */
+    async activate(): Promise<void> {
+      let done: Promise<unknown> = Promise.resolve()
+      handlers.get('activate')?.({
+        waitUntil: (promise: Promise<unknown>) => {
+          done = promise
+        },
+      })
+      await done
+    },
     /** Posts a message to the worker and resolves with what it posts back. */
     async post(data: unknown): Promise<unknown[]> {
       const sent = this.send(data)
@@ -118,6 +134,24 @@ function worker(network: (path: string) => Response | null | Promise<Response | 
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
 
+describe('taking over from an older version', () => {
+  it('drops a library held in a shape this app does not read, and keeps the rest', async () => {
+    // Before v0.15.4 a paragraph was a string of markdown; now it is runs of
+    // text. A phone that kept the old copy would open a piece on the train and
+    // draw nothing - so the old copy goes, at home, where the update arrived.
+    const sw = worker(() => null)
+    await sw.caches.put('rhapsod-library', '/api/pieces/a/one', { paragraphs: ['**old** shape'] })
+    await sw.caches.put('rhapsod-library-2', '/api/pieces/a/one', { paragraphs: [[{ text: 'new shape' }]] })
+    await sw.caches.put('rhapsod-reader', '/api/notes', [])
+    await sw.caches.put('rhapsod-shell-0.0.1', '/index.html', 'old app')
+
+    await sw.activate()
+
+    expect(sw.caches.names()).toEqual(['rhapsod-library-2', 'rhapsod-reader'])
+    expect(sw.caches.held('rhapsod-library-2')).toEqual(['/api/pieces/a/one'])
+  })
+})
+
 describe('the reader state, away from home', () => {
   it('is held on the way past, from every read the app makes at the start', async () => {
     const sw = worker((path) => json({ path }))
@@ -155,7 +189,7 @@ describe('the reader state, away from home', () => {
   it('keeps the reader state out of the library cache, which a refresh empties', async () => {
     const sw = worker(() => json([]))
     await sw.get('/api/notes')
-    expect(sw.caches.held('rhapsod-library')).toEqual([])
+    expect(sw.caches.held('rhapsod-library-2')).toEqual([])
   })
 })
 
@@ -205,7 +239,7 @@ describe('filling the library', () => {
     const replies = await sw.post({ type: 'refresh-library', paths })
 
     expect(replies).toEqual([{ type: 'library-filled', refresh: true, reached: true, missed: ['/api/pieces/a/two'] }])
-    expect(sw.caches.held('rhapsod-library')).toContain('/api/pieces/a/three')
+    expect(sw.caches.held('rhapsod-library-2')).toContain('/api/pieces/a/three')
   })
 
   it('reports a whole fill as nothing missed', async () => {
@@ -217,11 +251,11 @@ describe('filling the library', () => {
   it('does not drop pieces after a refresh cut short', async () => {
     // A piece not reached is not known to be gone from the library.
     const sw = worker(() => null)
-    await sw.caches.put('rhapsod-library', '/api/pieces/old/one', { kept: true })
+    await sw.caches.put('rhapsod-library-2', '/api/pieces/old/one', { kept: true })
 
     await sw.post({ type: 'refresh-library', paths })
 
-    expect(sw.caches.held('rhapsod-library')).toEqual(['/api/pieces/old/one'])
+    expect(sw.caches.held('rhapsod-library-2')).toEqual(['/api/pieces/old/one'])
   })
 
   it('runs one fill at a time, however many are asked for', async () => {

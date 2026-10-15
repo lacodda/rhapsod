@@ -938,10 +938,38 @@ async fn clear_reaction(_: Reader, State(state): State<AppState>, UrlPath((secti
 
 /// Every typo reported and not yet withdrawn, newest first.
 async fn read_typos(_: Reader, State(state): State<AppState>) -> Response {
-    match feedback::typos(&state.pool, None).await {
-        Ok(misspelt) => Json(misspelt).into_response(),
-        Err(error) => failed(&error, "the typos could not be read"),
-    }
+    let misspelt = match feedback::typos(&state.pool, None).await {
+        Ok(misspelt) => misspelt,
+        Err(error) => return failed(&error, "the typos could not be read"),
+    };
+    let Ok(library) = state.library.read() else {
+        return lock_poisoned();
+    };
+    let located: Vec<LocatedTypo> = misspelt
+        .into_iter()
+        .map(|typo| LocatedTypo {
+            found: library.locate(&typo.piece_id, &typo.quoted),
+            typo,
+        })
+        .collect();
+    Json(located).into_response()
+}
+
+/// A typo report with where its words stand in the published text.
+///
+/// The reader selected rendered words; the author edits markdown. Finding one
+/// in the other takes the parse the server already made, so the stand answers
+/// with the paragraph as written rather than leaving a script in the vault to
+/// guess at the markers - which it did, and called a bold word "already
+/// corrected".
+#[derive(Serialize)]
+struct LocatedTypo {
+    #[serde(flatten)]
+    typo: feedback::Typo,
+    /// Every paragraph whose visible text holds the words, with its source.
+    /// None: corrected and published since, or a selection across paragraphs.
+    /// More than one: the words alone do not say which.
+    found: Vec<crate::library::Found>,
 }
 
 /// What the app sends when a misspelling is spotted.
@@ -1293,7 +1321,7 @@ mod tests {
         let (status, body) = get_json(app(&web, &content, pool().await), "/api/pieces/02-istoriya/god-bez-leta").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["title"], "Год без лета");
-        assert_eq!(body["paragraphs"][0], "Июнь 1816 года.");
+        assert_eq!(body["paragraphs"][0], json!([{ "text": "Июнь 1816 года." }]));
         assert_eq!(body["one_liner"], "Строка.", "the one-liner is normalised to end in a full stop");
     }
 
@@ -2072,6 +2100,45 @@ mod tests {
 
         let response = app.oneshot(Request::delete("/api/typos/spotted-1").body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn a_typo_says_which_paragraph_holds_its_words_as_written() {
+        let web = web_root();
+        let content = tempfile::tempdir().unwrap();
+        write_piece(
+            content.path(),
+            "02 — История",
+            "Год без лета",
+            "Июнь 1816 года.\n\nВ апреле 1815-го взорвался **вулкан Тамбора**, и небо потемнело.",
+        );
+        let app = app(&web, &content, pool().await);
+
+        // Selected on the screen, where the bold word has no asterisks.
+        post(
+            app.clone(),
+            "/api/typos",
+            r#"{"client_id":"spotted-1","piece_id":"02-istoriya/god-bez-leta","paragraph":1,"quoted":"1815-го взорвался вулкан"}"#,
+        )
+        .await;
+        post(
+            app.clone(),
+            "/api/typos",
+            r#"{"client_id":"spotted-2","piece_id":"02-istoriya/god-bez-leta","paragraph":0,"quoted":"Июль 1816"}"#,
+        )
+        .await;
+
+        let (status, body) = get_json(app, "/api/typos").await;
+        assert_eq!(status, StatusCode::OK);
+        let by_id = |id: &str| body.as_array().unwrap().iter().find(|typo| typo["id"] == id).unwrap().clone();
+        let found = by_id("spotted-1");
+        assert_eq!(found["quoted"], "1815-го взорвался вулкан");
+        assert_eq!(found["found"][0]["paragraph"], 1);
+        assert_eq!(
+            found["found"][0]["source"], "В апреле 1815-го взорвался **вулкан Тамбора**, и небо потемнело.",
+            "the paragraph came back without the markers the author has to find"
+        );
+        assert_eq!(by_id("spotted-2")["found"], json!([]), "words that are not in the text were found");
     }
 
     #[tokio::test]

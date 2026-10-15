@@ -21,7 +21,7 @@ async function reachable(page: Page, yes: boolean): Promise<void> {
 /** What the worker has actually cached, read from the cache itself. */
 async function cached(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
-    const cache = await caches.open('rhapsod-library')
+    const cache = await caches.open('rhapsod-library-2')
     return (await cache.keys()).map((request) => new URL(request.url).pathname).sort()
   })
 }

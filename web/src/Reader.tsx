@@ -7,12 +7,13 @@
  * blocks are set apart from the prose because they are not part of the read.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
-import { ApiError, fetchNext, fetchPiece, reportTypo, type LibraryIndex, type Piece, type PieceSummary } from '@/api'
+import { ApiError, fetchNext, fetchPiece, reportTypo, type LibraryIndex, type Piece, type PieceSummary, type Runs } from '@/api'
 import { BookmarkBar } from '@/Bookmarks'
 import { ReactionBar } from '@/Feedback'
 import { ArrowLeftIcon } from '@/Icons'
+import { markRuns } from '@/inline'
 import { Empty, minutes } from '@/Library'
 import { KeepBar, KeptLines, NoteEditor, useSelection } from '@/Marks'
 import { go } from '@/routing'
@@ -20,14 +21,6 @@ import type { MarksStore } from '@/useMarks'
 import type { BookmarkStore } from '@/useBookmarks'
 import type { ReactionStore } from '@/useReactions'
 import type { ProgressStore } from '@/useProgress'
-
-/**
- * A wiki link as the writing format spells it: `[[path/to/piece|caption]]`,
- * or `[[caption]]` when the path is the caption. The path is vault-qualified
- * so the same text works inside the vault, which is why the reader has to
- * translate it rather than follow it.
- */
-export const WIKI_LINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/gu
 
 /**
  * The id a vault path points at, or null when it names something outside the
@@ -59,110 +52,39 @@ export function linkTarget(path: string, index: LibraryIndex | undefined): strin
 }
 
 /**
- * Renders the light markdown the format uses inside a line - `**bold**` and
- * `[[wiki links]]` - and marks any kept lines found in it.
+ * Draws a block of text as the stand sent it: runs that are strong, emphasised
+ * or a link, with the kept lines picked out across them.
  *
- * The kept lines are matched by their text: an edit in the vault at worst
- * loses a highlight, where an offset would silently move it onto the wrong
- * sentence.
+ * The stand decides what a reader sees (`src/inline.rs`); this only draws it.
+ * A link leads somewhere when the piece it names is on the shelf of this
+ * device, and is its caption alone when it is not - a topic that has not been
+ * written yet, where a dead link would be worse than none.
  */
-function Rich({
-  text,
-  marked,
-  library,
-}: {
-  text: string
-  marked?: string[]
-  library?: LibraryIndex
-}) {
-  const parts = text.split(/\*\*(.+?)\*\*/gu)
+function Rich({ runs, marked, library }: { runs: Runs; marked?: string[]; library?: LibraryIndex }) {
   return (
     <>
-      {parts.map((part, index) =>
-        // The odd parts are what stood between the markers.
-        index % 2 === 1 ? (
-          <strong key={index} className="font-semibold text-text">
-            {part}
-          </strong>
-        ) : (
-          <Linked key={index} text={part} marked={marked} library={library} />
-        ),
-      )}
+      {markRuns(runs, marked).map((run, index) => {
+        let content: React.ReactNode = run.text
+        if (run.marked) content = <mark className="bg-accent/20 text-text">{content}</mark>
+        if (run.em) content = <em>{content}</em>
+        if (run.strong) content = <strong className="font-semibold text-text">{content}</strong>
+        const target = run.link ? linkTarget(run.link, library) : null
+        if (!target) return <Fragment key={index}>{content}</Fragment>
+        return (
+          <button
+            key={index}
+            type="button"
+            onClick={() => {
+              go({ name: 'piece', id: target })
+            }}
+            className="text-accent underline decoration-accent/40 underline-offset-2"
+          >
+            {content}
+          </button>
+        )
+      })}
     </>
   )
-}
-
-/**
- * One run of text with its wiki links turned into what a reader can use: a
- * link when the piece is on the shelf, and the caption alone when it is not.
- *
- * Showing the raw brackets was the old behaviour and the reason this exists:
- * a path meant for the vault has no business being read as prose.
- */
-function Linked({
-  text,
-  marked,
-  library,
-}: {
-  text: string
-  marked?: string[]
-  library?: LibraryIndex
-}) {
-  const out: React.ReactNode[] = []
-  let at = 0
-
-  for (const match of text.matchAll(WIKI_LINK)) {
-    const start = match.index ?? 0
-    if (start > at) {
-      out.push(<Marked key={`t${at}`} text={text.slice(at, start)} marked={marked} />)
-    }
-    const path = match[1]
-    if (!path) continue
-    const label = (match[2] ?? path.split('/').at(-1) ?? path).trim()
-    const target = linkTarget(path.trim(), library)
-    out.push(
-      target ? (
-        <button
-          key={`l${start}`}
-          type="button"
-          onClick={() => go({ name: 'piece', id: target })}
-          className="text-accent underline decoration-accent/40 underline-offset-2"
-        >
-          {label}
-        </button>
-      ) : (
-        // Not written yet: the caption is all the reader needs, and a dead
-        // link would be worse than none.
-        <Marked key={`l${start}`} text={label} marked={marked} />
-      ),
-    )
-    at = start + match[0].length
-  }
-
-  if (at === 0) return <Marked text={text} marked={marked} />
-  if (at < text.length) {
-    out.push(<Marked key={`t${at}`} text={text.slice(at)} marked={marked} />)
-  }
-  return <>{out}</>
-}
-
-/** One run of plain text, with the kept lines inside it picked out. */
-function Marked({ text, marked }: { text: string; marked?: string[] }) {
-  if (!marked || marked.length === 0) return <>{text}</>
-
-  // Longest first, so a quote inside another quote does not split it.
-  for (const quote of [...marked].sort((a, b) => b.length - a.length)) {
-    const at = text.indexOf(quote)
-    if (at === -1) continue
-    return (
-      <>
-        <Marked text={text.slice(0, at)} marked={marked} />
-        <mark className="bg-accent/20 text-text">{quote}</mark>
-        <Marked text={text.slice(at + quote.length)} marked={marked} />
-      </>
-    )
-  }
-  return <>{text}</>
 }
 
 /** A trailing block, set apart from the prose it follows. */
@@ -383,7 +305,7 @@ export function ReaderScreen({
             }}
             className="text-pretty text-xl leading-[1.75] text-text sm:text-lg sm:leading-[1.8]"
           >
-            <Rich text={paragraph} marked={highlights.get(index)} library={library} />
+            <Rich runs={paragraph} marked={highlights.get(index)} library={library} />
           </p>
         ))}
         {selection ? (
@@ -406,7 +328,7 @@ export function ReaderScreen({
           <ul className="flex flex-col gap-2">
             {piece.neighbours.map((neighbour, index) => (
               <li key={index} className="text-lg leading-relaxed text-dim">
-                <Rich text={neighbour} library={library} />
+                <Rich runs={neighbour} library={library} />
               </li>
             ))}
           </ul>
@@ -426,7 +348,7 @@ export function ReaderScreen({
           <ul className="flex flex-col gap-2">
             {piece.song.map((line, index) => (
               <li key={index} className="text-lg leading-relaxed text-dim">
-                <Rich text={line} />
+                <Rich runs={line} />
               </li>
             ))}
           </ul>
@@ -438,7 +360,7 @@ export function ReaderScreen({
           <ul className="flex flex-col gap-2">
             {piece.reference.map((line, index) => (
               <li key={index} className="text-lg leading-relaxed text-dim">
-                <Rich text={line} />
+                <Rich runs={line} />
               </li>
             ))}
           </ul>

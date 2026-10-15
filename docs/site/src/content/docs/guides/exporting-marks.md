@@ -147,15 +147,21 @@ The request is withdrawn from the stand - `DELETE /api/requests/{shelf}/{topic}`
 
 ## Typos
 
-A typo is the one thing in the export that asks for a change to a piece. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what to search the file for, and `paragraph` is only a hint for the eye.
+A typo is the one thing in the export that asks for a change to a piece. It names words, not a position: paragraphs shift whenever a file is edited, so `quoted` is what to search for, and `paragraph` is only a hint for the eye - an index counted from zero, like every paragraph number in the export; a file meant for a person shows it plus one.
 
-The author's own ritual, built on the export and not part of this repository, turns each one into a patch:
+The words are the ones the reader selected on the screen, and the screen draws the file's markdown: `**bold**` without its asterisks, a wiki link as its caption. Words selected across a bold word are therefore not in the file as typed. [`GET /api/typos`](/rhapsod/reference/api/#get-apitypos) answers that with the server's own reading of the format: every report comes with `found`, the paragraphs of the published piece that hold the words, each as it is written in the file.
 
-1. **The merge finds the words** in the piece's file. Found on exactly one line, that line becomes a pair - *was* and *now*, both the same to begin with - in the patch file. Not found, or found on more than one line, the typo goes into a list at the end of the same file instead, with the reason.
+The author's own ritual, built on that and not part of this repository, turns each report into a patch:
+
+1. **The merge looks for the found paragraph** in the piece's file in the vault. Found once there, it becomes a pair - *was* and *now*, both the same to begin with - in the patch file. Otherwise the report goes into a list in the same file with the reason, and each reason is a different thing to do:
+   - **found twice or more on the stand** - the words alone do not say which; fix by hand, `paragraph` is the hint;
+   - **found on the stand but not in the vault** - the paragraph was edited after the last publish; publish and merge again;
+   - **across two paragraphs** - the selection ran over a paragraph break;
+   - **not in the published text any more** - corrected and published since. These are listed apart, as done.
 2. **Someone writes the fix** into *now*: the author, or whoever runs the ritual for them. A pair left unchanged is skipped.
-3. **One confirmation applies all of them.** In the author's ritual a second script of theirs shows each change in its context, and with the confirmation replaces *was* with *now* - only if *was* is still on exactly one line of the file, and without touching any other byte, so the encoding and line endings of the piece survive. Then it withdraws the report from the stand, `DELETE /api/typos/{id}`, because withdrawing is how the reader learns it was dealt with.
+3. **One confirmation applies all of them.** In the author's ritual a second script of theirs shows each change in its context, and with the confirmation replaces *was* with *now* - only if *was* is still in the file exactly once, and without touching any other byte, so the encoding and line endings of the piece survive. Then it withdraws the report from the stand, `DELETE /api/typos/{id}`, because withdrawing is how the reader learns it was dealt with. The same confirmation withdraws the reports listed as done: their words are gone from what the stand serves, so there is nothing left for them to point at.
 
-The fixed piece reaches the stand with the next publish. A report the merge could not place stays on the stand until someone looks, and stays in the list until then.
+The fixed piece reaches the stand with the next publish. A report that needs a person stays on the stand, and in the list, until one looks.
 
 ## What it checks
 

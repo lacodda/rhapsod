@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Serialize;
 
+use crate::inline;
+
 /// Sections are directories named `NN — Title`: the number orders them, the
 /// title is what a reader sees. A directory without that shape is still a
 /// section, named after itself and sorted last.
@@ -84,20 +86,36 @@ pub struct Piece {
     pub written: Option<String>,
     /// Word count of the body as the file declares it, or as counted.
     pub words: usize,
-    /// The prose, one string per paragraph. Reading position is an index into
-    /// this, which is why it is a list and not one blob of markdown.
+    /// The prose, one block of markdown per paragraph. Reading position is an
+    /// index into this, which is why it is a list and not one blob of
+    /// markdown. Sent as runs of text ([`inline`]): what a reader sees is
+    /// decided here, not by the app.
+    #[serde(serialize_with = "inline::as_runs")]
     pub paragraphs: Vec<String>,
     /// Neighbouring pieces, as written: free text, possibly naming a piece that
     /// does not exist yet.
+    #[serde(serialize_with = "inline::as_runs")]
     pub neighbours: Vec<String>,
     /// The line meant to be remembered.
     pub one_liner: Option<String>,
     /// The song seed, kept whole and shown apart from the prose.
+    #[serde(serialize_with = "inline::as_runs")]
     pub song: Vec<String>,
     /// The reference block: what the piece is about, stated plainly. Shown in
     /// a frame of its own, because it deliberately breaks the voice of the
     /// story and reads as a card rather than as a last paragraph.
+    #[serde(serialize_with = "inline::as_runs")]
     pub reference: Vec<String>,
+}
+
+/// A paragraph of a piece in which a reader's words were found.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Found {
+    /// The paragraph's index, as reading positions count them: from zero.
+    pub paragraph: usize,
+    /// The paragraph as it is written in the published file - what the author
+    /// searches for in the vault, markers and all.
+    pub source: String,
 }
 
 /// A piece without its text: what a list of pieces needs and no more.
@@ -262,6 +280,36 @@ impl Library {
     #[must_use]
     pub fn piece(&self, id: &str) -> Option<&Piece> {
         self.pieces.get(id)
+    }
+
+    /// The paragraphs of a piece in which a reader's words stand, as the reader
+    /// saw them.
+    ///
+    /// The words come from a selection on the screen, so they are matched
+    /// against what the screen showed - markers gone, captions in place of
+    /// links, whitespace collapsed - and the paragraph comes back as it is
+    /// written, which is what the author can find in the vault. Empty when the
+    /// words are not in the published text: corrected since, or a selection
+    /// that ran across two paragraphs.
+    #[must_use]
+    pub fn locate(&self, id: &str, words: &str) -> Vec<Found> {
+        let words = inline::collapse(words);
+        let Some(piece) = self.pieces.get(id) else {
+            return Vec::new();
+        };
+        if words.is_empty() {
+            return Vec::new();
+        }
+        piece
+            .paragraphs
+            .iter()
+            .enumerate()
+            .filter(|(_, block)| inline::collapse(&inline::visible(block)).contains(&words))
+            .map(|(paragraph, block)| Found {
+                paragraph,
+                source: block.clone(),
+            })
+            .collect()
     }
 
     /// How many pieces the library holds.
@@ -686,6 +734,86 @@ mod tests {
         assert_eq!(piece.written.as_deref(), Some("2026-09-01"));
         assert_eq!(piece.words, 1012, "the declared word count is used as written");
         assert_eq!(piece.paragraphs, ["Париж, около 1132 года.", "Второй абзац."]);
+    }
+
+    /// A piece whose prose carries every kind of marker the format has.
+    fn marked_up() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let shelf = dir.path().join("30 — Sport");
+        std::fs::create_dir_all(&shelf).unwrap();
+        std::fs::write(
+            shelf.join("Curling.md"),
+            "---\ntopic: Curling\n---\n\n# Curling\n\nSpun clockwise, it drifts **to the right**. On the\nice the drops are called *pebble*.\n\nThe stone listens to the ice, not to you. See [[30 — Sport/Marathon|the marathon]].\n\nAnd once more: the stone listens to the ice.\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_readers_words_are_found_across_a_strong_marker() {
+        // The selection the reader made on the stand: half plain, half bold.
+        let dir = marked_up();
+        let lib = Library::load(dir.path()).unwrap();
+        let found = lib.locate("30-sport/curling", "it drifts to the right");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].paragraph, 0);
+        assert!(
+            found[0].source.contains("**to the right**"),
+            "the paragraph came back without its markers: {:?}",
+            found[0].source
+        );
+    }
+
+    #[test]
+    fn a_readers_words_are_found_across_emphasis_a_line_break_and_a_link() {
+        let dir = marked_up();
+        let lib = Library::load(dir.path()).unwrap();
+        // A soft line break in the file is a space on the screen.
+        assert_eq!(lib.locate("30-sport/curling", "On the ice the drops are called pebble.").len(), 1);
+        let found = lib.locate("30-sport/curling", "See the marathon.");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].paragraph, 1);
+    }
+
+    #[test]
+    fn words_that_stand_twice_are_found_twice() {
+        let dir = marked_up();
+        let lib = Library::load(dir.path()).unwrap();
+        let found = lib.locate("30-sport/curling", "the stone listens to the ice");
+        assert_eq!(
+            found.iter().map(|found| found.paragraph).collect::<Vec<_>>(),
+            [2],
+            "case matters: one paragraph says `The stone`"
+        );
+        assert_eq!(lib.locate("30-sport/curling", "stone listens to the ice").len(), 2);
+    }
+
+    #[test]
+    fn words_that_are_gone_are_not_found() {
+        let dir = marked_up();
+        let lib = Library::load(dir.path()).unwrap();
+        assert!(
+            lib.locate("30-sport/curling", "drifts to the left").is_empty(),
+            "words that are not in the text were found"
+        );
+        assert!(lib.locate("30-sport/curling", "   ").is_empty(), "blank words matched every paragraph");
+        assert!(
+            lib.locate("30-sport/no-such-piece", "the ice").is_empty(),
+            "a piece that does not exist had paragraphs"
+        );
+    }
+
+    #[test]
+    fn the_api_sends_prose_as_runs_of_text() {
+        let dir = marked_up();
+        let lib = Library::load(dir.path()).unwrap();
+        let json = serde_json::to_value(lib.piece("30-sport/curling").unwrap()).unwrap();
+        assert_eq!(json["paragraphs"][0][1], serde_json::json!({ "text": "to the right", "strong": true }));
+        assert_eq!(json["paragraphs"][0][3], serde_json::json!({ "text": "pebble", "em": true }));
+        assert_eq!(
+            json["paragraphs"][1][1],
+            serde_json::json!({ "text": "the marathon", "link": "30 — Sport/Marathon" })
+        );
     }
 
     #[test]

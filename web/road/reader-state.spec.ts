@@ -84,7 +84,7 @@ test.afterEach(async ({ page }) => {
 
 test('the reader\'s note is there with the stand out of reach', async ({ page }) => {
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
   // The first visit's reads went past a worker that was still installing;
   // the note is held only because the app reads it again once it can.
   await holds(page, 'rhapsod-reader', ['/api/notes'])
@@ -99,7 +99,7 @@ test('the reader\'s note is there with the stand out of reach', async ({ page })
 
 test('a note written with nothing held tells the stand it did not know the note', async ({ page }) => {
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
 
   // The defect's own starting point: away from home with none of the
   // reader's marks on the device, so the piece looks as if it had no note.
@@ -130,7 +130,7 @@ test('a note written with nothing held tells the stand it did not know the note'
 
 test('a note typed just before leaving the piece is kept', async ({ page }) => {
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
   await holds(page, 'rhapsod-reader', ['/api/notes'])
 
   await reachable(page, false)
@@ -154,7 +154,7 @@ test('a browser that will not keep the queue holds it in the page and says so', 
     }
   })
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
 
   await reachable(page, false)
   await page.reload()
@@ -177,7 +177,7 @@ test('a browser that will not keep the queue holds it in the page and says so', 
 
 test('the app says the stand is away when the worker answers instead', async ({ page }) => {
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
 
   await reachable(page, false)
   await page.reload()
@@ -223,7 +223,7 @@ test('a refresh that falls short says which part it did not get', async ({ page 
 test('changes kept through a sign-out are delivered after signing in', async ({ page }) => {
   await road(page, '/road/session?state=live')
   await page.goto('/')
-  await holds(page, 'rhapsod-library', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
 
   // On the train: a piece is marked, and the mark waits in the queue.
   await reachable(page, false)
@@ -249,4 +249,31 @@ test('changes kept through a sign-out are delivered after signing in', async ({ 
       timeout: FILL_MS,
     })
     .toBe(true)
+})
+
+test('a line kept across a bold word is picked out in the text', async ({ page }) => {
+  // Kept on the stand and never highlighted again: the app searched each run
+  // between the markers on its own, and the line was whole in none of them.
+  await page.goto('/')
+  await openIcarus(page)
+  const line = await page.evaluate(() => {
+    const paragraph = document.querySelector('[data-paragraph="1"]')
+    const bold = paragraph?.querySelector('strong')
+    const before = bold?.previousSibling
+    const inside = bold?.firstChild
+    if (!before || !inside) throw new Error('the bold run is not where the stand put it')
+    const range = document.createRange()
+    range.setStart(before, 'And '.length)
+    range.setEnd(inside, 'for a'.length)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    return selection?.toString() ?? ''
+  })
+  expect(line).toBe('carries on for a')
+  await page.getByRole('button', { name: 'Keep this line' }).click()
+
+  const marked = page.locator('[data-paragraph="1"] mark')
+  await expect(marked).toHaveCount(2)
+  expect((await marked.allTextContents()).join('')).toBe(line)
 })

@@ -73,7 +73,7 @@ export async function installed(): Promise<boolean | null> {
 }
 
 /** The name the worker gives the library cache; see `public/sw.js`. */
-const LIBRARY_CACHE = 'rhapsod-library'
+const LIBRARY_CACHE = 'rhapsod-library-2'
 
 /**
  * The header the worker puts on an answer it gave from its own copy, because

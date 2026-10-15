@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { LibraryIndex } from '@/api'
-import { linkTarget, WIKI_LINK } from '@/Reader'
+import { linkTarget } from '@/Reader'
 
 /**
  * A library the size of the real one is not needed: two shelves, one of them
@@ -39,27 +39,6 @@ const library: LibraryIndex = {
     },
   ],
 }
-
-describe('WIKI_LINK', () => {
-  it('reads the form the writing format uses', () => {
-    // `[[vault path|caption]]`: the path is qualified so the same text works
-    // inside the vault, and the caption is what a reader should see.
-    const [match] = [...'[[Library/Pieces/02 — История/Год без лета|Год без лета]]'.matchAll(WIKI_LINK)]
-    expect(match?.[1]).toBe('Library/Pieces/02 — История/Год без лета')
-    expect(match?.[2]).toBe('Год без лета')
-  })
-
-  it('reads a link with no caption', () => {
-    const [match] = [...'[[Тесла]]'.matchAll(WIKI_LINK)]
-    expect(match?.[1]).toBe('Тесла')
-    expect(match?.[2]).toBeUndefined()
-  })
-
-  it('finds every link in a line, not just the first', () => {
-    const line = 'см. [[A]] и [[B]] рядом'
-    expect([...line.matchAll(WIKI_LINK)]).toHaveLength(2)
-  })
-})
 
 describe('linkTarget', () => {
   it('resolves a vault path to a piece in the library', () => {
