@@ -175,7 +175,8 @@ function Stopped({ piece }: { piece: Abandoned }) {
           <span className="block h-full rounded-full bg-dim" style={{ width: `${percent}%` }} />
         </span>
         <span className="font-mono text-xs text-faint">
-          paragraph {piece.paragraph} of {piece.paragraphs}
+          {/* Positions count from zero; a person counts from one. */}
+          paragraph {piece.paragraph + 1} of {piece.paragraphs}
         </span>
       </a>
     </li>
