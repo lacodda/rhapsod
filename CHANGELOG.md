@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.4] - 2026-10-15
+
+### Breaking Changes
+- Piece text fields are lists of runs, not strings.
+
+### Bug Fixes
+- Read the format's inline markup on the server
+- Date every gesture by the device that made it
+- Keep the header on one line and call the queue waiting
+- Count a stopped piece's paragraphs from one
+
 ## [0.15.3] - 2026-10-12
 
 ### Bug Fixes

@@ -59,7 +59,7 @@ curl http://localhost:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.3","pieces":0,"indexed_seconds_ago":3}
+{"status":"ok","version":"0.15.4","pieces":0,"indexed_seconds_ago":3}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
@@ -74,7 +74,7 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.3, running on a Pi at home and read on a phone. Reading and
+v0.15.4, running on a Pi at home and read on a phone. Reading and
 progress, notes and highlights, the offline app and the spaced return all work
 today, and a stand backs itself up, stands back up on a new machine and moves
 to a new version by script. Everything the reader leaves - notes, kept lines,
