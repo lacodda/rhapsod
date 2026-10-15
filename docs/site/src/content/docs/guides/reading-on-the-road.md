@@ -55,7 +55,7 @@ A note written away from home never replaces the one the piece already had. The 
 
 ### When changes are delivered
 
-The header counts what waits - `3 kept on this device`. The app delivers it oldest first whenever it sees the stand: on opening, on coming back to the app, when the browser reports a connection, after each new change, and once a minute while the app is open with something waiting. A change the stand refuses is dropped; one it fails to take is retried; one it turns away because the session has ended waits until you sign in again. See [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/#made-here-delivered-later).
+The header counts what waits - `3 waiting`, the same word as the `waiting` row on the stand screen, on one line even on a phone. The app delivers it oldest first whenever it sees the stand: on opening, on coming back to the app, when the browser reports a connection, after each new change, and once a minute while the app is open with something waiting. A change the stand refuses is dropped; one it fails to take is retried; one it turns away because the session has ended waits until you sign in again. See [What the reader remembers](/rhapsod/concepts/what-the-reader-remembers/#made-here-delivered-later).
 
 ## Before you change devices or stands
 

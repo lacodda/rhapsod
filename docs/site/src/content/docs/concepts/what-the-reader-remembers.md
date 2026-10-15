@@ -242,7 +242,7 @@ For everything but notes, a phone with a wrong clock can therefore override a ri
 
 Nothing, in the ordinary case. At home, with everything delivered, there is nothing worth saying and a tick on every screen would be noise.
 
-When there is something to know, the header says it: how many changes are **kept on this device**, or that the stand is away. The wording is deliberate - the changes are saved, just not *there* yet, and "unsaved" would be a lie about work the reader can see on their screen.
+When there is something to know, the header says it: how many changes are **waiting**, or that the stand is away. The wording is deliberate - the changes are saved on the device, just not *there* yet, and "unsaved" would be a lie about work the reader can see on their screen. It is the stand screen's word for the same queue, and not "kept", which the header already uses for kept lines.
 
 The one thing worth knowing about it: those changes live in the browser's storage until they are delivered. Clearing the browser's data for the site while something is waiting throws it away. The app asks the browser to keep that storage rather than clear it when space runs short, and the stand screen's `kept` line says whether the browser agreed. The stand is the durable copy; the queue is a queue.
 

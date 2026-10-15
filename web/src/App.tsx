@@ -253,10 +253,16 @@ function Header({
           className="flex items-center gap-2 rounded-md px-2 py-1 font-mono text-sm font-semibold tracking-tight text-text hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <Mark />
-          rhapsod
+          {/* The mark alone on a phone: the header has to hold the counts and
+              the queue on one line at 360 px, and the hexagon is the name at
+              that size (the line's small level). */}
+          <span className="sr-only sm:not-sr-only">rhapsod</span>
         </a>
       </span>
-      <span className="flex items-baseline gap-3">
+      {/* Never wraps: a header that grows a line when a change is queued
+          moves the text under the reader's eyes, and on a phone that was
+          every gesture. */}
+      <span className="flex items-baseline gap-1 whitespace-nowrap sm:gap-3">
         {due > 0 ? (
           <a
             href="/today"
@@ -284,7 +290,8 @@ function Header({
           </a>
         ) : null}
         <SyncMark sync={sync} />
-        <span className="px-2 font-mono text-xs text-dim">v{__APP_VERSION__}</span>
+        {/* The stand screen says the version too; a phone keeps the room. */}
+        <span className="hidden px-2 font-mono text-xs text-dim sm:inline">v{__APP_VERSION__}</span>
       </span>
     </header>
   )
@@ -309,11 +316,13 @@ function asKind(kind: string | undefined): BookmarkKind | null {
  * only when there is something to know: changes are waiting, or the stand
  * cannot be reached.
  *
- * It says what is true rather than what it fears: "kept on this device" is
- * the honest description of a change written locally, where "offline" would
- * be about the network and "unsaved" would be wrong - it is saved, just not
- * there yet. "Device", not "phone": the same words show on a tablet and a
- * desktop, where "phone" was simply untrue.
+ * It says what is true rather than what it fears: "waiting" is a change
+ * written here and not yet at the stand, where "offline" would be about the
+ * network and "unsaved" would be wrong - it is saved, just not there yet. The
+ * same word as the stand screen's "waiting" row, and not "kept": the header's
+ * "kept" is the reader's kept lines, and one word meaning two things a few
+ * pixels apart was read as one. The longer sentence is the title, for whoever
+ * wants it; the header itself has one line on a phone.
  */
 function SyncMark({ sync }: { sync: SyncState }) {
   if (sync.waiting === 0 && sync.reachable) return null
@@ -324,11 +333,11 @@ function SyncMark({ sync }: { sync: SyncState }) {
     sync.waiting === 0
       ? 'the stand is away'
       : sync.unkept > 0
-        ? `${sync.waiting} held in this page`
-        : `${sync.waiting} kept on this device`
+        ? `${sync.waiting} in this page`
+        : `${sync.waiting} waiting`
   return (
     <span
-      className="px-2 font-mono text-xs text-dim"
+      className="px-1 font-mono text-xs text-dim sm:px-2"
       // The count is not a decoration: a reader who is about to wipe the
       // browser's data should be able to find out that something is waiting.
       title={

@@ -161,8 +161,9 @@ test('a browser that will not keep the queue holds it in the page and says so', 
   await openIcarus(page)
   await page.getByRole('button', { name: 'Loved' }).click()
 
-  // Not "kept on this device": it is not, and closing the page loses it.
-  await expect(page.getByText(/held in this page/)).toBeVisible()
+  // Not "waiting" like a change kept on the device: it is not kept, and
+  // closing the page loses it.
+  await expect(page.getByText(/\d+ in this page/)).toBeVisible()
 
   // And it is not lost while the page lives: home, the browser reports a
   // connection, and the mark goes.
@@ -276,4 +277,30 @@ test('a line kept across a bold word is picked out in the text', async ({ page }
   const marked = page.locator('[data-paragraph="1"] mark')
   await expect(marked).toHaveCount(2)
   expect((await marked.allTextContents()).join('')).toBe(line)
+})
+
+test('the header keeps one line on a phone while a change waits', async ({ page }) => {
+  // The queue's count used to wrap into four lines at 390 px and push the
+  // text down under the reader's eyes - online too, after every gesture.
+  await page.setViewportSize({ width: 360, height: 780 })
+  await page.goto('/')
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await openIcarus(page)
+  const header = page.getByRole('banner')
+  const queue = header.getByText(/\d+ waiting/)
+  // Quiet means quiet: opening the piece is itself a change on its way, and
+  // a header measured while it waited was already the busy one.
+  await expect(queue).toHaveCount(0, { timeout: FILL_MS })
+  const quiet = await header.boundingBox()
+
+  await reachable(page, false)
+  await page.getByRole('button', { name: 'Loved' }).click()
+  await expect(queue).toBeVisible()
+
+  const busy = await header.boundingBox()
+  expect(busy?.height, 'the header grew when a change was queued').toBe(quiet?.height)
+  const lines = await queue.evaluate((element) => element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight))
+  expect(lines, 'the queue count wrapped onto more than one line').toBeLessThan(1.5)
+  const fits = await header.evaluate((element) => element.scrollWidth <= element.clientWidth)
+  expect(fits, 'the header is wider than the phone').toBe(true)
 })
