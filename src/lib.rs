@@ -16,6 +16,7 @@ pub mod inline;
 pub mod journal;
 pub mod library;
 pub mod marks;
+pub mod moment;
 pub mod progress;
 pub mod report;
 pub mod requests;

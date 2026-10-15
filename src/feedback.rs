@@ -58,11 +58,16 @@ pub async fn react(pool: &SqlitePool, piece_id: &str, kind: &str, felt_at: Optio
     // the problem rather than a constraint violation from the driver.
     anyhow::ensure!(KINDS.contains(&kind), "no such reaction kind: {kind}");
 
+    // `felt_at` is when the reader felt it, by the device that was in their
+    // hand: a reaction tapped on Monday's train and delivered on Wednesday was
+    // felt on Monday. The stand's clock stands in only when the device said
+    // nothing.
     sqlx::query(
-        "INSERT INTO reactions (piece_id, kind, changed_at) VALUES (?, ?, ?)
+        "INSERT INTO reactions (piece_id, kind, felt_at, changed_at)
+         VALUES (?1, ?2, coalesce(?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?3)
          ON CONFLICT (piece_id) DO UPDATE
             SET kind       = excluded.kind,
-                felt_at    = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                felt_at    = excluded.felt_at,
                 changed_at = excluded.changed_at
           WHERE coalesce(excluded.changed_at, '') >= coalesce(reactions.changed_at, '')",
     )
@@ -113,7 +118,7 @@ pub async fn reactions(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Rea
 ///
 /// Fails when the id or the quoted words are empty, or the database rejects
 /// the write.
-pub async fn report_typo(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i64, quoted: &str) -> Result<Typo> {
+pub async fn report_typo(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i64, quoted: &str, spotted_at: Option<&str>) -> Result<Typo> {
     let id = id.trim();
     let quoted = quoted.trim();
     anyhow::ensure!(!id.is_empty(), "a typo report needs an id");
@@ -126,9 +131,13 @@ pub async fn report_typo(pool: &SqlitePool, id: &str, piece_id: &str, paragraph:
     // delivery is retried: returning the row that is already there makes a
     // redelivery indistinguishable from the first arrival, which is what lets
     // the queue retry without asking whether it has to.
+    //
+    // Spotted when the device says it was; arrived - `changed_at`, what an
+    // export `since` a moment reads - when the stand got it, so a report
+    // delivered late is not filed before a cursor that was taken meanwhile.
     sqlx::query_as::<_, Typo>(
-        "INSERT INTO typos (id, piece_id, paragraph, quoted)
-         VALUES (?, ?, ?, ?)
+        "INSERT INTO typos (id, piece_id, paragraph, quoted, spotted_at, changed_at)
+         VALUES (?, ?, ?, ?, coalesce(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET id = typos.id
          RETURNING id, piece_id, quoted, paragraph, spotted_at",
     )
@@ -136,6 +145,7 @@ pub async fn report_typo(pool: &SqlitePool, id: &str, piece_id: &str, paragraph:
     .bind(piece_id)
     .bind(paragraph)
     .bind(quoted)
+    .bind(spotted_at)
     .fetch_one(pool)
     .await
     .context("failed to report the typo")
@@ -234,12 +244,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_reaction_delivered_late_is_dated_by_the_device() {
+        // Tapped on Monday's train, heard by the stand much later: the
+        // reaction was felt on Monday. This used to come back as the moment
+        // of delivery.
+        let pool = pool().await;
+        react(&pool, "01-paradoksy/kot", "struck", Some("2026-09-07T07:15:00.000Z")).await.unwrap();
+        assert_eq!(reactions(&pool, None).await.unwrap()[0].felt_at, "2026-09-07T07:15:00.000Z");
+
+        // Changing it keeps the newer moment too.
+        react(&pool, "01-paradoksy/kot", "good", Some("2026-09-08T19:40:00.000Z")).await.unwrap();
+        assert_eq!(reactions(&pool, None).await.unwrap()[0].felt_at, "2026-09-08T19:40:00.000Z");
+    }
+
+    #[tokio::test]
+    async fn a_typo_delivered_late_is_dated_by_the_device_and_filed_by_its_arrival() {
+        let pool = pool().await;
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", Some("2026-09-07T07:15:00.000Z"))
+            .await
+            .unwrap();
+        assert_eq!(typos(&pool, None).await.unwrap()[0].spotted_at, "2026-09-07T07:15:00.000Z");
+
+        // An export taken after Monday but before the report arrived must
+        // still see it: the cursor reads when it arrived, not when it was seen.
+        let since = typos(&pool, Some("2026-09-08T00:00:00.000Z")).await.unwrap();
+        assert_eq!(since.len(), 1, "a report spotted before the cursor and delivered after it was skipped");
+    }
+
+    #[tokio::test]
     async fn a_typo_carries_the_words_it_is_about() {
         // The whole point of the report: a paragraph number alone points at
         // words that may have moved, and the author cannot search for a
         // number.
         let pool = pool().await;
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
 
         let found = typos(&pool, None).await.unwrap();
         assert_eq!(found.len(), 1);
@@ -250,7 +288,7 @@ mod tests {
     #[tokio::test]
     async fn a_typo_without_words_is_refused() {
         let pool = pool().await;
-        assert!(report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "   ").await.is_err());
+        assert!(report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "   ", None).await.is_err());
         let left = typos(&pool, None).await.unwrap();
         assert!(left.is_empty(), "expected nothing, got {left:?}");
     }
@@ -260,8 +298,8 @@ mod tests {
         // The offline queue retries without asking whether it has to; the id
         // the device minted is what makes that safe.
         let pool = pool().await;
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
-        let again = report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
+        let again = report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
 
         assert_eq!(typos(&pool, None).await.unwrap().len(), 1, "a retry made a second report");
         assert_eq!(again.quoted, "прадокс", "the retry did not get the stored report back");
@@ -270,7 +308,7 @@ mod tests {
     #[tokio::test]
     async fn a_typo_report_is_withdrawn() {
         let pool = pool().await;
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
 
         assert!(drop_typo(&pool, "t-1").await.unwrap());
         let left = typos(&pool, None).await.unwrap();
@@ -282,7 +320,7 @@ mod tests {
     async fn an_incremental_export_leaves_out_what_has_not_changed() {
         let pool = pool().await;
         react(&pool, "01-paradoksy/kot", "good", None).await.unwrap();
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
         sqlx::query("UPDATE reactions SET felt_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
             .execute(&pool)
             .await
@@ -339,7 +377,7 @@ mod tests {
         // or withdrawn - so the row that crosses the boundary here is the
         // fresh report, and the aged one is the control: it must stay out.
         let pool = pool().await;
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
         sqlx::query("UPDATE typos SET spotted_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
             .execute(&pool)
             .await
@@ -349,7 +387,7 @@ mod tests {
         assert!(typos(&pool, bound).await.unwrap().is_empty(), "an aged typo was reported as changed");
 
         // A fresh report, spotted after the bound, is returned.
-        report_typo(&pool, "t-2", "01-paradoksy/kot", 6, "втарой прадокс").await.unwrap();
+        report_typo(&pool, "t-2", "01-paradoksy/kot", 6, "втарой прадокс", None).await.unwrap();
 
         let fresh = typos(&pool, bound).await.unwrap();
         assert_eq!(fresh.len(), 1, "a typo reported after the bound did not reach an incremental export");
@@ -358,7 +396,7 @@ mod tests {
         // Redelivering the aged report - the only write `report_typo` still
         // allows against an existing row - is a no-op that does not touch
         // `changed_at`, so it must not bring the aged row back either.
-        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс").await.unwrap();
+        report_typo(&pool, "t-1", "01-paradoksy/kot", 4, "прадокс", None).await.unwrap();
         let after_redelivery = typos(&pool, bound).await.unwrap();
         assert_eq!(after_redelivery.len(), 1, "redelivering an aged report was treated as a change");
         assert_eq!(after_redelivery[0].id, "t-2");

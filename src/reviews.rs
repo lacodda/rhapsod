@@ -96,7 +96,12 @@ pub async fn follow(pool: &SqlitePool, piece_id: &str, read: bool) -> Result<()>
 /// # Errors
 ///
 /// Fails when the database rejects the write.
-pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<bool> {
+pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool, at: Option<&str>) -> Result<bool> {
+    // The answer's moment, by the device that gave it (ADR 0003): the next
+    // date counts from the day the reader answered, and an answer that sat in
+    // a queue for two days does not push the card two days later. Without a
+    // moment from the device the stand's own clock stands in.
+    let at = at.unwrap_or("now");
     // The gap is chosen by the step the piece is about to enter, which is why
     // this reads the count before writing it. Doing the arithmetic in SQL
     // would put the schedule in two places.
@@ -114,11 +119,13 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
     if again {
         sqlx::query(
             "UPDATE reviews
-                SET due_on     = date('now', '+1 day'),
-                    last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                SET due_on     = date(?, '+1 day'),
+                    last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', ?),
                     changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
               WHERE piece_id = ?",
         )
+        .bind(at)
+        .bind(at)
         .bind(piece_id)
         .execute(pool)
         .await
@@ -137,13 +144,15 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
             sqlx::query(
                 "UPDATE reviews
                     SET done       = ?,
-                        due_on     = date('now', '+' || ? || ' days'),
-                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        due_on     = date(?, '+' || ? || ' days'),
+                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', ?),
                         changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                   WHERE piece_id = ?",
             )
             .bind(next)
+            .bind(at)
             .bind(days)
+            .bind(at)
             .bind(piece_id)
             .execute(pool)
             .await
@@ -154,11 +163,12 @@ pub async fn answered(pool: &SqlitePool, piece_id: &str, again: bool) -> Result<
                 "UPDATE reviews
                     SET done       = ?,
                         due_on     = NULL,
-                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                        last_seen  = strftime('%Y-%m-%dT%H:%M:%fZ', ?),
                         changed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                   WHERE piece_id = ?",
             )
             .bind(next)
+            .bind(at)
             .bind(piece_id)
             .execute(pool)
             .await
@@ -277,7 +287,7 @@ mod tests {
         // over would bring it back tomorrow for having been enjoyed twice.
         let pool = pool().await;
         follow(&pool, "a/b", true).await.unwrap();
-        answered(&pool, "a/b", false).await.unwrap();
+        answered(&pool, "a/b", false, None).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(7));
 
         follow(&pool, "a/b", true).await.unwrap();
@@ -291,11 +301,30 @@ mod tests {
         follow(&pool, "a/b", true).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(1));
 
-        answered(&pool, "a/b", false).await.unwrap();
+        answered(&pool, "a/b", false, None).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(7));
 
-        answered(&pool, "a/b", false).await.unwrap();
+        answered(&pool, "a/b", false, None).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(30));
+    }
+
+    #[tokio::test]
+    async fn an_answer_delivered_late_counts_from_the_day_it_was_given() {
+        // Answered on a train three days ago, heard by the stand today: the
+        // week runs from the day of the answer. Counted from delivery, the
+        // card came back three days late.
+        let pool = pool().await;
+        follow(&pool, "a/b", true).await.unwrap();
+        let three_days_ago: String = sqlx::query_scalar("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-3 days')")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        answered(&pool, "a/b", false, Some(&three_days_ago)).await.unwrap();
+        assert_eq!(due_in_days(&pool, "a/b").await, Some(4));
+        assert_eq!(row(&pool, "a/b").await.unwrap().last_seen.as_deref(), Some(three_days_ago.as_str()));
+
+        answered(&pool, "a/b", true, Some(&three_days_ago)).await.unwrap();
+        assert_eq!(due_in_days(&pool, "a/b").await, Some(-2), "asking again counted from delivery");
     }
 
     #[tokio::test]
@@ -305,7 +334,7 @@ mod tests {
         let pool = pool().await;
         follow(&pool, "a/b", true).await.unwrap();
         for _ in 0..3 {
-            answered(&pool, "a/b", false).await.unwrap();
+            answered(&pool, "a/b", false, None).await.unwrap();
         }
 
         let review = row(&pool, "a/b").await.expect("the row is kept as a record");
@@ -320,10 +349,10 @@ mod tests {
         // saying they remember it: the step is not retired.
         let pool = pool().await;
         follow(&pool, "a/b", true).await.unwrap();
-        answered(&pool, "a/b", false).await.unwrap();
+        answered(&pool, "a/b", false, None).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(7));
 
-        answered(&pool, "a/b", true).await.unwrap();
+        answered(&pool, "a/b", true, None).await.unwrap();
         assert_eq!(due_in_days(&pool, "a/b").await, Some(1), "asking again did not bring it back tomorrow");
         assert_eq!(row(&pool, "a/b").await.unwrap().done, 1, "asking again advanced the schedule");
     }
@@ -365,7 +394,7 @@ mod tests {
         assert_eq!(all(&pool, None).await.unwrap().len(), 1, "a full export lost the schedule");
 
         // Answering moves it back into range.
-        answered(&pool, "a/b", false).await.unwrap();
+        answered(&pool, "a/b", false, None).await.unwrap();
         assert_eq!(all(&pool, bound).await.unwrap().len(), 1, "an answered schedule did not reach the export");
     }
 
@@ -374,6 +403,6 @@ mod tests {
         // The app can be holding a stale card - the piece was marked unread
         // on another device - and this is how it finds out.
         let pool = pool().await;
-        assert!(!answered(&pool, "a/b", false).await.unwrap());
+        assert!(!answered(&pool, "a/b", false, None).await.unwrap());
     }
 }

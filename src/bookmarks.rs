@@ -44,11 +44,15 @@ pub async fn mark(pool: &SqlitePool, piece_id: &str, kind: &str, marked_at: Opti
     // the problem rather than a constraint violation from the driver.
     anyhow::ensure!(KINDS.contains(&kind), "no such bookmark kind: {kind}");
 
+    // Marked when the device says it was marked: the list is newest first by
+    // this, and a mark made on a train belongs where the reader made it, not
+    // where the stand happened to hear of it.
     sqlx::query(
-        "INSERT INTO bookmarks (piece_id, kind, changed_at) VALUES (?, ?, ?)
+        "INSERT INTO bookmarks (piece_id, kind, marked_at, changed_at)
+         VALUES (?1, ?2, coalesce(?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?3)
          ON CONFLICT (piece_id) DO UPDATE
             SET kind       = excluded.kind,
-                marked_at  = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                marked_at  = excluded.marked_at,
                 changed_at = excluded.changed_at
           WHERE coalesce(excluded.changed_at, '') >= coalesce(bookmarks.changed_at, '')",
     )
@@ -175,6 +179,19 @@ mod tests {
 
         mark(&pool, "a/b", "song", Some("2026-09-02T18:00:00.000Z")).await.unwrap();
         assert_eq!(all(&pool, None).await.unwrap()[0].kind, "song", "a newer mark was dropped");
+    }
+
+    #[tokio::test]
+    async fn a_mark_delivered_late_is_dated_by_the_device() {
+        let pool = pool().await;
+        mark(&pool, "a/b", "song", Some("2026-09-07T07:15:00.000Z")).await.unwrap();
+        assert_eq!(
+            all(&pool, None).await.unwrap()[0].marked_at,
+            "2026-09-07T07:15:00.000Z",
+            "the mark was dated by its delivery"
+        );
+        mark(&pool, "a/b", "loved", Some("2026-09-08T19:40:00.000Z")).await.unwrap();
+        assert_eq!(all(&pool, None).await.unwrap()[0].marked_at, "2026-09-08T19:40:00.000Z");
     }
 
     #[tokio::test]

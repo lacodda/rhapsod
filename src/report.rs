@@ -292,7 +292,7 @@ mod tests {
         let pool = pool().await;
         feedback::react(&pool, "01-paradoksy/kot", "struck", None).await.unwrap();
         feedback::react(&pool, "01-paradoksy/lzhec", "good", None).await.unwrap();
-        feedback::report_typo(&pool, "t-1", "01-paradoksy/kot", 3, "прадокс").await.unwrap();
+        feedback::report_typo(&pool, "t-1", "01-paradoksy/kot", 3, "прадокс", None).await.unwrap();
 
         let (_dir, lib) = library();
         let report = read(&pool, &lib).await.unwrap();

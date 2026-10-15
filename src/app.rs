@@ -22,6 +22,7 @@ use crate::feedback;
 use crate::journal;
 use crate::library::{Library, PieceSummary, Section};
 use crate::marks;
+use crate::moment::{self, Moment};
 use crate::progress;
 use crate::report;
 use crate::requests;
@@ -491,7 +492,7 @@ struct Moved {
     /// When the device recorded this, so a report drained from an offline
     /// queue does not overwrite a newer one (ADR 0003). Absent from a report
     /// sent live, which is the same thing as "now".
-    marked_at: Option<String>,
+    marked_at: Option<Moment>,
 }
 
 /// Records where the reader is in a piece.
@@ -513,7 +514,7 @@ async fn record_progress(_: Reader, State(state): State<AppState>, UrlPath((sect
         }
     }
 
-    let marked_at = moved.marked_at.as_deref();
+    let marked_at = moment::text(moved.marked_at.as_ref());
 
     if let Some(paragraph) = moved.paragraph {
         if let Err(error) = progress::at_paragraph(&state.pool, &id, paragraph, marked_at).await {
@@ -597,7 +598,7 @@ async fn read_notes(_: Reader, State(state): State<AppState>) -> Response {
 struct NoteBody {
     body: String,
     /// When the device wrote this; see `Moved::marked_at`.
-    marked_at: Option<String>,
+    marked_at: Option<Moment>,
     /// The text the edit started from, in three states: absent (an app from
     /// before bases, still cached on a phone), `null` (the note was not known
     /// when the edit started) and a text. See `marks::settle_note`.
@@ -640,8 +641,8 @@ async fn write_note(_: Reader, State(state): State<AppState>, UrlPath((section, 
 
     let written = match &note.base {
         // An app from before bases: the newest stamp wins, as it always did.
-        None => marks::set_note(&state.pool, &id, &note.body, note.marked_at.as_deref()).await,
-        Some(base) => marks::settle_note(&state.pool, &id, &note.body, note.marked_at.as_deref(), base.as_deref()).await,
+        None => marks::set_note(&state.pool, &id, &note.body, moment::text(note.marked_at.as_ref())).await,
+        Some(base) => marks::settle_note(&state.pool, &id, &note.body, moment::text(note.marked_at.as_ref()), base.as_deref()).await,
     };
     match written {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -668,6 +669,9 @@ struct NewQuote {
     /// quote's id: a highlight made away from home is addressable there, and
     /// a delivery retried after a dropped connection lands once (ADR 0003).
     client_id: String,
+    /// When the line was kept, by the device. A line kept on a train is dated
+    /// by the train, not by the evening it reached the stand.
+    created_at: Option<Moment>,
 }
 
 /// Keeps a line.
@@ -688,6 +692,7 @@ async fn keep_quote(_: Reader, State(state): State<AppState>, Json(quote): Json<
         quote.paragraph,
         &quote.text,
         quote.comment.as_deref(),
+        moment::text(quote.created_at.as_ref()),
     )
     .await
     {
@@ -780,7 +785,7 @@ async fn read_requests(_: Reader, State(state): State<AppState>) -> Response {
 #[derive(Deserialize)]
 struct Asked {
     /// When the device recorded this (ADR 0003).
-    asked_at: Option<String>,
+    asked_at: Option<Moment>,
 }
 
 /// Records that the reader wants a topic written.
@@ -801,7 +806,7 @@ async fn ask_for(_: Reader, State(state): State<AppState>, UrlPath((shelf, topic
     };
 
     let asked_at = body.and_then(|Json(body)| body.asked_at);
-    match requests::ask(&state.pool, &wanted, asked_at.as_deref()).await {
+    match requests::ask(&state.pool, &wanted, moment::text(asked_at.as_ref())).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => failed(&error, "the request could not be saved"),
     }
@@ -845,7 +850,7 @@ struct NewBookmark {
     kind: String,
     /// When the device recorded this, so a mark drained from an offline queue
     /// does not overwrite a newer one (ADR 0003).
-    marked_at: Option<String>,
+    marked_at: Option<Moment>,
 }
 
 /// Marks a piece, or changes which kind of mark it carries.
@@ -865,7 +870,7 @@ async fn set_bookmark(
         }
     }
 
-    match bookmarks::mark(&state.pool, &id, &body.kind, body.marked_at.as_deref()).await {
+    match bookmarks::mark(&state.pool, &id, &body.kind, moment::text(body.marked_at.as_ref())).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         // An unknown kind is the app sending something no screen can draw,
         // not a server failure; 400 lets it tell the difference.
@@ -898,7 +903,7 @@ struct NewReaction {
     kind: String,
     /// When the device recorded this, so a reaction drained from an offline
     /// queue does not overwrite a newer one (ADR 0003).
-    felt_at: Option<String>,
+    felt_at: Option<Moment>,
 }
 
 /// Records how a piece landed, or changes the reaction it carries.
@@ -918,7 +923,7 @@ async fn set_reaction(
         }
     }
 
-    match feedback::react(&state.pool, &id, &body.kind, body.felt_at.as_deref()).await {
+    match feedback::react(&state.pool, &id, &body.kind, moment::text(body.felt_at.as_ref())).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         // An unknown kind is the app sending something no screen can draw and
         // no report can count, not a server failure.
@@ -984,6 +989,8 @@ struct NewTypo {
     /// the same report when it arrives and a retried delivery lands once
     /// (ADR 0003).
     client_id: String,
+    /// When the device saw it.
+    spotted_at: Option<Moment>,
 }
 
 /// Reports a misspelling.
@@ -997,7 +1004,16 @@ async fn report_typo(_: Reader, State(state): State<AppState>, Json(spotted): Js
         }
     }
 
-    match feedback::report_typo(&state.pool, &spotted.client_id, &spotted.piece_id, spotted.paragraph, &spotted.quoted).await {
+    match feedback::report_typo(
+        &state.pool,
+        &spotted.client_id,
+        &spotted.piece_id,
+        spotted.paragraph,
+        &spotted.quoted,
+        moment::text(spotted.spotted_at.as_ref()),
+    )
+    .await
+    {
         Ok(reported) => (StatusCode::CREATED, Json(reported)).into_response(),
         // A report with no words is the app sending a mis-tap: the author
         // would get a position and nothing to search for.
@@ -1099,12 +1115,16 @@ struct Answer {
     /// True when the reader asked for the piece back rather than saying they
     /// remember it: the card keeps its place and returns tomorrow.
     again: bool,
+    /// When the device answered. The next date is counted from this day, not
+    /// from the day the answer reached the stand: a card answered on a train
+    /// on Monday is due again by Monday's schedule.
+    at: Option<Moment>,
 }
 
 /// Records an answer, moving the piece along its schedule or bringing it back.
 async fn answer_review(_: Reader, State(state): State<AppState>, UrlPath((section, piece)): UrlPath<(String, String)>, Json(answer): Json<Answer>) -> Response {
     let id = format!("{section}/{piece}");
-    match reviews::answered(&state.pool, &id, answer.again).await {
+    match reviews::answered(&state.pool, &id, answer.again, moment::text(answer.at.as_ref())).await {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         // No schedule for this piece: the app is holding a stale card, and
         // saying so lets it find out rather than believing it answered.
@@ -2068,6 +2088,23 @@ mod tests {
         let (status, body) = post(app, "/api/reactions/02-istoriya/nothing-like-this", r#"{"kind":"good"}"#).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["error"], "no such piece");
+    }
+
+    #[tokio::test]
+    async fn a_time_that_is_not_a_moment_is_refused_before_it_is_stored() {
+        // A moment goes into the date functions, which answer text they cannot
+        // read with NULL - and a NULL due date reads as a finished schedule.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+        let piece = "/api/reactions/02-istoriya/god-bez-leta";
+
+        let (status, _) = post(app.clone(), piece, r#"{"kind":"good","felt_at":"yesterday"}"#).await;
+        assert!(status.is_client_error(), "a time that is not a moment was taken: {status}");
+        let (_, body) = get_json(app.clone(), "/api/reactions").await;
+        assert_eq!(body, json!([]), "the refused reaction was stored anyway");
+
+        let (status, _) = post(app, piece, r#"{"kind":"good","felt_at":"2026-09-07T07:15:00.000Z"}"#).await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
     }
 
     #[tokio::test]

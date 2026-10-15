@@ -442,10 +442,11 @@ export const fetchSchedule = (): Promise<{ cards: Card[] }> => get<{ cards: Card
  *
  * Queued like every other change: recall happens on a phone, and the stand is
  * at home. `again` is the reader asking for the piece back rather than saying
- * they remember it.
+ * they remember it. `at` is when: the next date counts from the answer, not
+ * from the evening the queue reached the stand.
  */
 export const answerCard = (pieceId: string, again: boolean): Promise<void> =>
-  queue({ path: `/reviews/${pieceId}`, method: 'POST', body: { again } })
+  queue({ path: `/reviews/${pieceId}`, method: 'POST', body: { again, at: now() } })
 
 export const fetchNotes = (): Promise<Note[]> => get<Note[]>('/notes')
 
@@ -478,7 +479,7 @@ export function keepQuote(quote: { piece_id: string; paragraph: number; text: st
   void queue({
     path: '/quotes',
     method: 'POST',
-    body: { ...quote, client_id: kept.id },
+    body: { ...quote, client_id: kept.id, created_at: kept.created_at },
     context: { created_at: kept.created_at },
   })
   return kept
@@ -523,7 +524,7 @@ export function reportTypo(spotted: { piece_id: string; paragraph: number; quote
     id: mintId(),
     spotted_at: now(),
   }
-  void queue({ path: '/typos', method: 'POST', body: { ...spotted, client_id: reported.id } })
+  void queue({ path: '/typos', method: 'POST', body: { ...spotted, client_id: reported.id, spotted_at: reported.spotted_at } })
   return reported
 }
 

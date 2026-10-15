@@ -45,8 +45,11 @@ pub struct Request {
 ///
 /// Fails when the database rejects the write.
 pub async fn ask(pool: &SqlitePool, topic: &Topic, asked_at: Option<&str>) -> Result<()> {
+    // Asked when the device says: a request made away from home is dated by
+    // the reader's day, not by the stand's.
     sqlx::query(
-        "INSERT INTO requests (topic_id, title, section, changed_at) VALUES (?, ?, ?, ?)
+        "INSERT INTO requests (topic_id, title, section, asked_at, changed_at)
+         VALUES (?1, ?2, ?3, coalesce(?4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), ?4)
          ON CONFLICT (topic_id) DO UPDATE
             SET title      = excluded.title,
                 section    = excluded.section,
@@ -153,6 +156,17 @@ mod tests {
         assert!(withdraw(&pool, &topic().id).await.unwrap());
         let left = all(&pool, None).await.unwrap();
         assert!(left.is_empty(), "expected nothing, got {left:?}");
+    }
+
+    #[tokio::test]
+    async fn a_request_delivered_late_is_dated_by_the_device() {
+        let pool = pool().await;
+        ask(&pool, &topic(), Some("2026-09-07T07:15:00.000Z")).await.unwrap();
+        assert_eq!(
+            all(&pool, None).await.unwrap()[0].asked_at,
+            "2026-09-07T07:15:00.000Z",
+            "the request was dated by its delivery"
+        );
     }
 
     #[tokio::test]

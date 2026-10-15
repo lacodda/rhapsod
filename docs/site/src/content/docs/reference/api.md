@@ -26,6 +26,8 @@ Whether it asks for anything depends on how the stand was started. With no `RHAP
 
 A password that protected the reading state and handed out the text would protect nothing that matters, so the library is behind the same gate as the progress.
 
+**Times from the device.** Every write the reader makes can carry the moment it was made, by the clock of the device in their hand ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)): `marked_at`, `asked_at`, `felt_at`, `spotted_at`, `created_at`, `at`. A change can sit in the app's queue for days on the road, and it is dated by the road, not by the evening it reached the stand. Each takes one shape, a UTC time like `2026-10-15T13:45:09.184Z` with the fraction optional; anything else - `yesterday`, an offset, a date alone - is refused with `422` before it reaches a table, because the database's date functions answer text they cannot read with nothing, and a review schedule with no next date reads as finished.
+
 Everything below was captured from a running server over a two-piece library, so the bodies are what you will actually get, down to the field order.
 
 ## `GET /api/health`
@@ -671,6 +673,8 @@ Keeps a line. Answers `201` with the quote as stored.
 
 `client_id` is required, and it **is** the quote's id: it is minted by the device that kept the line, so a highlight made with the stand out of reach can be commented on and removed straight away rather than waiting for an id to come back ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)).
 
+`created_at` is optional and carries the device clock, so a line kept on a train is dated by the train rather than by the evening it reached the stand. `text` is the visible text - [runs](#runs-of-text) joined, no markers - which is what the reading view matches it against to pick the line out again, across a bold word or a link if the line crosses one.
+
 ```sh
 curl -i -X POST http://127.0.0.1:8084/api/quotes   -H 'content-type: application/json'   -d '{"client_id": "1f7c2a3e-5b64-4e21-9a0d-6c8f2b91d4a7", "piece_id": "19-letters/the-lighthouse-letters", "paragraph": 1, "text": "She writes to him from the mainland, once a month, whatever the sea allows.", "comment": "this is the mechanism"}'
 ```
@@ -867,7 +871,7 @@ curl -i -X POST http://127.0.0.1:8084/api/requests/01-paradoxes/the-unfinished-m
 HTTP/1.1 204 No Content
 ```
 
-An optional `asked_at` carries the device clock, as everywhere else (ADR 0003).
+An optional `asked_at` carries the device clock, as everywhere else (ADR 0003): it orders the list and is the request's date, so one made on a train is dated by the train.
 
 **Asking twice is asking once.** There is nothing a second request could mean that the first does not already say, and a count would turn one reader's list into a poll with one voter.
 
@@ -953,7 +957,7 @@ HTTP/1.1 204 No Content
 | `kind` | One of `loved`, `return`, `song`, `reread`. |
 | `marked_at` | When the device recorded this, as an ISO 8601 timestamp. |
 
-`marked_at` works exactly as it does for [progress](#post-apiprogresssectionpiece): a mark delivered from an offline queue does not overwrite a newer one.
+`marked_at` works exactly as it does for [progress](#post-apiprogresssectionpiece): a mark delivered from an offline queue does not overwrite a newer one. It is also the mark's date - when the reader marked it, not when the stand heard.
 
 **One piece has one mark.** Marking a piece `loved` that was already `reread` changes the kind rather than adding a second row - a reader who does that means the newer one.
 
@@ -1011,7 +1015,7 @@ curl -i -X POST http://127.0.0.1:8084/api/reactions/02-history/the-salt-road   -
 HTTP/1.1 204 No Content
 ```
 
-`felt_at` is optional and carries the device clock, so a reaction drained from an offline queue does not overwrite a newer one.
+`felt_at` is optional and carries the device clock, so a reaction drained from an offline queue does not overwrite a newer one - and it is the reaction's date, when it was felt rather than when it arrived.
 
 A kind outside the two is refused:
 
@@ -1070,7 +1074,7 @@ The server never edits the library ([ADR 0002](https://github.com/lacodda/rhapso
 Reports a misspelling.
 
 ```sh
-curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/json'   -d '{"client_id":"9a3f-typo","piece_id":"02-history/the-salt-road","paragraph":1,"quoted":"the carvan's ledger"}'
+curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/json'   -d '{"client_id":"9a3f-typo","piece_id":"02-history/the-salt-road","paragraph":1,"quoted":"the carvan's ledger","spotted_at":"2026-09-06T23:15:00.878Z"}'
 ```
 
 ```json
@@ -1084,6 +1088,8 @@ curl -X POST http://127.0.0.1:8084/api/typos   -H 'content-type: application/jso
 ```
 
 `201`. Like a kept line, the id is minted by the device ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)): a report written away from home is the reader's to withdraw long before the stand hears about it, and a delivery retried after a dropped connection lands once. Posting the same `client_id` twice returns the stored report rather than making a second.
+
+`spotted_at` is optional and carries the device clock: a report made on a train is dated by the train, not by the evening it reached the stand. Without it the stand dates the report itself.
 
 A report with no words is `400`: the author would get a position and nothing to search for.
 
@@ -1245,6 +1251,7 @@ curl http://127.0.0.1:8084/api/reviews
 | Field | Meaning |
 | --- | --- |
 | `again` | `false` retires this return and sets the next one; `true` keeps the piece's place and brings it back tomorrow. |
+| `at` | Optional: when the device answered. The next date counts from this day, so a card answered on a train on Monday and delivered on Wednesday is due again by Monday's schedule. Without it the stand counts from its own day. |
 
 `true` is what the app sends when the reader opens the piece from a card. Going back to read something is not the same as having recalled it, so the step is not retired - and it is not counted as a failure either, which would reset a month of schedule for being curious.
 

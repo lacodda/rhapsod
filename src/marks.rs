@@ -204,7 +204,15 @@ pub async fn notes(pool: &SqlitePool, since: Option<&str>) -> Result<Vec<Note>> 
 /// # Errors
 ///
 /// Fails when the text is empty or the database rejects the write.
-pub async fn add_quote(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i64, text: &str, comment: Option<&str>) -> Result<Quote> {
+pub async fn add_quote(
+    pool: &SqlitePool,
+    id: &str,
+    piece_id: &str,
+    paragraph: i64,
+    text: &str,
+    comment: Option<&str>,
+    created_at: Option<&str>,
+) -> Result<Quote> {
     let text = text.trim();
     let id = id.trim();
     anyhow::ensure!(!text.is_empty(), "a quote needs some text");
@@ -217,9 +225,12 @@ pub async fn add_quote(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i
     // times its delivery is retried. Returning the row that is already there
     // makes a redelivery indistinguishable from the first arrival, which is
     // what lets the queue retry without asking whether it has to.
+    //
+    // Kept when the device says it was kept; changed - what an export `since`
+    // a moment reads - when the stand heard of it.
     sqlx::query_as::<_, Quote>(
-        "INSERT INTO quotes (id, piece_id, paragraph, text, comment, changed_at)
-         VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        "INSERT INTO quotes (id, piece_id, paragraph, text, comment, created_at, changed_at)
+         VALUES (?, ?, ?, ?, ?, coalesce(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET id = excluded.id
          RETURNING id, piece_id, paragraph, text, comment, created_at",
     )
@@ -228,6 +239,7 @@ pub async fn add_quote(pool: &SqlitePool, id: &str, piece_id: &str, paragraph: i
     .bind(paragraph.max(0))
     .bind(text)
     .bind(comment)
+    .bind(created_at)
     .fetch_one(pool)
     .await
     .context("failed to keep the quote")
@@ -328,23 +340,39 @@ mod tests {
     #[tokio::test]
     async fn a_quote_keeps_its_text_and_its_place() {
         let pool = pool().await;
-        let quote = add_quote(&pool, "q-1", "a/b", 3, "  the line itself  ", Some("why it matters")).await.unwrap();
+        let quote = add_quote(&pool, "q-1", "a/b", 3, "  the line itself  ", Some("why it matters"), None)
+            .await
+            .unwrap();
         assert_eq!(quote.text, "the line itself", "the quote was stored with its whitespace");
         assert_eq!(quote.paragraph, 3);
         assert_eq!(quote.comment.as_deref(), Some("why it matters"));
     }
 
     #[tokio::test]
+    async fn a_quote_delivered_late_is_dated_by_the_device_and_filed_by_its_arrival() {
+        let pool = pool().await;
+        let quote = add_quote(&pool, "q-1", "a/b", 3, "kept on a train", None, Some("2026-09-07T07:15:00.000Z"))
+            .await
+            .unwrap();
+        assert_eq!(quote.created_at, "2026-09-07T07:15:00.000Z", "the line was dated by its delivery");
+        assert_eq!(
+            quotes(&pool, Some("2026-09-08T00:00:00.000Z")).await.unwrap().len(),
+            1,
+            "a line kept before the cursor and delivered after it was skipped"
+        );
+    }
+
+    #[tokio::test]
     async fn a_quote_needs_text() {
         // A selection of nothing is a mis-tap, not something to keep.
         let pool = pool().await;
-        assert!(add_quote(&pool, "q-2", "a/b", 0, "   ", None).await.is_err());
+        assert!(add_quote(&pool, "q-2", "a/b", 0, "   ", None, None).await.is_err());
     }
 
     #[tokio::test]
     async fn a_blank_comment_is_no_comment() {
         let pool = pool().await;
-        let quote = add_quote(&pool, "q-3", "a/b", 0, "text", Some("  ")).await.unwrap();
+        let quote = add_quote(&pool, "q-3", "a/b", 0, "text", Some("  "), None).await.unwrap();
         assert!(quote.comment.is_none());
     }
 
@@ -353,8 +381,8 @@ mod tests {
         // Two readings of the same piece can mark the same sentence, and the
         // second is not a mistake to reject.
         let pool = pool().await;
-        let first = add_quote(&pool, "q-4", "a/b", 0, "one line", None).await.unwrap();
-        let second = add_quote(&pool, "q-5", "a/b", 0, "one line", Some("again")).await.unwrap();
+        let first = add_quote(&pool, "q-4", "a/b", 0, "one line", None, None).await.unwrap();
+        let second = add_quote(&pool, "q-5", "a/b", 0, "one line", Some("again"), None).await.unwrap();
         assert_ne!(first.id, second.id);
         assert_eq!(quotes(&pool, None).await.unwrap().len(), 2);
     }
@@ -362,7 +390,7 @@ mod tests {
     #[tokio::test]
     async fn a_comment_can_be_added_and_taken_back() {
         let pool = pool().await;
-        let quote = add_quote(&pool, "q-6", "a/b", 0, "text", None).await.unwrap();
+        let quote = add_quote(&pool, "q-6", "a/b", 0, "text", None, None).await.unwrap();
 
         assert!(comment_on(&pool, &quote.id, Some("a thought")).await.unwrap());
         assert_eq!(quotes(&pool, None).await.unwrap()[0].comment.as_deref(), Some("a thought"));
@@ -412,8 +440,8 @@ mod tests {
         // quote landed, so it retries with the id it minted; the second
         // arrival returns the quote that is already there.
         let pool = pool().await;
-        let first = add_quote(&pool, "device-1", "a/b", 0, "one line", None).await.unwrap();
-        let again = add_quote(&pool, "device-1", "a/b", 0, "one line", None).await.unwrap();
+        let first = add_quote(&pool, "device-1", "a/b", 0, "one line", None, None).await.unwrap();
+        let again = add_quote(&pool, "device-1", "a/b", 0, "one line", None, None).await.unwrap();
 
         assert_eq!(first.id, again.id, "a redelivered quote was kept as a second one");
         assert_eq!(quotes(&pool, None).await.unwrap().len(), 1);
@@ -424,14 +452,14 @@ mod tests {
         // The identity is the act of keeping, not the text: two readings can
         // mark the same sentence, and neither is a retry of the other.
         let pool = pool().await;
-        add_quote(&pool, "device-1", "a/b", 0, "one line", None).await.unwrap();
-        add_quote(&pool, "device-2", "a/b", 0, "one line", None).await.unwrap();
+        add_quote(&pool, "device-1", "a/b", 0, "one line", None, None).await.unwrap();
+        add_quote(&pool, "device-2", "a/b", 0, "one line", None, None).await.unwrap();
         assert_eq!(quotes(&pool, None).await.unwrap().len(), 2);
 
         // And a quote kept with no id at all is nobody's retry: the unique
         // index ignores nulls, which is what lets the two coexist.
-        add_quote(&pool, "q-7", "a/b", 0, "one line", None).await.unwrap();
-        add_quote(&pool, "q-8", "a/b", 0, "one line", None).await.unwrap();
+        add_quote(&pool, "q-7", "a/b", 0, "one line", None, None).await.unwrap();
+        add_quote(&pool, "q-8", "a/b", 0, "one line", None, None).await.unwrap();
         assert_eq!(quotes(&pool, None).await.unwrap().len(), 4);
     }
 
@@ -442,7 +470,7 @@ mod tests {
         // vault would keep a stale comment while every export reported
         // success. Keyed on when the quote was made, this test fails.
         let pool = pool().await;
-        let quote = add_quote(&pool, "q-edit", "a/b", 0, "a line", None).await.unwrap();
+        let quote = add_quote(&pool, "q-edit", "a/b", 0, "a line", None, None).await.unwrap();
 
         // Age the row: nothing has changed since the bound below.
         sqlx::query("UPDATE quotes SET created_at = '2020-01-01T00:00:00.000Z', changed_at = '2020-01-01T00:00:00.000Z'")
@@ -618,7 +646,7 @@ written on the train"
     #[tokio::test]
     async fn a_quote_can_be_removed() {
         let pool = pool().await;
-        let quote = add_quote(&pool, "q-9", "a/b", 0, "text", None).await.unwrap();
+        let quote = add_quote(&pool, "q-9", "a/b", 0, "text", None, None).await.unwrap();
         assert!(remove_quote(&pool, &quote.id).await.unwrap());
         let left = quotes(&pool, None).await.unwrap();
         assert!(left.is_empty(), "expected nothing, got {left:?}");
