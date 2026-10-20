@@ -10,6 +10,9 @@ export default defineConfig({
 		starlight({
 			title: 'rhapsod',
 			description: 'A self-hosted reader for a markdown library: progress, notes and spaced repetition.',
+			// The 404 page is a content page (src/content/docs/404.md): Starlight's
+			// own route would conflict with it and warn on every build.
+			disable404Route: true,
 			logo: {
 				src: './src/assets/logo.svg',
 				alt: 'rhapsod',

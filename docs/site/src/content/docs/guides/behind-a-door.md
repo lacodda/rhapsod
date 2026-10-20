@@ -27,7 +27,7 @@ The stand itself is unchanged. It serves plain HTTP on its port, the proxy holds
 
 Any reverse proxy does this. [Caddy](https://caddyserver.com) is the shortest route, because it has its own certificate authority built in and needs no certificate files at all:
 
-```caddyfile
+```text title="Caddyfile"
 {
 	# NOT `auto_https off`: that turns off certificate management along with
 	# the redirect, and a local certificate would never be issued.
@@ -42,7 +42,7 @@ http://reader.example, https://reader.example {
 
 `tls internal` means "issue this from my own authority". The first request creates the authority and the certificate; nothing is fetched from anywhere.
 
-Caddy installed from its Debian package keeps this file at `/etc/caddy/Caddyfile`; after an edit, `sudo systemctl reload caddy` picks it up without dropping connections. `localhost:8084` assumes Caddy runs on the same machine as the stand.
+Caddy installed from its Debian package keeps this file at `/etc/caddy/Caddyfile`. After an edit, check it with `sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and apply it with `sudo systemctl restart caddy`, which takes the new file every time. `localhost:8084` assumes Caddy runs on the same machine as the stand.
 
 ### A name the phone can find
 
