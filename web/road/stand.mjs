@@ -100,6 +100,18 @@ let received = []
 /** Pieces the stand fails to give, to play a refresh that falls short. */
 let refused = new Set()
 
+/**
+ * How long the worker's script and the library index take to arrive, in
+ * milliseconds.
+ *
+ * Zero unless a test asks. Together they set the order of a first visit: the
+ * app reads the reader's marks at once, the worker takes the page when its
+ * script has come, and the fill goes out when the index has. Which of the
+ * last two lands first is the network's choice - a stand next door always
+ * makes the same one, so a test that needs the other has to ask for it.
+ */
+let delays = { worker: 0, index: 0 }
+
 /** Puts the stand back as the gate found it. */
 function reset() {
   reachable = true
@@ -107,6 +119,7 @@ function reset() {
   notes = new Map([[HOME_NOTE.piece_id, HOME_NOTE]])
   received = []
   refused = new Set()
+  delays = { worker: 0, index: 0 }
 }
 
 /** Reads a request's JSON body, or `null` when there is none. */
@@ -172,6 +185,11 @@ async function handle(request, response) {
     json(response, { refused: [...refused] })
     return
   }
+  if (path === '/road/delays') {
+    delays = { worker: Number(url.searchParams.get('worker') ?? 0), index: Number(url.searchParams.get('index') ?? 0) }
+    json(response, delays)
+    return
+  }
   if (path === '/road/reset') {
     reset()
     json(response, { reset: true })
@@ -233,7 +251,7 @@ async function handle(request, response) {
       return
     }
     if (path === '/api/library') {
-      json(response, { sections: SECTIONS, pieces: PIECES.map(summary) })
+      setTimeout(() => json(response, { sections: SECTIONS, pieces: PIECES.map(summary) }), delays.index)
       return
     }
     if (path === '/api/topics') {
@@ -289,6 +307,7 @@ async function serve(path, response) {
   if (extname(target) === '.js' && target.endsWith('sw.js')) {
     // Chrome refuses a worker whose script is served with the wrong type.
     headers['service-worker-allowed'] = '/'
+    if (delays.worker > 0) await new Promise((resolve) => setTimeout(resolve, delays.worker))
   }
   response.writeHead(200, headers)
   createReadStream(target).pipe(response)

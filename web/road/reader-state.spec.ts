@@ -97,6 +97,25 @@ test('the reader\'s note is there with the stand out of reach', async ({ page })
   await expect(page.getByPlaceholder('What this left you with.')).toHaveValue('A note written at home.')
 })
 
+test('the reader\'s note is held when the worker takes the page before the index arrives', async ({ page }) => {
+  // The other order from the test above: the worker installs, claims the page
+  // and is there for the fill before the app knows what the library holds.
+  // The marks were still read past it, at the start - so the fill going out on
+  // its first try says nothing about whether they are held. Seen in CI on
+  // 2026-10-20, once an update made the worker's install faster.
+  // The marks go out at once and past the worker; its script comes a second
+  // later and it takes the page; the index comes a second after that.
+  await road(page, '/road/delays?worker=1000&index=2500')
+  await page.goto('/')
+  await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])
+  await holds(page, 'rhapsod-reader', ['/api/notes'])
+
+  await reachable(page, false)
+  await page.reload()
+  await openIcarus(page)
+  await expect(page.getByPlaceholder('What this left you with.')).toHaveValue('A note written at home.')
+})
+
 test('a note written with nothing held tells the stand it did not know the note', async ({ page }) => {
   await page.goto('/')
   await holds(page, 'rhapsod-library-2', ['/api/library', '/api/pieces/02-myths/icarus'])

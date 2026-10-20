@@ -25,6 +25,18 @@ export function registerWorker(): void {
   // the library screen is up, and the stand screen opened later still has to
   // know how it ended.
   listen()
+  // A page that loaded without a worker read the reader's marks past it, so
+  // nothing of them is held. Read them once more when the worker takes the
+  // page - tied to that moment and not to the library fill, because a fast
+  // install claims the page before the index arrives as often as after, and
+  // then the fill goes out on the first try with the marks never held.
+  if (!navigator.serviceWorker.controller) {
+    const taken = (): void => {
+      navigator.serviceWorker.removeEventListener('controllerchange', taken)
+      rehold(READER_STATE)
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', taken)
+  }
   // After load, so the worker's install does not compete with the first paint
   // for the connection - on a phone that is the difference between the text
   // appearing now and appearing after a few hundred requests.
@@ -412,11 +424,6 @@ async function postWhenReady(
       })
       if (!post(type, library, ids)) return false
     }
-    // The page was not the worker's when it loaded the reader's marks, so
-    // those reads went past it and nothing of them is held. Read once more
-    // now that they pass through it, or the first trip after a first visit
-    // starts without the reader's notes.
-    rehold(READER_STATE)
     return true
   } catch {
     // No worker to be had; the app still reads online.
