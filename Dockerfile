@@ -8,7 +8,7 @@ FROM node:22-slim AS web
 WORKDIR /web
 
 # Dependencies first, so a source-only change does not reinstall them.
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN corepack enable && corepack prepare --activate && pnpm install --frozen-lockfile
 
 COPY web/ ./

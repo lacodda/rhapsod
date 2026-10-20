@@ -74,14 +74,10 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.4, running on a Pi at home and read on a phone. Reading and
-progress, notes and highlights, the offline app and the spaced return all work
-today, and a stand backs itself up, stands back up on a new machine and moves
-to a new version by script. Everything the reader leaves - notes, kept lines,
-reactions, typos, the journal - leaves the stand in one export, written by a
-script shipped here; what a vault does with it is up to you.
-What landed in each version:
-[CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).
+v0.15.4, read on a phone from a Pi at home: the library, notes, kept lines and
+the spaced return work offline, and all the reader leaves comes back in one
+export. Before 1.0 a release may change the API; its migrations carry the
+data across. [CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).
 
 ## Documentation
 

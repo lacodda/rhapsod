@@ -35,3 +35,16 @@ Thumbs.db
 # CI uploads them as an artifact; locally they are read and thrown away.
 /web/test-results/
 /web/playwright-report/
+
+# Instructions for coding assistants stay on the machine that wrote them: what
+# anyone needs to know about the project is in CONTRIBUTING.md and the docs.
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.github/copilot-instructions.md
+openspec/

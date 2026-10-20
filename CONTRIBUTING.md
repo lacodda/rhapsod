@@ -17,9 +17,18 @@ the password so it stays out of the shell history.
 
 ## The gate
 
-`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`,
-and `pnpm lint` in `web/`. `pnpm road` drives a real Chromium against a running
-stand - that is the one that catches what the unit tests cannot.
+`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`;
+`pnpm lint && pnpm test && pnpm build && pnpm road` in `web/`; `pnpm build` in
+`docs/site/`. `pnpm road` drives a real Chromium against a running stand - that
+is the one that catches what the unit tests cannot.
+
+CI adds two more. `lyrn check` holds the README, the manifests, the changelog
+and the documentation site to one version and one description. The audit
+(`.github/workflows/audit.yml`, and
+[ADR 0007](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0007-dependabot-is-off.md)
+for why it stands in for Dependabot) runs `cargo deny check`, `pnpm audit --prod`
+with `node ../tools/check-licenses.mjs` in `web/`, and `pnpm audit` in
+`docs/site/`; run the same locally before a release.
 
 ## Architecture decisions
 
