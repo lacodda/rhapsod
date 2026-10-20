@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.5] - 2026-10-20
+
+### Bug Fixes
+- Answer --help and --version before reading .env
+
+### Dependencies
+- Update the dependencies
+
+### Documentation
+- Build the site without warnings
+
 ## [0.15.4] - 2026-10-15
 
 ### Breaking Changes
