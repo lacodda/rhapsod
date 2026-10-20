@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Bug Fixes
 - Answer --help and --version before reading .env
+- Hold the reader's marks whenever the worker takes the page
 
 ### Dependencies
 - Update the dependencies
