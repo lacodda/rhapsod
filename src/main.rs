@@ -50,6 +50,10 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Arguments first: `--help` and `--version` answer anywhere, including
+    // next to a .env this program cannot read.
+    let cli = Cli::parse();
+
     // Loaded before the logger so RUST_LOG can live in .env too. A missing
     // file is normal: in production the environment is set by the deployment.
     match dotenvy::dotenv() {
@@ -60,8 +64,6 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("rhapsod=info,tower_http=info")))
         .init();
-
-    let cli = Cli::parse();
 
     // The configuration is read only where it is needed: hashing a password
     // is the first thing an owner does, before there is a library to point
