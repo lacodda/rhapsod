@@ -8,6 +8,11 @@ last release, which follow [Conventional Commits](https://www.conventionalcommit
 $ git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
 ```
 
+## [0.15.7] - 2026-10-26
+
+### Bug Fixes
+- Leave tokio 1.54.0 and ctutils 0.4.3 for their advisories
+
 ## [0.15.6] - 2026-10-26
 
 ### Build
