@@ -1,10 +1,18 @@
 # git-cliff configuration: https://git-cliff.org/docs/configuration
 
 [changelog]
+# The same text as the head of CHANGELOG.md, which `--prepend` recognises as
+# the header and keeps on top.
 header = """
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to this project are documented here. The file is
+written by [git-cliff](https://git-cliff.org) from the commits since the
+last release, which follow [Conventional Commits](https://www.conventionalcommits.org):
+
+```console
+$ git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
+```
 """
 body = """
 {% if version %}\
