@@ -30,6 +30,16 @@ for why it stands in for Dependabot) runs `cargo deny check`, `pnpm audit --prod
 with `node ../tools/check-licenses.mjs` in `web/`, and `pnpm audit` in
 `docs/site/`; run the same locally before a release.
 
+## The mark
+
+The masters are the SVGs in `assets/`: `logo.svg`, `logo-m.svg` and
+`logo-s.svg` for the three sizes, `banner.svg` for the README. Everything else
+is drawn from them by [`lyrn assets`](https://lyrn.lacodda.com/reference/assets/) - the PNGs in
+`assets/`, the touch and manifest icons in `web/public/`, the favicon and logo
+copies the documentation site serves. Change a master, run `lyrn assets`, and
+commit what it wrote; when it reports that `social-preview.png` changed, upload
+that file by hand in the repository's settings, which GitHub offers no API for.
+
 ## Architecture decisions
 
 Anything that would be asked about again later is written down in
