@@ -8,6 +8,17 @@ last release, which follow [Conventional Commits](https://www.conventionalcommit
 $ git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
 ```
 
+## [0.15.6] - 2026-10-26
+
+### Build
+- Draw the mark's rasters with lyrn assets
+
+### CI
+- Run every Node job on the newest release of Node 22
+
+### Dependencies
+- Take pnpm 10.34.7 with the line's standard
+
 ## [0.15.5] - 2026-10-20
 
 ### Bug Fixes

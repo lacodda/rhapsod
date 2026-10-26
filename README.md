@@ -59,7 +59,7 @@ curl http://localhost:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.5","pieces":0,"indexed_seconds_ago":3}
+{"status":"ok","version":"0.15.6","pieces":0,"indexed_seconds_ago":3}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
@@ -74,7 +74,7 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.5, read on a phone from a Pi at home: the library, notes, kept lines and
+v0.15.6, read on a phone from a Pi at home: the library, notes, kept lines and
 the spaced return work offline, and all the reader leaves comes back in one
 export. Before 1.0 a release may change the API; its migrations carry the
 data across. [CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).

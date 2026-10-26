@@ -15,7 +15,7 @@
 # of $ and compose expands $VAR in an unquoted value:
 #
 #   RHAPSOD_PASSWORD_HASH='$argon2id$v=19$m=...'   # from `rhapsod hash`
-#   RHAPSOD_VERSION=0.15.5                 # the released version to run
+#   RHAPSOD_VERSION=0.15.6                 # the released version to run
 services:
   server:
     # The image the release built, not a build on this machine. A Pi
