@@ -8,6 +8,14 @@ last release, which follow [Conventional Commits](https://www.conventionalcommit
 $ git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
 ```
 
+## [0.15.8] - 2026-11-01
+
+### Bug Fixes
+- Hold the whole app for the road, not only its entry
+
+### Build
+- Take minimatch 11 under eslint, for GHSA-g3hv-75wg-m249
+
 ## [0.15.7] - 2026-10-26
 
 ### Bug Fixes
