@@ -4,19 +4,40 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { READER_STATE } from '@/offline'
+import { stampWorker } from '@/stamp'
 
-// The worker itself, not a description of it: `public/sw.js` is read and run
-// in a scope that has just enough of a service worker's - listeners, caches,
-// a network that can be switched off. The road gate proves a browser does the
-// same; this proves the rules, quickly, and says which one broke.
+// The worker itself, not a description of it: `public/sw.js` is read, stamped
+// the way the build stamps it, and run in a scope that has just enough of a
+// service worker's - listeners, caches, a network that can be switched off.
+// The road gate proves a browser does the same; this proves the rules,
+// quickly, and says which one broke.
 
-const SOURCE = readFileSync(fileURLToPath(new URL('../public/sw.js', import.meta.url)), 'utf8')
+const VERSION = '9.9.9'
+const SHELL = `rhapsod-shell-${VERSION}`
+/** The app as a build leaves it, give or take the names. */
+const APP = ['/index.html', '/assets/index-a1.js', '/assets/index-b2.css', '/favicon.svg', '/manifest.webmanifest']
+const RAW = readFileSync(fileURLToPath(new URL('../public/sw.js', import.meta.url)), 'utf8')
+const SOURCE = stampWorker(RAW, VERSION, APP)
 const ORIGIN = 'http://stand.test'
+
+/**
+ * `Request` as the worker sees it: a path is read against the stand it came
+ * from, as a browser reads it against the worker's own address.
+ */
+class StandRequest extends Request {
+  constructor(input: RequestInfo | URL, init?: RequestInit) {
+    super(typeof input === 'string' ? new URL(input, ORIGIN) : input, init)
+  }
+}
 
 type Handler = (event: unknown) => void
 
-/** A Cache Storage that keeps responses in maps, by absolute URL. */
-function cacheStorage() {
+/**
+ * A Cache Storage that keeps responses in maps, by absolute URL. `addAll`
+ * fetches on the worker's network and, like the browser's, puts nothing
+ * unless every answer came and was good.
+ */
+function cacheStorage(fetch: (request: Request) => Promise<Response>) {
   const stores = new Map<string, Map<string, Response>>()
   const key = (request: string | Request): string =>
     new URL(typeof request === 'string' ? request : request.url, ORIGIN).href
@@ -28,6 +49,11 @@ function cacheStorage() {
     },
     delete: (request: string | Request) => Promise.resolve(store.delete(key(request))),
     keys: () => Promise.resolve([...store.keys()].map((url) => new Request(url))),
+    addAll: async (requests: Request[]) => {
+      const answers = await Promise.all(requests.map(async (request) => ({ request, answer: await fetch(request) })))
+      if (answers.some(({ answer }) => !answer.ok)) throw new TypeError('Cache.addAll: a request failed')
+      for (const { request, answer } of answers) store.set(key(request), answer)
+    },
   })
   const open = (name: string) => {
     const store = stores.get(name) ?? new Map<string, Response>()
@@ -55,7 +81,11 @@ function cacheStorage() {
  */
 function worker(network: (path: string) => Response | null | Promise<Response | null>) {
   const handlers = new Map<string, Handler>()
-  const caches = cacheStorage()
+  const fetch = (input: string | Request): Promise<Response> => {
+    const path = new URL(typeof input === 'string' ? input : input.url, ORIGIN).pathname
+    return Promise.resolve(network(path)).then((answer) => answer ?? Promise.reject(new TypeError('Failed to fetch')))
+  }
+  const caches = cacheStorage(fetch)
   const scope = {
     addEventListener: (type: string, handler: Handler) => {
       handlers.set(type, handler)
@@ -64,13 +94,9 @@ function worker(network: (path: string) => Response | null | Promise<Response | 
     skipWaiting: () => Promise.resolve(),
     clients: { claim: () => Promise.resolve() },
   }
-  const fetch = (input: string | Request): Promise<Response> => {
-    const path = new URL(typeof input === 'string' ? input : input.url, ORIGIN).pathname
-    return Promise.resolve(network(path)).then((answer) => answer ?? Promise.reject(new TypeError('Failed to fetch')))
-  }
   // The worker's globals are its parameters here; nothing leaks into the
   // test's own scope.
-  new Function('self', 'caches', 'fetch', SOURCE)(scope, caches.api, fetch)
+  new Function('self', 'caches', 'fetch', 'Request', SOURCE)(scope, caches.api, fetch, StandRequest)
 
   return {
     caches,
@@ -84,6 +110,16 @@ function worker(network: (path: string) => Response | null | Promise<Response | 
         },
       })
       return answer
+    },
+    /** Installs the worker, as the browser does when it first sees it. */
+    async install(): Promise<void> {
+      let done: Promise<unknown> = Promise.resolve()
+      handlers.get('install')?.({
+        waitUntil: (promise: Promise<unknown>) => {
+          done = promise
+        },
+      })
+      await done
     },
     /** Lets the worker take over, as a new version does once installed. */
     async activate(): Promise<void> {
@@ -133,6 +169,63 @@ function worker(network: (path: string) => Response | null | Promise<Response | 
 }
 
 const json = (body: unknown, status = 200): Response => Response.json(body, { status })
+
+describe('the app itself, for the road', () => {
+  it('is held whole at install, not file by file as the page asks for it', async () => {
+    // The defect this exists for: only the entry was held, the scripts were
+    // to be cached "as they are fetched" - and on a first visit they are
+    // fetched before any worker is there to see them. The train opened a
+    // blank page under "Ready for the road."
+    const sw = worker((path) => new Response(path))
+
+    await sw.install()
+
+    expect(sw.caches.held(SHELL)).toEqual([...APP].sort())
+  })
+
+  it('holds nothing of it when one file does not come, so this worker never takes over', async () => {
+    // Half an app is a blank page. A failed install leaves the worker before
+    // it - and its whole shell - answering, which is the browser's rule for a
+    // rejected install and the reason it has to reject.
+    const sw = worker((path) => (path.endsWith('.css') ? null : new Response(path)))
+
+    await expect(sw.install()).rejects.toThrow()
+
+    expect(sw.caches.held(SHELL)).toEqual([])
+  })
+
+  it('opens on the train from what it holds', async () => {
+    let reachable = true
+    const sw = worker((path) => (reachable ? new Response(`fresh ${path}`) : null))
+    await sw.install()
+
+    reachable = false
+    const script = await sw.get('/assets/index-a1.js')
+
+    expect(await script?.text()).toBe('fresh /assets/index-a1.js')
+  })
+})
+
+// That the build stamps the worker at all is the road gate's to prove: an
+// unstamped worker asks for a file that does not exist, never installs, and
+// every road test with the stand out of reach goes red. A scan of
+// vite.config.ts for the right words used to stand in for it.
+describe('the worker as built', () => {
+  it('takes the files the build made, in order, and the version', () => {
+    const built = stampWorker(RAW, '1.2.3', ['/index.html', '/assets/b.js', '/assets/a.js', '/assets/a.js'])
+    expect(built).toContain('const SHELL_FILES = ["/assets/a.js","/assets/b.js","/index.html"]')
+    expect(built).toContain("const VERSION = '1.2.3'")
+    expect(built).not.toContain('__')
+  })
+
+  it('refuses a build without the entry every route is answered with', () => {
+    expect(() => stampWorker(RAW, '1.2.3', ['/assets/a.js'])).toThrow(/index\.html/)
+  })
+
+  it('refuses a worker that has lost the place for the list', () => {
+    expect(() => stampWorker(RAW.replace("['__SHELL_FILES__']", '[]'), '1.2.3', APP)).toThrow(/__SHELL_FILES__/)
+  })
+})
 
 describe('taking over from an older version', () => {
   it('drops a library held in a shape this app does not read, and keeps the rest', async () => {

@@ -338,25 +338,6 @@ fn the_installed_app_is_painted_the_colour_the_app_actually_is() {
     }
 }
 
-#[test]
-fn the_service_worker_takes_the_version_it_is_built_with() {
-    // The worker caches the shell under a name carrying the app's version, so
-    // that a deploy retires the previous one. The placeholder is substituted
-    // at build time (see the plugin in vite.config.ts); if the token is ever
-    // renamed on one side only, every release would share one cache and
-    // readers would sit on an old build with no way to be updated.
-    let worker = read("web/public/sw.js");
-    assert!(
-        worker.contains("__APP_VERSION__"),
-        "sw.js no longer carries the __APP_VERSION__ placeholder the build stamps"
-    );
-    let config = read("web/vite.config.ts");
-    assert!(
-        config.contains("__APP_VERSION__") && config.contains("dist/sw.js"),
-        "the build no longer stamps a version into dist/sw.js"
-    );
-}
-
 /// Every route the router mounts has a section in the API reference.
 ///
 /// The rule is "a feature without a doc does not exist", and the way it gets

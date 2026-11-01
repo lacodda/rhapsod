@@ -6,17 +6,25 @@
  * library is content: it changes when novellas are published, it is what the
  * reader came for, and it must survive an app update untouched.
  *
- * Nothing here is generated. A build plugin would produce a precache manifest
- * of hashed asset names, which is exactly the part this does not need: the
- * shell is fetched network-first and falls back to the cache, so a stale asset
- * list cannot strand the app on an old build.
- *
- * The version below is replaced at build time with the app's own, so a deploy
- * retires the previous shell.
+ * The version and the list of the app's files below are written in at build
+ * time (`src/stamp.ts`): the version names the shell, so a deploy retires the
+ * previous one, and the list is what the shell holds.
  */
 
 const VERSION = '__APP_VERSION__'
 const SHELL = `rhapsod-shell-${VERSION}`
+
+/**
+ * Every file of the built app, the entry among them, as the build left them.
+ *
+ * Held whole at install, because "as they are fetched" never happened for the
+ * ones that mattered: the scripts of a first visit load before any worker
+ * controls the page, and the scripts of an update load through the old worker
+ * into the old shell, which the new one deletes on taking over. Both phones
+ * held the entry and nothing it needs, said "Ready for the road.", and opened
+ * to a blank page on the train (rehearsal, 2026-11-01).
+ */
+const SHELL_FILES = ['__SHELL_FILES__']
 /**
  * The library, named by the shape of what it holds rather than by the app's
  * version: an app update must not cost the reader the library they carry, but
@@ -52,14 +60,16 @@ const FROM_CACHE = 'x-rhapsod-cached'
 const ENTRY = '/index.html'
 
 self.addEventListener('install', (event) => {
-  // The entry point is the one thing worth having before the first offline
-  // start; the assets it pulls are cached as they are fetched. Waiting for a
-  // full asset list here would delay the install for files the reader may
-  // never need.
+  // All of the app or none of it: `addAll` puts nothing unless every file
+  // came, and a worker whose install failed never takes over - the one before
+  // it, with its whole shell, goes on answering. So an active worker always
+  // has an app to open, which is what the stand screen's "an offline reader"
+  // stands for. Past the browser's HTTP cache, so a stale copy of the entry
+  // is not what the train opens.
   event.waitUntil(
     caches
       .open(SHELL)
-      .then((cache) => cache.add(ENTRY))
+      .then((cache) => cache.addAll(SHELL_FILES.map((path) => new Request(path, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   )
 })

@@ -1,19 +1,22 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // The import attribute is required by Vite's native config loader.
 import pkg from './package.json' with { type: 'json' }
+import { stampWorker } from './src/stamp'
 
 /**
- * Stamps the app's version into the service worker.
+ * Stamps the service worker with the app's version and the list of its files.
  *
  * Files in `public/` are copied verbatim, so `define` does not reach them and
- * the worker would ship with the placeholder in it - leaving every deploy
- * sharing one shell cache and readers on an old build after an update. The
+ * the worker would ship with the placeholders in it - leaving every deploy
+ * sharing one shell cache, and the worker holding nothing of the app. The
  * substitution happens on the built file, so `pnpm dev` serves the source as
- * it is written.
+ * it is written. The list is the build's own output, read after it is
+ * written: it cannot name a file the build did not make, or miss one it did.
  */
 function stampServiceWorker(): Plugin {
   return {
@@ -21,15 +24,14 @@ function stampServiceWorker(): Plugin {
     apply: 'build',
     // After the public directory has been copied into the output.
     closeBundle() {
-      const worker = fileURLToPath(new URL('./dist/sw.js', import.meta.url))
-      const source = readFileSync(worker, 'utf8')
-      const stamped = source.replace('__APP_VERSION__', pkg.version)
-      if (stamped === source) {
-        // A worker that did not take the version would cache under a name
-        // that never changes, and no deploy would ever retire the old shell.
-        throw new Error('sw.js has no __APP_VERSION__ to stamp; the shell cache would never be versioned')
-      }
-      writeFileSync(worker, stamped)
+      const dist = fileURLToPath(new URL('./dist/', import.meta.url))
+      const worker = join(dist, 'sw.js')
+      // As the stand serves them: from the root, with forward slashes.
+      const files = readdirSync(dist, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => `/${relative(dist, join(entry.parentPath, entry.name)).split(sep).join('/')}`)
+        .filter((path) => path !== '/sw.js')
+      writeFileSync(worker, stampWorker(readFileSync(worker, 'utf8'), pkg.version, files))
     },
   }
 }

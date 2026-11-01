@@ -70,13 +70,33 @@ export function secure(): boolean {
  * about to leave the house should be told they are ready, not told to reload
  * for a reason that is only true for another second.
  *
+ * An active worker, not a registration: a worker becomes active only once it
+ * holds the whole app (see the install in `public/sw.js`), so "yes" here means
+ * the app opens on the train. A registration alone said yes while the worker
+ * was still fetching the app, and while one that could not was about to fail.
+ * One still installing is waited for; one that fails is a "no".
+ *
  * `null` where this browser has no service workers - a different answer from
  * "not installed", because nothing the reader does will change it.
  */
 export async function installed(): Promise<boolean | null> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null
   try {
-    return (await navigator.serviceWorker.getRegistration('/')) !== undefined
+    const registration = await navigator.serviceWorker.getRegistration('/')
+    if (registration === undefined) return false
+    if (registration.active !== null) return true
+    const coming = registration.installing ?? registration.waiting
+    if (coming === null) return false
+    return await new Promise<boolean>((resolve) => {
+      const settle = (): void => {
+        if (coming.state === 'activating' || coming.state === 'activated') resolve(true)
+        else if (coming.state === 'redundant') resolve(false)
+        else return
+        coming.removeEventListener('statechange', settle)
+      }
+      coming.addEventListener('statechange', settle)
+      settle()
+    })
   } catch {
     // A browser that refuses to say - a private window in some browsers -
     // is one where nothing is held, which is what a reader needs to know.

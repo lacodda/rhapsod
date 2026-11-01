@@ -29,7 +29,7 @@ On iPhone and iPad the Home Screen app keeps its own storage, apart from Safari'
 **The stand** opens with one sentence - **Ready for the road.** or **Not ready for the road.**, with the reason - and the four checks behind it, in the order they break:
 
 - **a secure connection** - the page came over `https`.
-- **an offline reader** - the part that answers without the stand is installed. If not, reloading once usually installs it.
+- **an offline reader** - the app itself is held on the device, with the part that answers without the stand. If not, reloading once at home usually installs it.
 - **the list of what is on the shelves** - without it the app cannot start away from home.
 - **the pieces themselves** - every piece on the shelves you keep.
 

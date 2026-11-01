@@ -70,11 +70,14 @@ const whole = (piece) => ({
 })
 
 /**
- * Whether the API answers at all.
+ * Whether the stand answers at all.
  *
- * The gate turns this off to play being on a train: the app and the worker
- * are left exactly as they were, and only the stand goes away - which is what
- * actually happens when the reader leaves the house.
+ * The gate turns this off to play being on a train: the browser, its caches
+ * and the worker are left exactly as they were, and the stand goes away -
+ * which is what actually happens when the reader leaves the house. All of it,
+ * the app as well as the API: the stand is what serves the app, and a switch
+ * that cut only the API kept handing out the scripts the worker had never
+ * held, so a phone that opened to a blank screen on the train passed here.
  */
 let reachable = true
 
@@ -205,13 +208,14 @@ async function handle(request, response) {
     return
   }
 
+  if (!reachable) {
+    // Destroyed rather than answered with a status: a stand out of reach
+    // does not reply, and a 503 would be a different thing to handle.
+    request.destroy()
+    return
+  }
+
   if (path.startsWith('/api/')) {
-    if (!reachable) {
-      // Destroyed rather than answered with a status: a stand out of reach
-      // does not reply, and a 503 would be a different thing to handle.
-      request.destroy()
-      return
-    }
     if (path === '/api/health') {
       json(response, { status: 'ok', version: '0.13.0', pieces: PIECES.length, indexed_seconds_ago: 12 })
       return

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { LibraryIndex } from '@/api'
-import { arrival, paths, shortfall, staleBy } from '@/offline'
+import { arrival, installed, paths, shortfall, staleBy } from '@/offline'
 
 const LIBRARY: LibraryIndex = {
   sections: [
@@ -94,5 +94,80 @@ describe('arrival', () => {
     // missing is not a piece missing.
     expect(arrival(false, null)).toBe('stopped')
     expect(arrival(false, filled(true, ['/api/topics']))).toBe('stopped')
+  })
+})
+
+describe('installed', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** A browser whose registration for the app is the one given. */
+  function browser(registration: unknown): void {
+    vi.stubGlobal('navigator', { serviceWorker: { getRegistration: () => Promise.resolve(registration) } })
+  }
+
+  /** A worker on its way through install, moved on by the test. */
+  function coming() {
+    const listeners = new Set<() => void>()
+    const worker = {
+      state: 'installing',
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      become(state: string) {
+        worker.state = state
+        for (const listener of [...listeners]) listener()
+      },
+    }
+    return worker
+  }
+
+  /** Lets the promises already settled run their callbacks. */
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('says yes for a worker that has taken over, which holds the whole app', async () => {
+    browser({ active: {}, installing: null, waiting: null })
+    expect(await installed()).toBe(true)
+  })
+
+  it('says no where nothing is registered', async () => {
+    browser(undefined)
+    expect(await installed()).toBe(false)
+  })
+
+  it('does not say yes while the worker is still fetching the app', async () => {
+    // A registration was taken for a yes, and "Ready for the road." stood
+    // over a worker that held the entry and nothing it needs.
+    const worker = coming()
+    browser({ active: null, installing: worker, waiting: null })
+    let answer: boolean | null | undefined
+    const asked = installed().then((said) => {
+      answer = said
+    })
+
+    await settled()
+    expect(answer).toBeUndefined()
+    worker.become('installed')
+    await settled()
+    expect(answer).toBeUndefined()
+
+    worker.become('activating')
+    await asked
+    expect(answer).toBe(true)
+  })
+
+  it('says no when the worker could not fetch the whole app', async () => {
+    const worker = coming()
+    browser({ active: null, installing: worker, waiting: null })
+    const asked = installed()
+
+    worker.become('redundant')
+
+    expect(await asked).toBe(false)
+  })
+
+  it('says nothing where the browser has no service workers', async () => {
+    vi.stubGlobal('navigator', {})
+    expect(await installed()).toBeNull()
   })
 })
