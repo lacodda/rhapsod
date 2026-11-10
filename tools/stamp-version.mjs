@@ -11,8 +11,8 @@
 //   how a reader checks that the stand they just brought up is this release;
 // - `RHAPSOD_VERSION=X.Y.Z`, the line of a stand's `.env` that picks the image.
 //
-// release.toml runs this after the bump, so the release commit carries them.
-// Text between `<!-- historical versions -->` and its closing comment is what
+// It belongs right after the release bump (see release.toml), so the release
+// commit carries them. Text between `<!-- historical versions -->` and its closing comment is what
 // happened on a day and stays as written.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
