@@ -1,0 +1,41 @@
+# How rhapsod is released, read by furca's release engine: `furca release
+# plan` says what the next release is and what stands in its way, `furca
+# release run` carries it out - bump, changelog, gate, commit, push, green CI,
+# tag, publish - and checks what went out. `lyrn check` reads it too.
+# Reference: https://lacodda.github.io/furca/reference/release/
+
+[project]
+name = "rhapsod"
+changelog = "CHANGELOG.md"
+manifests = [
+    "Cargo.toml",
+    "web/package.json",
+    "docs/site/package.json",
+]
+# ADRs record what happened: the versions they name are history.
+as_written = ["docs/adr/"]
+
+[gate]
+# Formatting only: it takes seconds and compiles nothing. The rest of the gate
+# is CI, which the run waits for before the tag.
+commands = [
+    "cargo fmt --check",
+]
+
+[ci]
+provider = "github"
+workflow = "ci.yml"
+# The container image the stand runs, pushed once release.yml has put the
+# release page out.
+publish = "publish.yml"
+
+[page]
+assets = [
+    "rhapsod-{tag}-x86_64-pc-windows-msvc.zip",
+    "rhapsod-{tag}-x86_64-unknown-linux-gnu.tar.gz",
+    "rhapsod-{tag}-aarch64-unknown-linux-gnu.tar.gz",
+]
+
+# No `[post.deploy]`: an update of the stand swaps the image and keeps a copy
+# of the reader's database first, on the stand and at home, which a deploy of
+# files does not do. `tools/stand/update` is that step, run after the release.

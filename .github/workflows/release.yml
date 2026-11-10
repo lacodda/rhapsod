@@ -1,9 +1,10 @@
 name: Release
 
 # A GitHub release per tag: the server binary for the three platforms it is
-# run on, with notes cut from the changelog. The container image, which is how
-# the stand actually installs it, is published by publish.yml from the same
-# tag.
+# run on, with notes cut from the changelog and the `Checked live` list of
+# .github/release-notes.md. The container image, which is how the stand
+# actually installs it, is published by publish.yml from the same tag once
+# this has put the release out.
 on:
   push:
     tags: ['v*']
@@ -73,6 +74,16 @@ jobs:
         with:
           config: cliff.toml
           args: --latest --strip header
+      # The changelog's section, then the list ticked once the release has
+      # been seen working: on the stand, and by hand on a phone.
+      - name: Write the release notes
+        env:
+          CHANGES: ${{ steps.cliff.outputs.content }}
+        run: |
+          printf '%s
+
+' "$CHANGES" > release-notes.md
+          cat .github/release-notes.md >> release-notes.md
       - uses: actions/download-artifact@v8
         with:
           path: packages
@@ -80,5 +91,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          body: ${{ steps.cliff.outputs.content }}
+          body_path: release-notes.md
           files: packages/*
