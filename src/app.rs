@@ -6,7 +6,8 @@ use std::sync::{Arc, RwLock};
 use axum::{
     Json, Router,
     extract::{Path as UrlPath, State},
-    http::{StatusCode, header},
+    http::{HeaderValue, StatusCode, header},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
@@ -123,10 +124,44 @@ pub fn router_with(state: AppState, web_dir: &Path) -> Router {
     let files = ServeDir::new(web_dir);
     let spa = get(move || serve_index(index.clone()));
 
-    Router::new()
-        .nest("/api", api)
+    // The build's own files are served apart from the client routes: a name
+    // under `/assets/` that is not there is a file from a build that has been
+    // replaced, not a page, and answering it with the app would hand a script
+    // tag a document - one a browser told to keep it for a year would keep.
+    let app = Router::new()
+        .nest_service("/assets", ServeDir::new(web_dir.join("assets")))
         .fallback_service(files.fallback(spa))
-        .layer(TraceLayer::new_for_http())
+        .layer(middleware::from_fn(cache_policy));
+
+    Router::new().nest("/api", api).merge(app).layer(TraceLayer::new_for_http())
+}
+
+/// What the build names by its content: a new build is a new name, so the
+/// bytes behind one never change and a year is as good as forever.
+const KEPT: &str = "public, max-age=31536000, immutable";
+
+/// Everything else the app is made of - the entry, the worker, the manifest,
+/// the icons - keeps its name across builds, so a copy is used only once the
+/// stand has said it is still the one it serves.
+///
+/// Without a word the browser guesses, from how old the file is, and an entry
+/// guessed fresh after a deploy names scripts the stand no longer has.
+const ASK_FIRST: &str = "no-cache";
+
+/// Says how long the browser may keep each file of the app.
+///
+/// A `304` is told the same as the `200` it stands for, because the headers of
+/// a `304` replace those of the copy it confirms. The API is not under this:
+/// it sends no validators, so nothing of it is kept by guesswork, and the
+/// worker decides what of it travels.
+async fn cache_policy(request: axum::extract::Request, next: Next) -> Response {
+    let hashed = request.uri().path().starts_with("/assets/");
+    let mut response = next.run(request).await;
+    let status = response.status();
+    let kept = hashed && (status.is_success() || status == StatusCode::NOT_MODIFIED);
+    let policy = HeaderValue::from_static(if kept { KEPT } else { ASK_FIRST });
+    response.headers_mut().insert(header::CACHE_CONTROL, policy);
+    response
 }
 
 /// The SPA's entry point, answered with 200 for any client-side route.
@@ -1232,6 +1267,8 @@ mod tests {
         std::fs::write(dir.path().join("index.html"), "<!doctype html><title>rhapsod</title>").unwrap();
         std::fs::create_dir_all(dir.path().join("assets")).unwrap();
         std::fs::write(dir.path().join("assets/app.js"), "console.log('rhapsod')").unwrap();
+        std::fs::write(dir.path().join("sw.js"), "self.addEventListener('fetch', () => {})").unwrap();
+        std::fs::write(dir.path().join("manifest.webmanifest"), "{\"name\":\"rhapsod\"}").unwrap();
         dir
     }
 
@@ -2457,6 +2494,72 @@ mod tests {
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert!(body.starts_with(b"<!doctype"), "a client route did not get the SPA");
+    }
+
+    async fn get_raw(app: Router, request: Request<Body>) -> Response {
+        app.oneshot(request).await.unwrap()
+    }
+
+    fn cache_control(response: &Response) -> &str {
+        response.headers().get(header::CACHE_CONTROL).map_or("", |value| value.to_str().unwrap())
+    }
+
+    #[tokio::test]
+    async fn the_builds_own_files_are_kept_for_a_year() {
+        // Their names are their contents, so a phone that asks for them again
+        // asks the Pi for bytes it already holds.
+        let (web, content) = (web_root(), content_root());
+        let response = get_raw(app(&web, &content, pool().await), Request::get("/assets/app.js").body(Body::empty()).unwrap()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(cache_control(&response), "public, max-age=31536000, immutable");
+    }
+
+    #[tokio::test]
+    async fn a_confirmed_copy_of_a_build_file_keeps_its_year() {
+        // A 304's headers replace those of the copy it confirms: telling it
+        // anything else would turn a year into "ask every time".
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+        let first = get_raw(app.clone(), Request::get("/assets/app.js").body(Body::empty()).unwrap()).await;
+        let modified = first.headers().get(header::LAST_MODIFIED).expect("the file says when it changed").clone();
+
+        let again = Request::get("/assets/app.js")
+            .header(header::IF_MODIFIED_SINCE, modified)
+            .body(Body::empty())
+            .unwrap();
+        let response = get_raw(app, again).await;
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(cache_control(&response), "public, max-age=31536000, immutable");
+    }
+
+    #[tokio::test]
+    async fn what_keeps_its_name_across_builds_is_asked_about_every_time() {
+        // The entry names the scripts of its build. Kept on a guess past a
+        // deploy, it names scripts the stand no longer has.
+        let (web, content) = (web_root(), content_root());
+        let app = app(&web, &content, pool().await);
+        for path in ["/", "/index.html", "/read/some-novella", "/sw.js", "/manifest.webmanifest"] {
+            let response = get_raw(app.clone(), Request::get(path).body(Body::empty()).unwrap()).await;
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(cache_control(&response), "no-cache", "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_build_file_that_is_gone_is_not_the_app() {
+        // A script from the build before the last one is a miss, not a client
+        // route: the app in its place would be a document handed to a script
+        // tag, and one marked to be kept for a year.
+        let (web, content) = (web_root(), content_root());
+        let response = get_raw(
+            app(&web, &content, pool().await),
+            Request::get("/assets/index-old.js").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(cache_control(&response), "no-cache");
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(!body.starts_with(b"<!doctype"), "a missing script was answered with the app");
     }
 
     #[tokio::test]

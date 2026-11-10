@@ -28,6 +28,8 @@ A password that protected the reading state and handed out the text would protec
 
 **Times from the device.** Every write the reader makes can carry the moment it was made, by the clock of the device in their hand ([ADR 0003](https://github.com/lacodda/rhapsod/blob/main/docs/adr/0003-offline-first.md)): `marked_at`, `asked_at`, `felt_at`, `spotted_at`, `created_at`, `at`. A change can sit in the app's queue for days on the road, and it is dated by the road, not by the evening it reached the stand. Each takes one shape, a UTC time like `2026-10-15T13:45:09.184Z` with the fraction optional; anything else - `yesterday`, an offset, a date alone - is refused with `422` before it reaches a table, because the database's date functions answer text they cannot read with nothing, and a review schedule with no next date reads as finished.
 
+**Outside `/api` is the app.** What the build names by its content - everything under `/assets/` - is sent with `Cache-Control: public, max-age=31536000, immutable`: a new build is a new name, so the bytes behind one never change. Everything else - `/`, `index.html`, `sw.js`, the manifest, the icons, and a client route such as `/read/...` - is sent with `no-cache`, so a browser uses its copy only once the stand has confirmed it is still current, and an entry kept past a deploy never names scripts the stand no longer has. A name under `/assets/` that is not there is a `404` rather than the app: it is a file of a build that has been replaced, not a page.
+
 Everything below was captured from a running server over a two-piece library, so the bodies are what you will actually get, down to the field order.
 
 ## `GET /api/health`
