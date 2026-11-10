@@ -11,10 +11,10 @@ trim_trailing_whitespace = true
 [*.md]
 trim_trailing_whitespace = false
 
-# Four spaces in Rust: rustfmt's default, which rustfmt.toml leaves alone.
+# What rustfmt writes.
 [*.rs]
 indent_size = 4
 
-# The documentation site keeps the tabs its Starlight scaffold is written in.
-[docs/site/**.{mjs,ts}]
+# What Starlight's scaffold writes.
+[docs/**.{astro,mjs,ts}]
 indent_style = tab
