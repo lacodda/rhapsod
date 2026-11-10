@@ -58,7 +58,7 @@ Every command on the stand is run in this directory, as a plain `docker compose`
 
 ```sh
 cd /srv/rhapsod && mkdir content
-curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.1/docker-compose.prod.yml
+curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.8/docker-compose.prod.yml
 ```
 
 Make `content/` yourself, before the first start. A directory Docker has to create for a mount is created by root, and publishing into it as your user would then be refused.
@@ -67,7 +67,7 @@ The `.env` beside it:
 
 ```sh
 RHAPSOD_CONTENT=/srv/rhapsod/content   # the library, as a path on the Pi
-RHAPSOD_VERSION=0.15.1                 # the released version to run
+RHAPSOD_VERSION=0.15.8                 # the released version to run
 RHAPSOD_PORT=8084                      # the stand's address; the default
 ```
 

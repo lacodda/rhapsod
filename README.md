@@ -52,8 +52,9 @@ its settings and the library:
 
 ```sh
 sudo install -d -o "$USER" /srv/rhapsod && cd /srv/rhapsod && mkdir content
-curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.1/docker-compose.prod.yml
-printf 'RHAPSOD_CONTENT=/srv/rhapsod/content\nRHAPSOD_VERSION=0.15.1\n' > .env
+version=v0.15.8
+curl -fsSLo docker-compose.yml "https://raw.githubusercontent.com/lacodda/rhapsod/$version/docker-compose.prod.yml"
+printf 'RHAPSOD_CONTENT=/srv/rhapsod/content\nRHAPSOD_VERSION=%s\n' "${version#v}" > .env
 docker compose up -d
 curl http://localhost:8084/api/health
 ```
