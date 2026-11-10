@@ -67,7 +67,7 @@ The `.env` beside it:
 
 ```sh
 RHAPSOD_CONTENT=/srv/rhapsod/content   # the library, as a path on the Pi
-RHAPSOD_VERSION=0.15.8                 # the released version to run
+RHAPSOD_VERSION=0.15.9                 # the released version to run
 RHAPSOD_PORT=8084                      # the stand's address; the default
 ```
 
@@ -79,7 +79,7 @@ curl http://localhost:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.8","pieces":0,"indexed_seconds_ago":3}
+{"status":"ok","version":"0.15.9","pieces":0,"indexed_seconds_ago":3}
 ```
 
 `pieces` is `0` until the first publish. The container's healthcheck calls the same endpoint, so `docker compose ps` says whether the server has actually reached its database. `/api/health` stays open on a locked stand, precisely so a monitor can keep asking.

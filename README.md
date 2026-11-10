@@ -60,7 +60,7 @@ curl http://localhost:8084/api/health
 ```
 
 ```json
-{"status":"ok","version":"0.15.8","pieces":0,"indexed_seconds_ago":3}
+{"status":"ok","version":"0.15.9","pieces":0,"indexed_seconds_ago":3}
 ```
 
 `pieces` answers the question a deploy actually raises: not whether the server
