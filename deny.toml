@@ -13,7 +13,18 @@ unmaintained = "workspace"
 yanked = "deny"
 # An advisory accepted on purpose goes here, with the reason next to it:
 # { id = "RUSTSEC-0000-0000", reason = "no fixed release yet; the affected function is never called" },
-ignore = []
+ignore = [
+    # SQLite before 3.54.0 can hand back stale page-cache memory when a
+    # database is opened with a `-wal` of another page size, a pair of files
+    # someone less trusted would have to write. The fix is in libsqlite3-sys
+    # 0.39, and sqlx-sqlite 0.9.0, the newest sqlx, takes only <0.38. Nobody
+    # else writes these files: the server opens its own database in its own
+    # volume, written by its own user, and the copies it makes of it; `restore`
+    # reads an export, which is JSON; a database put back by
+    # tools/stand/restore is the stand's own backup. Drop this once sqlx takes
+    # 0.39 - cargo deny says when the advisory no longer matches.
+    { id = "RUSTSEC-2026-0459", reason = "fix needs libsqlite3-sys 0.39, which sqlx 0.9.0 does not take; only the stand's own database and its own copies are ever opened" },
+]
 
 [licenses]
 # Permissive licenses, and MPL-2.0, whose copyleft stops at the file it is in.
