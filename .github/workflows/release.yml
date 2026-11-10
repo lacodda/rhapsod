@@ -80,9 +80,7 @@ jobs:
         env:
           CHANGES: ${{ steps.cliff.outputs.content }}
         run: |
-          printf '%s
-
-' "$CHANGES" > release-notes.md
+          printf '%s\n\n' "$CHANGES" > release-notes.md
           cat .github/release-notes.md >> release-notes.md
       - uses: actions/download-artifact@v8
         with:
