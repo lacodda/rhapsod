@@ -245,21 +245,7 @@ fn captured_output_shows_the_version_being_shipped() {
     let expected = format!("\"version\":\"{version}\"");
 
     let mut stale = Vec::new();
-    let mut pages = vec![repo_root().join("README.md")];
-    let docs = repo_root().join("docs/site/src/content/docs");
-    let mut stack = vec![docs];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).expect("the docs directory should be readable").flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "md" || extension == "mdx") {
-                pages.push(path);
-            }
-        }
-    }
-
-    for page in pages {
+    for page in pages() {
         let text = read(&page);
         // Only the health transcript carries a version; anything else naming
         // one is prose, where a release note about an older version is fine.
@@ -273,6 +259,75 @@ fn captured_output_shows_the_version_being_shipped() {
     assert!(
         stale.is_empty(),
         "captured output still shows an older version than {version}:\n  {}",
+        stale.join("\n  ")
+    );
+}
+
+/// The README and every page of the documentation site.
+fn pages() -> Vec<PathBuf> {
+    let mut pages = vec![repo_root().join("README.md")];
+    let mut stack = vec![repo_root().join("docs/site/src/content/docs")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("the docs directory should be readable").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md" || extension == "mdx") {
+                pages.push(path);
+            }
+        }
+    }
+    pages
+}
+
+/// A stand set up from the docs runs the release the docs belong to.
+///
+/// `RHAPSOD_VERSION=` is the line of a stand's `.env` that picks the image, and
+/// a sample of it is copied as it is: the README's quick start and the Pi guide
+/// fetched the compose file of v0.15.1 and ran its image long after v0.15.8
+/// shipped. furca's bump leaves a bare number alone, so `tools/stamp-version.mjs`
+/// writes these after it; this is what says it did. What sits in a historical
+/// block happened on a day and is left as it was.
+#[test]
+fn the_version_a_stand_is_told_to_run_is_the_one_being_shipped() {
+    let version = cargo_field("version");
+    let mut files = pages();
+    files.push(repo_root().join("docker-compose.prod.yml"));
+
+    let mut stale = Vec::new();
+    let mut samples = 0;
+    for file in files {
+        let mut history = false;
+        for line in read(&file).lines() {
+            if line.contains("<!-- historical versions -->") {
+                history = true;
+            }
+            if line.contains("<!-- /historical versions -->") {
+                history = false;
+            }
+            if history {
+                continue;
+            }
+            for (at, key) in line.match_indices("RHAPSOD_VERSION=") {
+                let named: String = line[at + key.len()..].chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+                if named.is_empty() {
+                    continue;
+                }
+                samples += 1;
+                if named != version {
+                    stale.push(format!("{}: {}", file.display(), line.trim()));
+                }
+            }
+        }
+    }
+
+    assert!(
+        samples >= 2,
+        "only {samples} samples of RHAPSOD_VERSION were found: the check has lost its files"
+    );
+    assert!(
+        stale.is_empty(),
+        "a stand would be told to run another version than {version}:\n  {}",
         stale.join("\n  ")
     );
 }
