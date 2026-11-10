@@ -1,3 +1,4 @@
+import { overlayScrollbars } from 'dowel-ui'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -20,6 +21,12 @@ registerWorker()
 // hands over can raise the prompt - so the listener has to be attached before
 // the app renders anything.
 watchForInstall()
+
+// A phone draws its own scrollbar, one that takes no width; the theme's strip
+// steps aside for it before anything is laid out, so the page never moves by
+// the strip's width. Where the engine draws no such bar - a site in a browser
+// on Windows - the strip stays.
+overlayScrollbars()
 
 createRoot(root).render(
   <StrictMode>
