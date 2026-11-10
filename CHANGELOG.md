@@ -8,6 +8,28 @@ last release, which follow [Conventional Commits](https://www.conventionalcommit
 $ git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
 ```
 
+## [0.15.9] - 2026-11-10
+
+### Bug Fixes
+- Say how long a browser keeps each file of the app
+- Give a phone its own scrollbar, not the theme's strip
+
+### Build
+- Stamp the version into the samples after the release bump
+- Accept RUSTSEC-2026-0459 until sqlx takes libsqlite3-sys 0.39
+
+### CI
+- Release through furca's engine, with a list checked live
+- Write the blank line of the release notes as an escape
+- Leave bump.after out of release.toml while lyrn check refuses it
+
+### Dependencies
+- Update the stack on 2026-11-10
+
+### Documentation
+- Set a new stand up on the current release, not v0.15.1
+- Write a sample version as vX.Y.Z and keep a dated one as history
+
 ## [0.15.8] - 2026-11-01
 
 ### Bug Fixes

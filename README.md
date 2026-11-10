@@ -52,7 +52,7 @@ its settings and the library:
 
 ```sh
 sudo install -d -o "$USER" /srv/rhapsod && cd /srv/rhapsod && mkdir content
-version=v0.15.8
+version=v0.15.9
 curl -fsSLo docker-compose.yml "https://raw.githubusercontent.com/lacodda/rhapsod/$version/docker-compose.prod.yml"
 printf 'RHAPSOD_CONTENT=/srv/rhapsod/content\nRHAPSOD_VERSION=%s\n' "${version#v}" > .env
 docker compose up -d
@@ -75,7 +75,7 @@ whole walk-through are on the documentation site:
 
 ## Status
 
-v0.15.8, read on a phone from a Pi at home: the library, notes, kept lines and
+v0.15.9, read on a phone from a Pi at home: the library, notes, kept lines and
 the spaced return work offline, and all the reader leaves comes back in one
 export. Before 1.0 a release may change the API; its migrations carry the
 data across. [CHANGELOG](https://github.com/lacodda/rhapsod/blob/main/CHANGELOG.md).

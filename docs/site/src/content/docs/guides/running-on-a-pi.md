@@ -58,7 +58,7 @@ Every command on the stand is run in this directory, as a plain `docker compose`
 
 ```sh
 cd /srv/rhapsod && mkdir content
-curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.8/docker-compose.prod.yml
+curl -fsSLo docker-compose.yml https://raw.githubusercontent.com/lacodda/rhapsod/v0.15.9/docker-compose.prod.yml
 ```
 
 Make `content/` yourself, before the first start. A directory Docker has to create for a mount is created by root, and publishing into it as your user would then be refused.
