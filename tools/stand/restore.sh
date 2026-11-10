@@ -13,7 +13,7 @@
 # before the first start, because a server that opens an empty volume
 # migrates a database into place and then the copy has nowhere to go.
 #
-#   ./tools/stand/restore.sh backups/rhapsod-2026-09-19.db [v0.15.0]
+#   ./tools/stand/restore.sh backups/rhapsod-2026-09-19.db [vX.Y.Z]
 #
 # The version defaults to the newest tag of this checkout: an older image
 # cannot open a database a newer one has migrated.
@@ -45,7 +45,7 @@ host=$RHAPSOD_STAND_HOST
 dir=$RHAPSOD_STAND_DIR
 
 version=${2:-$(git -C "$here" describe --tags --abbrev=0 2>/dev/null || true)}
-[ -n "$version" ] || die "name the version to stand up (e.g. v0.15.0): this checkout has no tags"
+[ -n "$version" ] || die "name the version to stand up (e.g. vX.Y.Z): this checkout has no tags"
 case "$version" in
     v*) ;;
     *) version="v$version" ;;

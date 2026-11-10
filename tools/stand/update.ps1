@@ -9,7 +9,7 @@
 # release whose migration has already run by the time anything looks wrong -
 # and the schema cannot be walked back.
 #
-#   .\tools\stand\update.ps1 v0.14.0
+#   .\tools\stand\update.ps1 vX.Y.Z
 #   .\tools\stand\update.ps1              # whatever the repository is tagged at
 #
 # The compose file goes with the version: the stand's `docker-compose.yml` is
@@ -46,7 +46,7 @@ if (-not $to) { $to = Join-Path $here 'backups' }
 # ship, and the image for it exists only once the tag has been built.
 if (-not $Version) { $Version = Get-GitTag $here -Exact }
 if (-not $Version) {
-    Stop-WithReason 'name the version to move to (e.g. v0.14.0), or run this from a tagged checkout'
+    Stop-WithReason 'name the version to move to (e.g. vX.Y.Z), or run this from a tagged checkout'
 }
 $Version = "$Version".Trim()
 if ($Version -notmatch '^v') { $Version = "v$Version" }

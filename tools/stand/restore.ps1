@@ -11,7 +11,7 @@
 # before the first start, because a server that opens an empty volume
 # migrates a database into place and then the copy has nowhere to go.
 #
-#   .\tools\stand\restore.ps1 backups\rhapsod-2026-09-19.db [v0.15.0]
+#   .\tools\stand\restore.ps1 backups\rhapsod-2026-09-19.db [vX.Y.Z]
 #
 # The version defaults to the newest tag of this checkout: an older image
 # cannot open a database a newer one has migrated.
@@ -45,7 +45,7 @@ $standHost = Get-Required 'RHAPSOD_STAND_HOST' 'name the ssh host to stand the s
 $standDir = Get-Required 'RHAPSOD_STAND_DIR' "name the directory on that host to run it from (e.g. /srv/$app)"
 
 if (-not $Version) { $Version = Get-GitTag $here }
-if (-not $Version) { Stop-WithReason 'name the version to stand up (e.g. v0.15.0): this checkout has no tags' }
+if (-not $Version) { Stop-WithReason 'name the version to stand up (e.g. vX.Y.Z): this checkout has no tags' }
 if ($Version -notmatch '^v') { $Version = "v$Version" }
 $number = $Version.Substring(1)
 

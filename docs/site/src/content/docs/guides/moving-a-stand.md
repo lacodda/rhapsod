@@ -94,12 +94,13 @@ In order, it:
 5. **Puts the database into the volume** through the stand's own service, before anything starts, and reads it back to check it arrived byte for byte.
 6. **Pulls, starts, and asks the stand how it is.**
 
-The version is the newest tag of your checkout, or the one you name: `restore.sh <copy> v0.15.1`. An older image cannot open a database a newer one has migrated.
+The version is the newest tag of your checkout, or the one you name: `restore.sh <copy> vX.Y.Z`. An older image cannot open a database a newer one has migrated.
 
 The order is the point. A server that opens an empty volume creates a database and migrates it into place; putting the copy in afterwards means either overwriting a live file underneath a running server, or a restore that quietly does nothing. The database goes through the service rather than a throwaway container because the image runs as its own user, and a file written by anything else is one the server is not allowed to open.
 
 If there is already a stand in that directory, it says so, asks, and stops it before writing - the one irreversible thing in the script is replacing that database, and what is in it is somebody's reading.
 
+<!-- historical versions -->
 ```
 restore: asking the stand how it is
 ok version   rhapsod 0.15.1
@@ -110,6 +111,7 @@ ok reader    23 pieces of reading state, 0 notes, 7 quotes
 ok backups   1 kept, newest from 2026-10-01 (today)
 ok door      published on 127.0.0.1:8084 - only a proxy on this machine can reach it; no password: the stand is open
 ```
+<!-- /historical versions -->
 
 An empty library there is expected. The line that matters is `reader`, because it is the one thing that could not have been recreated. Two things are left, and the script says so rather than guessing at them:
 
@@ -132,6 +134,9 @@ This is a weaker recovery, and it is worth knowing why. The export carries what 
 Rows that are already there are left alone, so running it twice changes nothing the second time and running it against a live stand cannot overwrite what has happened since. Restored rows keep the dates they were made on: a restore is not the reader doing anything, and stamping everything "now" would tell the streak that a hundred pieces were finished today.
 
 ## Moving to a new version
+
+<!-- historical versions -->
+A move from v0.15.0 to v0.15.1, as it went:
 
 ```sh
 ./tools/stand/update.sh v0.15.1
@@ -156,6 +161,7 @@ ok backups   14 kept, newest from 2026-10-01 (today)
 -- door      published on 0.0.0.0:8084 - anything on the network can reach it; no password: the stand is open
 update: the stand is on v0.15.1 and well.
 ```
+<!-- /historical versions -->
 
 What it is careful about, all of it learnt the hard way:
 
@@ -171,8 +177,9 @@ What it is careful about, all of it learnt the hard way:
 
 ## Rolling back
 
-When the doctor is unhappy after an update, the copy taken aside is the way back. `update` has already brought it here, into `backups/` beside the stand's settings as they were at that moment:
+When the doctor is unhappy after an update, the copy taken aside is the way back. `update` has already brought it here, into `backups/` beside the stand's settings as they were at that moment - after the move above:
 
+<!-- historical versions -->
 ```
 update: kept a copy here as backups/rhapsod-before-v0.15.1-20261001T120000Z.db
 ```
@@ -183,13 +190,17 @@ Restore it with the version it came from:
 ./tools/stand/restore.sh backups/rhapsod-before-v0.15.1-20261001T120000Z.db v0.15.0
 ```
 
+<!-- /historical versions -->
+
 `restore` finds the stand already there, asks, stops it, and puts the old database back with the old version's compose file and image. Anything the reader did between the update and the rollback is in the newer database, not this one; export it first if it matters.
 
 If the copy could not be brought here, `update` says so and names it on the stand, in the volume's `backups/`. Fetch it through the service, which works even while a bad release keeps restarting - with `cmd /c` from PowerShell, whose own `>` would write the database as text:
 
+<!-- historical versions -->
 ```sh
 ssh pi 'cd /srv/rhapsod && docker compose run --rm --no-deps -T server cat /data/backups/rhapsod-before-v0.15.1-20261001T120000Z.db' > backups/rhapsod-before-v0.15.1-20261001T120000Z.db
 ```
+<!-- /historical versions -->
 
 ## Asking how a stand is, at any time
 

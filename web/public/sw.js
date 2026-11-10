@@ -30,7 +30,7 @@ const SHELL_FILES = ['__SHELL_FILES__']
  * version: an app update must not cost the reader the library they carry, but
  * a piece cached in a shape the app no longer reads is worse than none. The
  * number moves only when a piece's JSON changes shape - 2 is paragraphs as
- * runs of text (v0.15.4) - and the old copy is dropped when this worker takes
+ * runs of text (ADR 0006) - and the old copy is dropped when this worker takes
  * over, at home, where the update arrived and the library refills.
  *
  * Named again in `src/offline.ts` as `LIBRARY_CACHE`.

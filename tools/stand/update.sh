@@ -12,7 +12,7 @@
 # and the schema cannot be walked back (a migration that has shipped is
 # frozen; only a new one moves it forward).
 #
-#   ./tools/stand/update.sh v0.14.0
+#   ./tools/stand/update.sh vX.Y.Z
 #   ./tools/stand/update.sh              # whatever the repository is tagged at
 #
 # The compose file goes with the version: the stand's `docker-compose.yml` is
@@ -48,7 +48,7 @@ to=${RHAPSOD_BACKUP_TO:-$here/backups}
 # from the manifest: a version in `Cargo.toml` is a version that is *going* to
 # ship, and the image for it exists only once the tag has been built.
 version=${1:-$(git -C "$here" describe --tags --exact-match 2>/dev/null || true)}
-[ -n "$version" ] || die "name the version to move to (e.g. v0.14.0), or run this from a tagged checkout"
+[ -n "$version" ] || die "name the version to move to (e.g. vX.Y.Z), or run this from a tagged checkout"
 case "$version" in
     v*) ;;
     *) version="v$version" ;;
